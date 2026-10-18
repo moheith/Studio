@@ -24,7 +24,7 @@ from argon2.exceptions import VerifyMismatchError
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from pymongo import AsyncMongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -724,3 +724,32 @@ async def private_preview_file(user_id: str, project_id: str, token: str, file_p
     rel = files_store._relative(file_path); data = files_store.get(project, rel)
     return Response(data, media_type=_mime(rel), headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Content-Security-Policy":f"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'self'; frame-ancestors {APP_ORIGIN}"})
 
+FRONTEND_DIST = (Path(__file__).resolve().parent.parent / "dist").resolve()
+
+
+def frontend_file(path: str = "") -> FileResponse:
+    """Serve only built studio assets; user projects are never part of this tree."""
+    if path == "api" or path.startswith("api/"):
+        raise HTTPException(404, "API route not found")
+    target = (FRONTEND_DIST / path).resolve()
+    try:
+        target.relative_to(FRONTEND_DIST)
+    except ValueError:
+        raise HTTPException(404, "File not found")
+    if target.is_file():
+        return FileResponse(target, headers={"Cache-Control": "no-cache"} if target.name == "index.html" else None)
+    if not Path(path).suffix:
+        index = FRONTEND_DIST / "index.html"
+        if index.is_file():
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
+    raise HTTPException(404, "File not found")
+
+
+@app.get("/", include_in_schema=False)
+async def frontend_root():
+    return frontend_file()
+
+
+@app.get("/{path:path}", include_in_schema=False)
+async def frontend_routes(path: str):
+    return frontend_file(path)
