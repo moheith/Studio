@@ -774,10 +774,10 @@ async def public_game_file(username: str, slug: str, file_path: str):
         base_href = f"/{project['username']}/{project['slug']}/"
         html = content.decode("utf-8", "replace")
         base_tag = f'<base href="{base_href}">'
-        existing_base = re.search(r"<base\\b[^>]*>", html, flags=re.IGNORECASE)
+        existing_base = re.search(r"<base\b[^>]*>", html, flags=re.IGNORECASE)
         if existing_base: html = html[:existing_base.start()] + base_tag + html[existing_base.end():]
         else:
-            head = re.search(r"<head(?:\\s[^>]*)?>", html, flags=re.IGNORECASE)
+            head = re.search(r"<head(?:\s[^>]*)?>", html, flags=re.IGNORECASE)
             html = html[:head.end()] + base_tag + html[head.end():] if head else base_tag + html
         content = html.encode("utf-8")
     return Response(content, media_type=_mime(rel), headers={
