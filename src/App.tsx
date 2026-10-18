@@ -11,6 +11,7 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import ProfilePage from './pages/ProfilePage'
+import PublicProfilePage from './pages/PublicProfilePage'
 import StudioPage from './pages/StudioPage'
 import type { Game, FileEntry, Page, User } from './types'
 function projectToGame(value: Record<string, unknown>): Game {
@@ -20,7 +21,16 @@ function projectToGame(value: Record<string, unknown>): Game {
 }
 function publicGameUrl(username: string, slug: string) {
   const origin = (import.meta.env.VITE_API_ORIGIN || window.location.origin).replace(/\/$/, '')
-  return `${origin}/api/games/${encodeURIComponent(username)}/${encodeURIComponent(slug)}/index.html`
+  return `${origin}/${encodeURIComponent(username)}/${encodeURIComponent(slug)}`
+}
+
+function editorPath(username: string, slug: string) {
+  return `/${encodeURIComponent(username)}/${encodeURIComponent(slug)}/edit`
+}
+
+function editorRoute() {
+  const parts = window.location.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+  return parts.length === 3 && parts[2] === 'edit' ? { username: parts[0].toLowerCase(), slug: parts[1].toLowerCase() } : null
 }
 
 const starterFiles: Record<string, string> = {
@@ -40,12 +50,17 @@ const initialTree: FileEntry[] = [
 export default function App() {
   const pageFromPath = (): Page => {
     const route = window.location.pathname
-    return ({ '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/profile': 'profile', '/studio': 'studio' }[route] as Page | undefined) ?? 'home'
+    const fixed = ({ '/': 'home', '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/profile': 'profile', '/studio': 'studio', '/not-found': 'not-found' }[route] as Page | undefined)
+    if (fixed) return fixed
+    const parts = route.split('/').filter(Boolean)
+    if (parts.length === 3 && parts[2] === 'edit') return 'studio'
+    if (parts.length === 1) return 'profile'
+    return 'home'
   }
   const [page, setPageState] = useState<Page>(pageFromPath)
-  const setPage = (next: Page) => {
-    const route: Record<Page, string> = { home: '/', login: '/login', register: '/register', 'verify-email': '/verify-email', profile: '/profile', studio: '/studio' }
-    const path = route[next]
+  const setPage = (next: Page, pathOverride?: string) => {
+    const route: Record<Page, string> = { home: '/', login: '/login', register: '/register', 'verify-email': '/verify-email', profile: '/profile', studio: '/studio', 'not-found': '/not-found' }
+    const path = pathOverride ?? (next === 'profile' && user?.username ? `/${encodeURIComponent(user.username)}` : next === 'studio' && currentGame && user?.username ? editorPath(user.username, currentGame.id) : route[next])
     // Dialogs belong to the page that opened them; never carry one across routes.
     setModal(null)
     if (`${window.location.pathname}${window.location.hash}` !== path) window.history.pushState({}, '', path)
@@ -54,6 +69,7 @@ export default function App() {
   }
   const [verificationEmail, setVerificationEmail] = useState(() => sessionStorage.getItem('yulya-verification-email') ?? '')
   const [user, setUser] = useState<User | null>(null)
+  const [sessionReady, setSessionReady] = useState(false)
   const [games, setGames] = useState<Game[]>([])
   const [projects, setProjects] = useState<Game[]>([])
   const [currentGame, setCurrentGame] = useState<Game | null>(null)
@@ -98,7 +114,7 @@ export default function App() {
       if ((session.user as User & { has_api_key?: boolean }).has_api_key) api<{models: Array<{id: string; display_name: string}>}>('/api/models').then(result => { setModels(result.models); if (result.models[0]) setSelectedModel(result.models[0].id) }).catch(() => {})
       if (session.needs_username) setPage('profile')
       else { const data = await api<{ projects: Array<Record<string, unknown>> }>('/api/projects').catch(() => ({ projects: [] })); setProjects(data.projects.map(projectToGame)) }
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setSessionReady(true))
     api<{ projects: Array<Record<string, unknown>> }>('/api/gallery').then((data) => setGames(data.projects.map(projectToGame))).catch(() => {})
   }, [])
 
@@ -116,7 +132,10 @@ export default function App() {
   const language = useMemo(() => activeFile.endsWith('.html') ? 'html' : activeFile.endsWith('.css') ? 'css' : activeFile.endsWith('.json') ? 'json' : 'javascript', [activeFile])
   const openStudio = async (game?: Game) => {
     if (game) { setCurrentGame(game); setCurrentProjectId(game.projectId ?? '') }
-    setPage('studio'); setModal(null)
+    const project = game ?? currentGame
+    if (project && user?.username) setPage('studio', editorPath(user.username, project.id))
+    else setPage('studio')
+    setModal(null)
     if (game?.projectId) await loadProject(game.projectId, game)
   }
   const notify = (message: string) => setToast(message)
@@ -135,7 +154,7 @@ export default function App() {
     if (!hasKey) { setModal('api-key'); return }
     try {
       const result = await api<{ project: Record<string, unknown> }>('/api/projects', { method: 'POST', body: JSON.stringify({ title: projectName, visibility }) })
-      const project = projectToGame(result.project); setProjects((items) => [project, ...items]); setCurrentGame(project); setCurrentProjectId(project.projectId ?? ''); setCode(starterFiles); setTree(initialTree); setPage('studio'); setModal(null)
+      const project = projectToGame(result.project); setProjects((items) => [project, ...items]); setCurrentGame(project); setCurrentProjectId(project.projectId ?? ''); setCode(starterFiles); setTree(initialTree); setPage('studio', editorPath(user.username, project.id)); setModal(null)
       if (project.projectId) await loadProject(project.projectId, project)
     } catch (error) { notify(error instanceof Error ? error.message : 'Could not create project') }
   }
@@ -177,12 +196,12 @@ export default function App() {
   }
   const saveKey = async () => {
     if (apiKey.trim().length < 12) throw new Error('Enter a valid Gemini API key')
-    // Key validation and storage succeeds independently of model discovery.
-    await api('/api/keys/gemini', { method: 'POST', body: JSON.stringify({ api_key: apiKey.trim() }) })
-    setHasKey(true); setApiKey(''); setModal(null); notify('Gemini key verified and connected')
+    // The POST validates and stores the key, returning the model that passed.
+    const verified = await api<{ verified_model?: string; fallback_used?: boolean }>('/api/keys/gemini', { method: 'POST', body: JSON.stringify({ api_key: apiKey.trim() }) })
+    setHasKey(true); setApiKey(''); setModal(null); notify(verified.fallback_used ? `Key connected with ${verified.verified_model ?? 'Gemma'} fallback` : 'Gemini key verified and connected')
     try {
       const result = await api<{models: Array<{id: string; display_name: string}>}>('/api/models')
-      setModels(result.models); setSelectedModel(result.models[0]?.id ?? '')
+      setModels(result.models); setSelectedModel(verified.verified_model && result.models.some(model => model.id === verified.verified_model) ? verified.verified_model : result.models[0]?.id ?? '')
     } catch {
       notify('Key connected. Models could not be loaded yet; try again shortly.')
     }
@@ -201,7 +220,9 @@ export default function App() {
     setHasKey(Boolean((nextUser as User & { has_api_key?: boolean }).has_api_key))
     api<{ projects: Array<Record<string, unknown>> }>('/api/projects').then(result => setProjects(result.projects.map(projectToGame))).catch(() => {})
     if ((nextUser as User & { has_api_key?: boolean }).has_api_key) api<{ models: Array<{ id: string; display_name: string }> }>('/api/models').then(result => { setModels(result.models); setSelectedModel(result.models[0]?.id ?? '') }).catch(() => {})
-    setPage('profile')
+    const returnTo = sessionStorage.getItem('yulya:return-to')
+    if (returnTo) { sessionStorage.removeItem('yulya:return-to'); setPage('studio', returnTo) }
+    else setPage('profile')
   }
   const addFile = () => {
     const name = newFileName.trim()
@@ -228,14 +249,44 @@ export default function App() {
     } catch (error) { notify(error instanceof Error ? error.message : 'Could not open project') }
   }
 
-  if (page === 'studio' && !currentProjectId && !currentGame) {
+  useEffect(() => {
+    if (page !== 'studio' || !sessionReady || currentProjectId) return
+    const route = editorRoute()
+    if (!route) { setPage(user ? 'profile' : 'home'); return }
+    if (!user) {
+      sessionStorage.setItem('yulya:return-to', window.location.pathname)
+      setPage('login')
+      return
+    }
+    if (user.username.toLowerCase() !== route.username) { setPageState('not-found'); return }
+    api<{ projects: Array<Record<string, unknown>> }>('/api/projects')
+      .then((result) => {
+        const match = result.projects.find((project) => String(project.slug ?? '').toLowerCase() === route.slug)
+        if (!match) { setPageState('not-found'); return }
+        const game = projectToGame(match)
+        setProjects(result.projects.map(projectToGame))
+        setCurrentGame(game)
+        return loadProject(game.projectId ?? '', game)
+      })
+      .catch(() => setPageState('not-found'))
+  }, [page, sessionReady, user, currentProjectId])
+
+  if (page === 'studio' && !sessionReady && !currentProjectId && !currentGame) return null
+  if (page === 'studio' && !currentProjectId && !currentGame && sessionReady && !editorRoute()) {
     setPage(user ? 'profile' : 'home')
     return null
   }
   if (page === 'login') return <LoginPage onBack={() => setPage('home')} onRegister={() => setPage('register')} onLogin={completeLogin} notify={notify} />
   if (page === 'register') return <RegisterPage onBack={() => setPage('home')} onLogin={() => setPage('login')} onRegistered={(email) => { setVerificationEmail(email); sessionStorage.setItem('yulya-verification-email', email); setPage('verify-email') }} notify={notify} />
   if (page === 'verify-email') return <VerifyEmailPage email={verificationEmail} onBack={() => setPage('register')} onLogin={(nextUser, csrf) => { sessionStorage.removeItem('yulya-verification-email'); completeLogin(nextUser, csrf) }} notify={notify} />
-  if (page === 'profile') return <>
+  if (page === 'profile') {
+    const routeUsername = decodeURIComponent(window.location.pathname.split('/').filter(Boolean)[0] ?? '')
+    const isOwnProfile = window.location.pathname === '/profile' || Boolean(user?.username && routeUsername.toLowerCase() === user.username.toLowerCase())
+    if (!isOwnProfile && routeUsername) {
+      if (!sessionReady) return <main className="public-profile-shell"><div className="public-profile-loading">Loading creator profile…</div></main>
+      return <PublicProfilePage username={routeUsername} onHome={() => setPage('home')}/>
+    }
+    return <>
     <ProfilePage
     user={user} hasKey={hasKey} projects={projects}
     onHome={() => setPage('home')} onArcade={() => {
@@ -265,7 +316,9 @@ export default function App() {
     {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
     {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
     {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
-  </>
+    </>
+  }
+  if (page === 'not-found') return <main className="route-not-found"><span>404</span><h1>This page isn’t available</h1><p>The editor is private to its owner, or this link is incorrect.</p><button className="button button-primary" onClick={() => setPage(user ? 'profile' : 'home')}>Return to Yulya Studio</button></main>
   if (page === 'studio') return <><StudioPage {...{
     user, currentGame, activeFile, code, language, tree, sidebarOpen, terminalOpen, chat, chatHistory, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel,
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
