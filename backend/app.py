@@ -9,12 +9,10 @@ import json
 import os
 import re
 import secrets
-import smtplib
 import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -64,7 +62,7 @@ if APP_ENV == "production":
     for env_name, value in (("SESSION_SECRET", SESSION_SECRET), ("API_KEY_ENCRYPTION_SECRET", KEY_ENCRYPTION_SECRET), ("API_KEY_HMAC_SECRET", KEY_HMAC_SECRET), ("PREVIEW_TOKEN_SECRET", PREVIEW_TOKEN_SECRET), ("MONGODB_URI", MONGODB_URI)):
         if not value or "replace-with" in value.lower() or "placeholder" in value.lower() or (env_name.endswith("SECRET") and len(value) < 32):
             raise RuntimeError(f"{env_name} must be configured with a production secret/value")
-    for env_name in ("APP_ORIGIN", "API_ORIGIN", "PLAY_ORIGIN", "R2_ENDPOINT_URL", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "SMTP_HOST", "SMTP_FROM", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI"):
+    for env_name in ("APP_ORIGIN", "API_ORIGIN", "PLAY_ORIGIN", "R2_ENDPOINT_URL", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "RESEND_API_KEY", "EMAIL_FROM", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI"):
         if not os.getenv(env_name): raise RuntimeError(f"{env_name} must be configured for production storage/email")
     for env_name in ("APP_ORIGIN", "API_ORIGIN", "PLAY_ORIGIN"):
         if "localhost" in os.getenv(env_name, "").lower() or "example.com" in os.getenv(env_name, "").lower(): raise RuntimeError(f"{env_name} must use the configured production origin")
@@ -351,14 +349,25 @@ async def register(body: RegisterBody, request: Request):
     code = f"{secrets.randbelow(1_000_000):06d}"; salt = secrets.token_hex(12)
     await store.collection("email_codes").delete_many({"email_norm": email})
     await store.collection("email_codes").insert_one({"email_norm": email, "password_hash": PH.hash(body.password), "code_hash": hashlib.sha256((salt + code).encode()).hexdigest(), "salt": salt, "expires_at": _expires(600), "attempts": 0})
-    smtp_host = os.getenv("SMTP_HOST", "")
-    if smtp_host:
-        msg = EmailMessage(); msg["Subject"] = "Your Yulya Studio verification code"; msg["From"] = os.getenv("SMTP_FROM", "Yulya Studio <noreply@example.com>"); msg["To"] = email; msg.set_content(f"Your verification code is {code}. It expires in 10 minutes.")
-        with smtplib.SMTP(smtp_host, int(os.getenv("SMTP_PORT", "587")), timeout=8) as smtp:
-            smtp.starttls(); user = os.getenv("SMTP_USERNAME", "")
-            if user: smtp.login(user, os.getenv("SMTP_PASSWORD", ""))
-            smtp.send_message(msg)
-    elif APP_ENV == "development": return {"verification_required": True, "development_code": code, "message": "Configure SMTP for email delivery; the development code is shown for local testing."}
+    resend_api_key = os.getenv("RESEND_API_KEY", "")
+    if resend_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                delivery = await client.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {resend_api_key}"},
+                    json={
+                        "from": os.getenv("EMAIL_FROM", ""),
+                        "to": [email],
+                        "subject": "Your Yulya Studio verification code",
+                        "text": f"Your verification code is {code}. It expires in 10 minutes.",
+                    },
+                )
+            if delivery.status_code >= 400:
+                raise HTTPException(502, "Email delivery failed; try again later")
+        except httpx.HTTPError:
+            raise HTTPException(502, "Email delivery failed; try again later") from None
+    elif APP_ENV == "development": return {"verification_required": True, "development_code": code, "message": "Configure the email API for delivery; the development code is shown for local testing."}
     else: raise HTTPException(503, "Email verification is not configured")
     return {"verification_required": True, "message": "Check your email for a verification code."}
 

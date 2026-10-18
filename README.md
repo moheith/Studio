@@ -17,7 +17,7 @@ A browser game studio prototype. Game projects are static browser assets and are
    pnpm dev
    ```
 
-4. Open `http://localhost:5173`. Vite proxies `/api` to FastAPI. Configure SMTP to receive verification codes; in local development without SMTP, the API returns a one-time code in its response for testing. Google login needs OAuth credentials and the callback URI shown in `.env.example`.
+4. Open `http://localhost:5173`. Vite proxies `/api` to FastAPI. Configure Resend with a verified sender to receive verification codes; in local development without an email API key, the API returns a one-time code in its response for testing. Google login needs OAuth credentials and the callback URI shown in `.env.example`.
 5. To preview private games locally, run the Worker with R2 bindings for private storage, or configure R2 and `wrangler dev`. The API's local file fallback can also issue a short-lived preview URL from its own API origin.
 
 ## Production setup
@@ -25,7 +25,7 @@ A browser game studio prototype. Game projects are static browser assets and are
 - **MongoDB Atlas:** create a database and an application-scoped database user. Set `MONGODB_URI` and `MONGODB_DATABASE`.
 - **Cloudflare R2:** create private and public buckets. Keep public-bucket public access disabled; bind both buckets to the Worker. Set `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PRIVATE_BUCKET`, and `R2_PUBLIC_BUCKET` on the API. R2 credentials must have only the required bucket access.
 - **Worker:** configure `APP_ORIGIN` and the same `PREVIEW_TOKEN_SECRET` as the API with `wrangler secret put`; deploy `worker/` to the dedicated `play.<domain>` origin. Bind the two R2 buckets as `PRIVATE_GAMES` and `PUBLIC_GAMES`. Never point the studio application origin at this Worker.
-- **Render:** use `render.yaml` for the API and static frontend. Set the required origins and all secret values in the Render dashboard. Add Google OAuth callback and allowed application origins to provider configuration. Configure SMTP for production email verification.
+- **Render:** use `render.yaml` for the free API service and static frontend. Free API instances sleep after inactivity and have ephemeral filesystems, so project files must use R2. Set the required origins and secret values in the Render dashboard. Add Google OAuth callback and allowed application origins to provider configuration. Configure Resend with a verified sender for production email verification; its HTTPS API works with Render's free-service outbound network restrictions.
 - Generate separate high-entropy values for `API_KEY_ENCRYPTION_SECRET`, `API_KEY_HMAC_SECRET`, `PREVIEW_TOKEN_SECRET`, and `SESSION_SECRET`. Do not commit `.env` or credentials. Rotate encryption keys only with a migration plan for stored Gemini keys.
 
 ## Security model and current scope
