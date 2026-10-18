@@ -2,17 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import Editor from '@monaco-editor/react'
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, Braces, Check, ChevronDown, ChevronRight,
+  ArrowDown, ArrowRight, ArrowUpRight, Braces, Check, ChevronDown, ChevronRight,
   CircleHelp, Code2, Copy, FileCode2, FileImage, FilePlus2, Folder, Gamepad2,
   Globe2, Grip, LockKeyhole, Menu, MessageSquare, MoreHorizontal, PanelLeft,
   Play, Plus, RefreshCw, Rocket, Settings2, Sparkles, Terminal, Trash2, Upload, WandSparkles,
   X, Zap,
 } from 'lucide-react'
 import { api, getFile, saveFile, setCsrfToken, streamSse, uploadAsset } from './api'
-
-type Game = { id: string; title: string; creator: string; genre: string; color: string; art: string; plays: string; description: string; projectId?: string; visibility?: 'private' | 'public' }
-type FileEntry = { name: string; kind: 'file' | 'folder'; language?: string }
-type User = { id?: string; username: string; email: string; avatar?: string }
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import VerifyEmailPage from './pages/VerifyEmailPage'
+import ProfilePage from './pages/ProfilePage'
+import type { Game, FileEntry, Page, User } from './types'
 function projectToGame(value: Record<string, unknown>): Game {
   const id = String(value.slug ?? value.id ?? 'project')
   const username = String(value.username ?? 'creator')
@@ -34,7 +35,15 @@ const initialTree: FileEntry[] = [
 ]
 
 export default function App() {
-  const [page, setPage] = useState<'home' | 'studio' | 'login' | 'profile'>('home')
+  const pageFromPath = (): Page => ({ '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/profile': 'profile', '/studio': 'studio' }[window.location.pathname] as Page | undefined) ?? 'home'
+  const [page, setPageState] = useState<Page>(pageFromPath)
+  const setPage = (next: Page) => {
+    const path: Record<Page, string> = { home: '/', login: '/login', register: '/register', 'verify-email': '/verify-email', profile: '/profile', studio: '/studio' }
+    if (window.location.pathname !== path[next]) window.history.pushState({}, '', path[next])
+    setPageState(next)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const [verificationEmail, setVerificationEmail] = useState(() => sessionStorage.getItem('yulya-verification-email') ?? '')
   const [user, setUser] = useState<User | null>(null)
   const [games, setGames] = useState<Game[]>([])
   const [projects, setProjects] = useState<Game[]>([])
@@ -61,6 +70,12 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
   const saveTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    const onPopState = () => setPageState(pageFromPath())
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setToast(''), 2600)
@@ -163,6 +178,14 @@ export default function App() {
     try { await api('/api/auth/logout', { method: 'POST', body: '{}' }) } catch { /* clear the local view even if the API is offline */ }
     setCsrfToken(''); setUser(null); setProjects([]); setHasKey(false); setModels([]); setSelectedModel(''); setPage('home'); notify('Signed out')
   }
+  const completeLogin = (nextUser: User, csrf: string) => {
+    setCsrfToken(csrf)
+    setUser(nextUser)
+    setHasKey(Boolean((nextUser as User & { has_api_key?: boolean }).has_api_key))
+    api<{ projects: Array<Record<string, unknown>> }>('/api/projects').then(result => setProjects(result.projects.map(projectToGame))).catch(() => {})
+    if ((nextUser as User & { has_api_key?: boolean }).has_api_key) api<{ models: Array<{ id: string; display_name: string }> }>('/api/models').then(result => { setModels(result.models); setSelectedModel(result.models[0]?.id ?? '') }).catch(() => {})
+    setPage('profile')
+  }
   const addFile = () => {
     const name = newFileName.trim()
     if (!name || name.includes('..') || name.startsWith('/') || !/\.(html|css|js|mjs|json|png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(name)) { notify('Use a supported browser file name'); return }
@@ -188,7 +211,9 @@ export default function App() {
     } catch (error) { notify(error instanceof Error ? error.message : 'Could not open project') }
   }
 
-  if (page === 'login') return <LoginPage onBack={() => setPage('home')} onLogin={(nextUser, csrf) => { setCsrfToken(csrf); setUser(nextUser); setHasKey(Boolean((nextUser as User & { has_api_key?: boolean }).has_api_key)); api<{projects: Array<Record<string, unknown>>}>('/api/projects').then(result => setProjects(result.projects.map(projectToGame))).catch(() => {}); if ((nextUser as User & {has_api_key?: boolean}).has_api_key) api<{models: Array<{id:string;display_name:string}>}>('/api/models').then(result => { setModels(result.models); setSelectedModel(result.models[0]?.id ?? '') }).catch(() => {}); setPage('profile') }} notify={notify} />
+  if (page === 'login') return <LoginPage onBack={() => setPage('home')} onRegister={() => setPage('register')} onLogin={completeLogin} notify={notify} />
+  if (page === 'register') return <RegisterPage onBack={() => setPage('home')} onLogin={() => setPage('login')} onRegistered={(email) => { setVerificationEmail(email); sessionStorage.setItem('yulya-verification-email', email); setPage('verify-email') }} notify={notify} />
+  if (page === 'verify-email') return <VerifyEmailPage email={verificationEmail} onBack={() => setPage('register')} onLogin={(nextUser, csrf) => { sessionStorage.removeItem('yulya-verification-email'); completeLogin(nextUser, csrf) }} notify={notify} />
   if (page === 'profile') return <ProfilePage
     user={user} hasKey={hasKey} projects={projects}
     onHome={() => setPage('home')} onCreate={() => setModal('new-project')} onOpen={(game) => openStudio(game)} onKey={() => setModal('api-key')} onLogout={logout}
@@ -237,20 +262,10 @@ function GameCard({ game, index, onClick }: { game: Game; index: number; onClick
   return <article className={`game-card card-${index}`} onClick={onClick} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}><div className="game-art" style={{ '--game-color': game.color } as React.CSSProperties}><div className="game-art-stars">✦　·　✧</div><div className="game-art-object">{game.art}</div><span className="art-play"><Play size={14} fill="currentColor"/></span><span className="art-index">0{index + 1}</span></div><div className="game-card-info"><div><div className="game-genre">{game.genre}</div><h3>{game.title}</h3><p>{game.description}</p></div><div className="card-meta"><span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span><span>by <b>{game.creator}</b></span><span className="play-count"><Play size={11} fill="currentColor"/> {game.plays}</span></div></div></article>
 }
 
-function LoginPage({ onBack, onLogin, notify }: { onBack: () => void; onLogin: (user: User, csrf: string) => void; notify: (s: string) => void }) {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [mode, setMode] = useState<'login' | 'signup' | 'verify'>('signup'); const [code, setCode] = useState('')
-  const submit = async () => { try { if (mode === 'signup') { const result = await api<{verification_required: boolean; development_code?: string}>('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) }); setMode('verify'); if (result.development_code) notify(`Development verification code: ${result.development_code}`); else notify('Check your email for a verification code') } else if (mode === 'verify') { const result = await api<{user: User; csrf_token: string}>('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code }) }); onLogin(result.user, result.csrf_token) } else { const result = await api<{user: User; csrf_token: string}>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); onLogin(result.user, result.csrf_token) } } catch (error) { notify(error instanceof Error ? error.message : 'Could not sign in') } }
-  return <div className="auth-screen"><button className="auth-back" onClick={onBack}><ArrowLeft size={16}/> Back to Yulya</button><div className="auth-card"><a className="brand auth-brand" onClick={onBack}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span></a><div className="auth-kicker">YOUR NEXT LITTLE BIG THING</div><h1>{mode === 'signup' ? 'Let’s make something.' : mode === 'verify' ? 'Check your email.' : 'Welcome back.'}</h1><p>Sign in to your studio and make an idea playable.</p><div className="auth-separator"><span/>email sign-in<span/></div><label>Email address<input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} /></label>{mode !== 'verify' && <label>Password<input type="password" placeholder="At least 10 characters" value={password} onChange={(e) => setPassword(e.target.value)} /></label>}{mode === 'verify' && <label>Verification code<input inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} placeholder="6 digit code" /></label>}<button className="button button-primary auth-submit" onClick={submit}>{mode === 'signup' ? 'Create account' : mode === 'verify' ? 'Verify email' : 'Sign in'} <ArrowRight size={15}/></button>{mode !== 'verify' && <p className="auth-switch">{mode === 'signup' ? 'Already have a studio?' : 'New to Yulya?'} <button onClick={() => setMode(mode === 'signup' ? 'login' : 'signup')}>{mode === 'signup' ? 'Log in' : 'Make an account'}</button></p>}<div className="auth-legal">Email accounts require verification.</div></div><div className="auth-decoration"><span>✦</span><span>✧</span><span>·</span><span>✳</span></div></div>
-}
-
-function ProfilePage({ user, hasKey, projects, onHome, onCreate, onOpen, onKey, onUsername, onLogout }: { user: User | null; hasKey: boolean; projects: Game[]; onHome: () => void; onCreate: () => void; onOpen: (game: Game) => void; onKey: () => void; onUsername: (name: string) => void; onLogout: () => void }) {
-  const [username, setUsername] = useState(user?.username ?? '')
-  return <div className="profile-shell"><header className="topbar profile-topbar"><button className="brand" onClick={onHome}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span></button><div className="profile-top-actions"><button className="quiet-button" onClick={onHome}>Arcade</button><button className="quiet-button" onClick={onLogout}>Sign out</button><button className="profile-avatar">{user?.avatar ? <img src={user.avatar} alt="" referrerPolicy="no-referrer"/> : user?.username?.[0]?.toUpperCase() ?? 'Y'}</button></div></header><main className="profile-main"><div className="profile-hero"><div className="profile-avatar profile-avatar-large">{user?.avatar ? <img src={user.avatar} alt="" referrerPolicy="no-referrer"/> : user?.username?.[0]?.toUpperCase() ?? 'Y'}</div><div><div className="eyebrow">YOUR CREATOR SPACE</div><h1>{user?.username ?? 'creator'}</h1><p>{user?.email}</p>{!user?.username && <div className="username-setup"><input value={username} onChange={e => setUsername(e.target.value.toLowerCase())} placeholder="Choose a unique username"/><button className="button button-primary" onClick={() => onUsername(username)}>Save username</button></div>}</div><button className="button button-primary" onClick={onCreate}><Plus size={16}/> New project</button></div><div className="profile-tabs"><span className="tab-active">Projects <span>{projects.length}</span></span><span className="tab-settings" onClick={onKey}><Settings2 size={14}/>{hasKey ? 'AI key connected' : 'Connect AI key'}{hasKey && <Check size={13}/>}</span></div><div className="project-grid"><button className="project-new-card" onClick={onCreate}><span className="new-card-plus"><Plus size={20}/></span><b>Start with a blank canvas</b><small>HTML, CSS, JavaScript. Your idea goes here.</small></button>{projects.map(game => <button className="project-card" key={game.projectId} onClick={() => onOpen(game)}><div className="project-thumb"><span>✦</span><span className="project-thumb-small">{game.title}</span></div><div className="project-card-bottom"><div><b>{game.title}</b><small>Edited recently · {game.visibility}</small></div><MoreHorizontal size={17}/></div></button>)}</div></main></div>
-}
 
 type StudioProps = {
   user: User | null; currentGame: Game | null; activeFile: string; code: Record<string, string>; language: string; tree: FileEntry[]; sidebarOpen: boolean; terminalOpen: boolean; chat: string; chatHistory: string[]; saveState: string; previewKey: number; mobileNav: boolean; currentProjectId: string; previewUrl: string; newFileName: string; modal: 'new-project' | 'api-key' | 'new-file' | 'game' | null; models: Array<{id: string; display_name: string}>; selectedModel: string;
-  setPage: (p: 'home' | 'studio' | 'login' | 'profile') => void; setModal: (m: 'new-project' | 'api-key' | 'new-file' | 'game' | null) => void; setActiveFile: (s: string) => void; setSidebarOpen: (v: boolean) => void; setTerminalOpen: (v: boolean) => void; setChat: (s: string) => void; handleEditor: (s?: string) => void; submitPrompt: () => void; shareLink: () => void; notify: (s: string) => void; setPreviewKey: (n: number) => void; setMobileNav: (v: boolean) => void; setTree: (files: FileEntry[]) => void; setNewFileName: (s: string) => void; addFile: () => void; toggleVisibility: () => void; setSelectedModel: (s: string) => void; uploadProjectAsset: (file: File) => void;
+  setPage: (p: Page) => void; setModal: (m: 'new-project' | 'api-key' | 'new-file' | 'game' | null) => void; setActiveFile: (s: string) => void; setSidebarOpen: (v: boolean) => void; setTerminalOpen: (v: boolean) => void; setChat: (s: string) => void; handleEditor: (s?: string) => void; submitPrompt: () => void; shareLink: () => void; notify: (s: string) => void; setPreviewKey: (n: number) => void; setMobileNav: (v: boolean) => void; setTree: (files: FileEntry[]) => void; setNewFileName: (s: string) => void; addFile: () => void; toggleVisibility: () => void; setSelectedModel: (s: string) => void; uploadProjectAsset: (file: File) => void;
 }
 function StudioPage(p: StudioProps) {
   const [leftWidth, setLeftWidth] = useState(220); const [centerWidth, setCenterWidth] = useState(51); const [dragging, setDragging] = useState(false)
@@ -285,3 +300,4 @@ function GameModal({ game, close, play, remix }: { game: Game; close: () => void
   return <Modal close={close} wide><div className="game-modal-art" style={{ '--game-color': game.color } as React.CSSProperties}><span>{game.art}</span><div className="game-art-stars">✦　·　✧</div></div><div className="game-modal-content"><div className="game-genre">{game.genre}</div><h2>{game.title}</h2><p>{game.description}</p><div className="game-modal-meta"><span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span><span>by <b>{game.creator}</b></span><span className="play-count"><Play size={11} fill="currentColor"/> {game.plays} plays</span></div><div className="modal-game-preview"><div className="preview-placeholder"><span>{game.art}</span><p>Open the game on its isolated play origin.</p></div><button className="button button-primary" onClick={play}><Play size={15} fill="currentColor"/> Play game</button></div><button className="remix-button" onClick={remix}><WandSparkles size={14}/> Remix this game <ArrowRight size={13}/></button></div></Modal>
 }
 function Modal({ children, close, wide = false }: { children: React.ReactNode; close: () => void; wide?: boolean }) { return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}><div className={`modal-card ${wide ? 'modal-wide' : ''}`}><button className="modal-close" onClick={close} aria-label="Close"><X size={17}/></button>{children}</div></div> }
+
