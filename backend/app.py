@@ -1,4 +1,3 @@
-Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 """Yulya Studio API. User projects are stored as inert browser assets; this server never runs them."""
 from __future__ import annotations
 

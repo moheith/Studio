@@ -1,4 +1,3 @@
-Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 # Yulya Studio
 
 A browser game studio prototype. Game projects are static browser assets and are never executed by the API. The frontend is React/TypeScript/Vite with Monaco; the API is FastAPI; MongoDB stores account/project metadata and project file bytes. Public and private game assets are served as inert files with restrictive browser sandbox headers.

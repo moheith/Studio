@@ -1,4 +1,3 @@
-Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 import { useState } from 'react'
 import type * as React from 'react'
 import Editor from '@monaco-editor/react'
