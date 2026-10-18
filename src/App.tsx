@@ -1,3 +1,4 @@
+Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import {
@@ -39,13 +40,9 @@ const starterFiles: Record<string, string> = {
   'app.js': `const button = document.querySelector('#play');\nbutton.addEventListener('click', () => {\n  button.innerHTML = 'You are the star ✦';\n  document.querySelector('h1').textContent = 'Let’s go!';\n});`,
 }
 
-const initialTree: FileEntry[] = [
-  { name: 'public', kind: 'folder' },
-  { name: 'src', kind: 'folder' },
-  { name: 'index.html', kind: 'file', language: 'html' },
-  { name: 'style.css', kind: 'file', language: 'css' },
-  { name: 'app.js', kind: 'file', language: 'javascript' },
-]
+// Start with an empty explorer while the requested project is being loaded.
+// Hard-coded placeholder folders used to flash before the server data arrived.
+const initialTree: FileEntry[] = []
 
 export default function App() {
   const pageFromPath = (): Page => {
@@ -129,17 +126,21 @@ export default function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault(); setSaveState('All changes saved'); setToast('Project saved')
+        event.preventDefault()
+        if (!currentProjectId || !activeFile) { setToast('Open a project file before saving'); return }
+        window.clearTimeout(saveTimer.current)
+        setSaveState('Saving…')
+        saveFile(currentProjectId, activeFile, code[activeFile] ?? '').then(() => { setSaveState('All changes saved'); setPreviewKey(value => value + 1); setToast('Project saved') }).catch(error => { setSaveState('Save failed'); setToast(error instanceof Error ? error.message : 'Could not save project') })
       }
       if (event.key === 'Escape') { setModal(null); setMobileNav(false) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [currentProjectId, activeFile, code])
 
   const language = useMemo(() => activeFile.endsWith('.html') ? 'html' : activeFile.endsWith('.css') ? 'css' : activeFile.endsWith('.json') ? 'json' : 'javascript', [activeFile])
   const openStudio = async (game?: Game) => {
-    if (game) { setCurrentGame(game); setCurrentProjectId(game.projectId ?? '') }
+    if (game) { setCurrentGame(game); setCurrentProjectId('') }
     const project = game ?? currentGame
     if (project && user?.username) setPage('studio', editorPath(user.username, project.id))
     else setPage('studio')
@@ -253,6 +254,7 @@ export default function App() {
       const result = await api<{ files: Array<{ path: string }> }>(`/api/projects/${id}/files`)
       const loaded: Record<string, string> = {}; for (const file of result.files) if (/\.(html|css|js|mjs|json)$/.test(file.path)) loaded[file.path] = (await getFile(id, file.path)).content
       setCurrentProjectId(id); setCurrentGame(meta); setCode(loaded); setTree(result.files.map(file => ({ name: file.path, kind: 'file', language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript' })))
+      setActiveFile(previous => loaded[previous] !== undefined ? previous : Object.keys(loaded)[0] ?? '')
       if (meta.visibility === 'public') {
         setPreviewUrl(publicGameUrl(meta.creator, meta.id))
       } else {
@@ -262,8 +264,22 @@ export default function App() {
     } catch (error) { notify(error instanceof Error ? error.message : 'Could not open project') }
   }
 
+  const clearChatHistory = async () => {
+    if (!currentProjectId) return
+    try {
+      await api(`/api/projects/${currentProjectId}/ai/history`, { method: 'DELETE', body: '{}' })
+      setChatHistory([]); notify('This project’s AI chat history was cleared')
+    } catch (error) { notify(error instanceof Error ? error.message : 'Could not clear chat history') }
+  }
+
+  const reloadProjectFiles = async () => {
+    if (!currentProjectId || !currentGame) return
+    await loadProject(currentProjectId, currentGame)
+    notify('Project files refreshed')
+  }
+
   useEffect(() => {
-    if (page !== 'studio' || !sessionReady || currentProjectId) return
+    if (page !== 'studio' || !sessionReady || currentProjectId || currentGame) return
     const route = editorRoute()
     if (!route) { setPage(user ? 'profile' : 'home'); return }
     if (!user) {
@@ -278,16 +294,14 @@ export default function App() {
         if (!match) { setPageState('not-found'); return }
         const game = projectToGame(match)
         setProjects(result.projects.map(projectToGame))
-        setCurrentGame(game)
         return loadProject(game.projectId ?? '', game)
       })
       .catch(() => setPageState('not-found'))
-  }, [page, sessionReady, user, currentProjectId])
+  }, [page, sessionReady, user, currentProjectId, currentGame])
 
-  if (page === 'studio' && !sessionReady && !currentProjectId && !currentGame) return null
-  if (page === 'studio' && !currentProjectId && !currentGame && sessionReady && !editorRoute()) {
-    setPage(user ? 'profile' : 'home')
-    return null
+  if (page === 'studio' && !currentProjectId) {
+    if (sessionReady && !editorRoute()) { setPage(user ? 'profile' : 'home'); return null }
+    return <main className="project-opening"><span className="key-spinner"/><b>Opening your project…</b><small>Loading your files and saved AI conversation.</small></main>
   }
   if (page === 'login') return <LoginPage onBack={() => setPage('home')} onRegister={() => setPage('register')} onLogin={completeLogin} notify={notify} />
   if (page === 'register') return <RegisterPage onBack={() => setPage('home')} onLogin={() => setPage('login')} onRegistered={(email) => { setVerificationEmail(email); sessionStorage.setItem('yulya-verification-email', email); setPage('verify-email') }} notify={notify} />
@@ -336,7 +350,7 @@ export default function App() {
     user, currentGame, activeFile, code, language, tree, sidebarOpen, terminalOpen, chat, chatHistory, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel,
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
     notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
-    onClearChat: () => setChatHistory([]),
+    onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles,
   }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={addFile}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
   return <div className="site-shell">
@@ -387,3 +401,4 @@ function GameModal({ game, close, play, remix }: { game: Game; close: () => void
   return <Modal close={close} wide><div className="game-modal-art" style={{ '--game-color': game.color } as React.CSSProperties}><span>{game.art}</span><div className="game-art-stars">✦　·　✧</div></div><div className="game-modal-content"><div className="game-genre">{game.genre}</div><h2>{game.title}</h2><p>{game.description}</p><div className="game-modal-meta"><span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span><span>by <b>{game.creator}</b></span><span className="play-count"><Play size={11} fill="currentColor"/> {game.plays} plays</span></div><div className="modal-game-preview"><div className="preview-placeholder"><span>{game.art}</span><p>Open the game on its isolated play origin.</p></div><button className="button button-primary" onClick={play}><Play size={15} fill="currentColor"/> Play game</button></div><button className="remix-button" onClick={remix}><WandSparkles size={14}/> Remix this game <ArrowRight size={13}/></button></div></Modal>
 }
 function Modal({ children, close, wide = false }: { children: React.ReactNode; close: () => void; wide?: boolean }) { return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}><div className={`modal-card ${wide ? 'modal-wide' : ''}`}><button className="modal-close" onClick={close} aria-label="Close"><X size={17}/></button>{children}</div></div> }
+
