@@ -15,8 +15,6 @@ services:
         sync: false
       - key: API_ORIGIN
         sync: false
-      - key: PLAY_ORIGIN
-        sync: false
       - key: SESSION_SECRET
         generateValue: true
       - key: API_KEY_ENCRYPTION_SECRET
@@ -29,36 +27,14 @@ services:
         sync: false
       - key: MONGODB_DATABASE
         value: yulya_studio
-      - key: R2_ENDPOINT_URL
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: R2_PRIVATE_BUCKET
-        value: yulya-private
-      - key: R2_PUBLIC_BUCKET
-        value: yulya-public
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: GOOGLE_REDIRECT_URI
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
-      - key: EMAIL_FROM
-        sync: false
 
   - type: web
     name: yulya-frontend
     runtime: static
-    buildCommand: npm install && npm run build
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
     staticPublishPath: dist
     envVars:
       - key: VITE_API_ORIGIN
-        sync: false
-      - key: VITE_PLAY_ORIGIN
         sync: false
     routes:
       - type: rewrite
