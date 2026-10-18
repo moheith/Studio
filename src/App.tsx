@@ -176,9 +176,16 @@ export default function App() {
     catch (error) { notify(error instanceof Error ? error.message : 'Could not change visibility') }
   }
   const saveKey = async () => {
-    if (apiKey.trim().length < 12) { notify('Enter a valid Gemini API key'); return }
-    try { await api('/api/keys/gemini', { method: 'POST', body: JSON.stringify({ api_key: apiKey.trim() }) }); const result = await api<{models: Array<{id: string; display_name: string}>}>('/api/models'); setModels(result.models); setSelectedModel(result.models[0]?.id ?? ''); setHasKey(true); setApiKey(''); setModal(null); notify('Gemini key verified and connected') }
-    catch (error) { notify(error instanceof Error ? error.message : 'Could not verify API key') }
+    if (apiKey.trim().length < 12) throw new Error('Enter a valid Gemini API key')
+    // Key validation and storage succeeds independently of model discovery.
+    await api('/api/keys/gemini', { method: 'POST', body: JSON.stringify({ api_key: apiKey.trim() }) })
+    setHasKey(true); setApiKey(''); setModal(null); notify('Gemini key verified and connected')
+    try {
+      const result = await api<{models: Array<{id: string; display_name: string}>}>('/api/models')
+      setModels(result.models); setSelectedModel(result.models[0]?.id ?? '')
+    } catch {
+      notify('Key connected. Models could not be loaded yet; try again shortly.')
+    }
   }
   const removeKey = async () => {
     try { await api('/api/keys/gemini', { method: 'DELETE' }); setHasKey(false); setModels([]); setSelectedModel(''); setModal(null); notify('Gemini key removed') }
@@ -257,13 +264,14 @@ export default function App() {
     />
     {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
     {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
+    {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
   </>
   if (page === 'studio') return <><StudioPage {...{
     user, currentGame, activeFile, code, language, tree, sidebarOpen, terminalOpen, chat, chatHistory, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel,
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
     notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
     onClearChat: () => setChatHistory([]),
-  }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={addFile}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}</>
+  }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={addFile}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
   return <div className="site-shell">
     <header className="topbar home-topbar">
@@ -297,8 +305,17 @@ function GameCard({ game, index, onClick }: { game: Game; index: number; onClick
 function NewProjectModal({ name, setName, visibility, setVisibility, close, create }: { name: string; setName: (s: string) => void; visibility: 'private' | 'public'; setVisibility: (v: 'private' | 'public') => void; close: () => void; create: () => void }) {
   return <Modal close={close}><div className="modal-icon"><Sparkles size={18}/></div><div className="eyebrow">NEW LITTLE UNIVERSE</div><h2>Give your game a name.</h2><p>We’ll set up a blank canvas with a live preview.</p><label>Project name<input autoFocus value={name} onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, '-'))} placeholder="little-star"/></label><div className="visibility-choice"><button className={visibility === 'private' ? 'visibility-selected' : ''} onClick={() => setVisibility('private')}><LockKeyhole size={15}/><span><b>Private</b><small>Only you can see it</small></span>{visibility === 'private' && <Check size={14}/>}</button><button className={visibility === 'public' ? 'visibility-selected' : ''} onClick={() => setVisibility('public')}><Globe2 size={15}/><span><b>Public</b><small>Show it in the arcade</small></span>{visibility === 'public' && <Check size={14}/>}</button></div><button className="button button-primary modal-submit" onClick={create}>Create project <ArrowRight size={15}/></button></Modal>
 }
-function KeyModal({ value, setValue, close, save, remove, hasKey }: { value: string; setValue: (s: string) => void; close: () => void; save: () => void; remove: () => void; hasKey: boolean }) {
-  return <Modal close={close}><div className="modal-icon key-modal-icon"><Zap size={18}/></div><div className="eyebrow">BRING YOUR OWN KEY</div><h2>{hasKey ? 'Replace your Gemini key.' : 'Connect your Gemini key.'}</h2><p>Your key lets the coding assistant work for you. It’s encrypted and never shown again.</p><label>Google AI Studio API key<input autoFocus type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder="Paste your API key" autoComplete="off"/></label><a className="key-help" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Get a key from Google AI Studio <ArrowUpRight size={12}/></a><button className="button button-primary modal-submit" onClick={save}>Verify and connect <ArrowRight size={15}/></button>{hasKey && <button className="quiet-button" onClick={remove}>Remove connected key</button>}</Modal>
+function KeyModal({ value, setValue, close, save, remove, hasKey }: { value: string; setValue: (s: string) => void; close: () => void; save: () => Promise<void>; remove: () => void; hasKey: boolean }) {
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState('')
+  const verify = async () => {
+    if (checking) return
+    setChecking(true); setError('')
+    try { await save() }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not verify this key. Please try again.') }
+    finally { setChecking(false) }
+  }
+  return <Modal close={close}><div className="modal-icon key-modal-icon"><Zap size={18}/></div><div className="eyebrow">BRING YOUR OWN KEY</div><h2>{hasKey ? 'Replace your Gemini key.' : 'Connect your Gemini key.'}</h2><p>Your key lets the coding assistant work for you. It’s encrypted and never shown again.</p><label>Google AI Studio API key<input autoFocus type="password" value={value} onChange={(e) => { setValue(e.target.value); setError('') }} placeholder="Paste your API key" autoComplete="off" disabled={checking}/></label><a className="key-help" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Get a key from Google AI Studio <ArrowUpRight size={12}/></a>{checking && <div className="key-status" role="status" aria-live="polite"><span className="key-spinner"/>Checking your key with Google…</div>}{error && <div className="key-error" role="alert">{error}</div>}<button className="button button-primary modal-submit" onClick={verify} disabled={checking || !value.trim()}>{checking ? 'Verifying key…' : 'Verify and connect'} {!checking && <ArrowRight size={15}/>}</button>{hasKey && <button className="quiet-button" onClick={remove} disabled={checking}>Remove connected key</button>}</Modal>
 }
 function GameModal({ game, close, play, remix }: { game: Game; close: () => void; play: () => void; remix: () => void }) {
   return <Modal close={close} wide><div className="game-modal-art" style={{ '--game-color': game.color } as React.CSSProperties}><span>{game.art}</span><div className="game-art-stars">✦　·　✧</div></div><div className="game-modal-content"><div className="game-genre">{game.genre}</div><h2>{game.title}</h2><p>{game.description}</p><div className="game-modal-meta"><span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span><span>by <b>{game.creator}</b></span><span className="play-count"><Play size={11} fill="currentColor"/> {game.plays} plays</span></div><div className="modal-game-preview"><div className="preview-placeholder"><span>{game.art}</span><p>Open the game on its isolated play origin.</p></div><button className="button button-primary" onClick={play}><Play size={15} fill="currentColor"/> Play game</button></div><button className="remix-button" onClick={remix}><WandSparkles size={14}/> Remix this game <ArrowRight size={13}/></button></div></Modal>
