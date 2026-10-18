@@ -1,15 +1,17 @@
 # Yulya Studio
 
-A browser game studio prototype. Game projects are static browser assets and are never executed by the API. The frontend is React/TypeScript/Vite with Monaco; the API is FastAPI; MongoDB stores account and project metadata.
+A browser game studio prototype. The studio frontend and FastAPI API are built into one Render web service. Game projects are static browser assets and are never executed by the API. MongoDB stores account and project metadata.
 
-## First live deployment
+## One-service Render deployment
 
-- The first milestone is a public landing page and API health endpoint on Render.
-- Google sign-in and Cloudflare are intentionally out of the first deployment.
-- MongoDB Atlas is required for persistent account/project metadata. Set `MONGODB_URI` and `MONGODB_DATABASE` on the API service.
-- On Render, set `APP_ORIGIN` and `API_ORIGIN` to the frontend and API URLs. Keep `SESSION_SECRET`, `API_KEY_ENCRYPTION_SECRET`, `API_KEY_HMAC_SECRET`, and `PREVIEW_TOKEN_SECRET` as separate high-entropy secrets.
+- The Render Blueprint in `render.yaml` creates one free Docker web service named `yulya-studio`.
+- The Docker build compiles the React/TypeScript/Vite frontend, installs the Python API dependencies, and packages both into one container. FastAPI serves the built frontend and API routes from the same origin.
+- Set `APP_ORIGIN` and `API_ORIGIN` to the combined service URL (for example, `https://yulya-studio.onrender.com`).
+- Keep `SESSION_SECRET`, `API_KEY_ENCRYPTION_SECRET`, `API_KEY_HMAC_SECRET`, and `PREVIEW_TOKEN_SECRET` as separate high-entropy secrets. When migrating an existing service, keep the same encryption and HMAC keys so stored Gemini keys remain usable.
+- Set `MONGODB_URI` and `MONGODB_DATABASE` for account and project metadata.
 - Email registration needs a verified Resend sender (`RESEND_API_KEY`, `EMAIL_FROM`). Until configured, visitors can browse but cannot register.
-- Without R2, project files use local storage. Render's free service filesystem is ephemeral, so this is only suitable for the initial landing-page demonstration. Add durable object storage before using real projects.
+- Without R2, project files use local storage. Render's free service filesystem is ephemeral, so project files can be lost when the service restarts, redeploys, or spins down. Add durable object storage before using real projects.
+- Free Render web services can sleep after idle time. The first request can take longer while the combined service starts.
 
 ## Local development
 
