@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowRight, KeyRound, MoreHorizontal, Plus, UserRound } from 'lucide-react'
+import { ArrowRight, Check, Gamepad2, KeyRound, LogOut, Plus } from 'lucide-react'
+import type * as React from 'react'
 import type { Game, User } from '../types'
 
 type ProfilePageProps = {
@@ -7,98 +8,75 @@ type ProfilePageProps = {
   hasKey: boolean
   projects: Game[]
   onHome: () => void
+  onArcade: () => void
   onCreate: () => void
   onOpen: (game: Game) => void
   onKey: () => void
-  onUsername: (name: string) => Promise<void>
   onLogout: () => void
+  onUsername: (name: string) => Promise<void>
 }
 
-const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/
-
-export default function ProfilePage({ user, hasKey, projects, onHome, onCreate, onOpen, onKey, onUsername, onLogout }: ProfilePageProps) {
-  const [username, setUsername] = useState(user?.username ?? '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const hasUsername = Boolean(user?.username)
-  const validUsername = USERNAME_PATTERN.test(username.trim().toLowerCase())
+export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, onCreate, onOpen, onKey, onLogout, onUsername }: ProfilePageProps) {
+  const [username, setUsername] = useState('')
+  const [usernameError, setUsernameError] = useState('')
+  const [savingUsername, setSavingUsername] = useState(false)
+  const displayName = user?.username || user?.email?.split('@')[0] || 'Creator'
   const avatar = user?.avatar
     ? <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
-    : user?.username?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'Y'
+    : displayName.slice(0, 1).toUpperCase()
 
-  async function saveUsername() {
-    const value = username.trim().toLowerCase()
-    if (!USERNAME_PATTERN.test(value)) {
-      setError('Use 3–24 lowercase letters, numbers, or underscores.')
-      return
-    }
-    setSaving(true)
-    setError('')
-    try {
-      await onUsername(value)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not save username.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return <div className="profile-shell clean-profile-shell">
-    <header className="topbar profile-topbar clean-profile-topbar">
+  return <div className="profile-shell creator-profile-shell">
+    <header className="topbar profile-topbar creator-profile-topbar">
       <button className="brand" onClick={onHome} aria-label="Yulya Studio home"><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span></button>
-      <nav className="clean-profile-nav" aria-label="Account navigation">
-        <button className="quiet-button" onClick={onHome}>Arcade</button>
-        <button className="quiet-button" onClick={onLogout}>Sign out</button>
-        <div className="profile-avatar clean-profile-avatar" aria-label="Your avatar">{avatar}</div>
+      <nav className="creator-profile-nav" aria-label="Account navigation">
+        <button className="quiet-button" onClick={onArcade}>Arcade</button>
+        <button className="creator-signout" onClick={onLogout}><LogOut size={14}/> Sign out</button>
       </nav>
     </header>
 
-    <main className="clean-profile-main">
-      <div className="clean-profile-heading">
-        <div><div className="clean-profile-kicker">ACCOUNT</div><h1>Profile</h1><p>Manage your account and projects.</p></div>
-        <button className="button button-outline clean-key-button" onClick={onKey}><KeyRound size={15} /> {hasKey ? 'Manage AI key' : 'Add AI key'}</button>
+    <main className="creator-profile-main">
+      <div className="creator-profile-heading">
+        <div><span className="creator-profile-eyebrow">CREATOR ACCOUNT</span><h1>Your profile</h1><p>Manage your projects and studio settings.</p></div>
+        <button className="button button-outline creator-settings-button" onClick={onKey}><KeyRound size={15}/>{hasKey ? 'AI settings' : 'Connect AI'}</button>
       </div>
 
-      <section className="clean-profile-panel" aria-labelledby="account-details-title">
-        <div className="clean-panel-heading"><div><h2 id="account-details-title">Account details</h2><p>Your profile information and sign-in email.</p></div></div>
-        <div className="clean-account-row">
-          <div className="profile-avatar clean-account-avatar">{avatar}</div>
-          <div className="clean-account-email"><span>Email</span><strong>{user?.email}</strong></div>
+      <section className="creator-identity-card" aria-label="Your profile">
+        <div className="creator-cover" aria-hidden="true"><span>✳</span></div>
+        <div className="creator-identity-content">
+          <div className="creator-avatar">{avatar}</div>
+          <div className="creator-identity-text"><h2>{displayName}</h2><p>@{user?.username || 'username not set'}</p><span>{user?.email}</span></div>
+          {user?.username && <span className="creator-username-status"><Check size={13}/> Username claimed</span>}
         </div>
-        <div className="clean-username-row">
-          <div className="clean-username-copy"><label htmlFor="creator-username">Username</label>
-            {hasUsername ? <><strong className="clean-current-username">@{user?.username}</strong><small>This username is claimed and cannot be changed.</small></> : <small>Choose an available username to create projects.</small>}
-          </div>
-          {!hasUsername && <div className="clean-username-entry">
-            <div className={`clean-username-input ${error ? 'has-error' : ''}`}>
-              <span aria-hidden="true">@</span>
-              <input id="creator-username" value={username} maxLength={24} autoComplete="username" placeholder="username" aria-invalid={Boolean(error)} aria-describedby="username-hint username-error"
-                onChange={event => { setUsername(event.target.value.toLowerCase().replace(/\s/g, '')); setError('') }}
-                onKeyDown={event => { if (event.key === 'Enter' && validUsername && !saving) void saveUsername() }} disabled={saving} />
-            </div>
-            <div className="clean-username-meta"><span id="username-hint">3–24 characters · letters, numbers, underscores</span><span>{username.length}/24</span></div>
-            {error && <p className="clean-username-error" id="username-error" role="alert">{error}</p>}
-            <button className="button button-primary clean-save-username" onClick={() => void saveUsername()} disabled={!validUsername || saving}>{saving ? 'Saving…' : 'Save username'} {!saving && <ArrowRight size={14} />}</button>
-          </div>}
+        {!user?.username && <form className="creator-username-setup" onSubmit={async event => {
+          event.preventDefault()
+          const value = username.trim().toLowerCase()
+          if (!/^[a-z0-9_]{3,24}$/.test(value)) { setUsernameError('Use 3–24 lowercase letters, numbers, or underscores.'); return }
+          setSavingUsername(true); setUsernameError('')
+          try { await onUsername(value) } catch (error) { setUsernameError(error instanceof Error ? error.message : 'Could not save username.') }
+          finally { setSavingUsername(false) }
+        }}>
+          <div><b>Choose your creator username</b><small>It will identify your profile and is unique to your account.</small></div>
+          <div className="creator-username-control"><span>@</span><input value={username} maxLength={24} placeholder="username" autoComplete="username" onChange={event => { setUsername(event.target.value.toLowerCase().replace(/\s/g, '')); setUsernameError('') }}/><button className="button button-primary" disabled={savingUsername || !/^[a-z0-9_]{3,24}$/.test(username)}>{savingUsername ? 'Saving…' : 'Save username'}</button></div>
+          {usernameError && <p role="alert">{usernameError}</p>}
+        </form>}
+        <div className="creator-profile-stats">
+          <div><strong>{projects.length}</strong><span>Projects</span></div>
+          <div><strong>{projects.filter(project => project.visibility === 'public').length}</strong><span>Public games</span></div>
+          <div className="creator-ai-stat"><span className={`creator-ai-dot ${hasKey ? 'is-connected' : ''}`}/><span>AI key {hasKey ? 'connected' : 'not connected'}</span><button onClick={onKey}>{hasKey ? 'Manage' : 'Set up'} <ArrowRight size={12}/></button></div>
         </div>
       </section>
 
-      <section className="clean-projects-section" aria-labelledby="projects-title">
-        <div className="clean-projects-heading"><div><h2 id="projects-title">Projects <span>{projects.length}</span></h2><p>Your games and drafts.</p></div>
-          <button className="button button-primary clean-new-project" onClick={onCreate} disabled={!hasUsername} title={!hasUsername ? 'Add a username before creating a project' : 'Create a new project'}><Plus size={16} /> New project</button>
+      <section className="creator-projects-section" aria-labelledby="creator-projects-title">
+        <div className="creator-projects-heading"><div><span className="creator-profile-eyebrow">YOUR WORKSPACE</span><h2 id="creator-projects-title">Projects <span>{projects.length}</span></h2></div>
+          <button className="button button-primary creator-new-project" onClick={onCreate} disabled={!user?.username} title={!user?.username ? 'Choose a username before creating a project' : 'Create a new project'}><Plus size={16}/> New project</button>
         </div>
-        {!hasUsername && <div className="clean-projects-notice"><UserRound size={15} /><span>Add a username in Account details to enable project creation.</span></div>}
-        {projects.length === 0 ? <div className="clean-empty-projects">
-          <div className="clean-empty-icon"><Plus size={19} /></div>
-          <h3>No projects yet</h3>
-          <p>{hasUsername ? 'Create a project to start building your first game.' : 'Your projects will appear here after you create one.'}</p>
-          {hasUsername && <button className="button button-outline" onClick={onCreate}>Create your first project <ArrowRight size={14} /></button>}
-        </div> : <div className="project-grid clean-project-grid">
-          {projects.map(game => <button className="project-card" key={game.projectId} onClick={() => onOpen(game)}><div className="project-thumb"><span>✦</span><span className="project-thumb-small">{game.title}</span></div><div className="project-card-bottom"><div><b>{game.title}</b><small>Edited recently · {game.visibility}</small></div><MoreHorizontal size={17} /></div></button>)}
-        </div>}
+        {projects.length ? <div className="creator-project-grid">
+          {projects.map(project => <button className="creator-project-card" key={project.projectId || project.id} onClick={() => onOpen(project)}>
+            <div className="creator-project-art" style={{ '--game-color': project.color } as React.CSSProperties}><span>{project.art || '✦'}</span><small>{project.visibility === 'public' ? 'PUBLIC' : 'PRIVATE'}</small></div>
+            <div className="creator-project-info"><div><h3>{project.title}</h3><p>{project.description}</p></div><ArrowRight size={15}/></div>
+          </button>)}
+        </div> : <div className="creator-empty-projects"><div className="creator-empty-icon"><Gamepad2 size={21}/></div><h3>Your next game starts here</h3><p>Create a project to open the editor, write your game, and preview it as you build.</p><button className="button button-outline" onClick={onCreate} disabled={!user?.username}><Plus size={15}/> Create your first project</button></div>}
       </section>
-
-      <div className="clean-ai-status"><span className={`clean-ai-status-dot ${hasKey ? 'connected' : ''}`} /> AI key {hasKey ? 'connected' : 'not connected'} <button onClick={onKey}>{hasKey ? 'Manage' : 'Set up'} <ArrowRight size={13} /></button></div>
     </main>
   </div>
 }
