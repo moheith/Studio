@@ -26,4 +26,3 @@ export default function AuthLayout({ eyebrow, title, description, onBack, childr
     </main>
   )
 }
-

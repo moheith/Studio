@@ -48,4 +48,3 @@ A browser game studio prototype. Game projects are static browser assets and are
 ## Backup and restore
 
 Back up the MongoDB database, including the `files` collection that contains project bytes. Restore MongoDB before directing users to the service, then check a private preview and public game URL. Configure MongoDB Atlas backup retention in the provider dashboard.
-

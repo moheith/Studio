@@ -1,4 +1,3 @@
-Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import {
@@ -7,14 +6,14 @@ import {
   Play, Rocket, Sparkles, WandSparkles,
   X, Zap,
 } from 'lucide-react'
-import { api, getFile, saveFile, setCsrfToken, streamSse, uploadAsset } from './api'
+import { api, deleteFile, getFile, saveFile, setCsrfToken, streamSse, uploadAsset } from './api'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import ProfilePage from './pages/ProfilePage'
 import PublicProfilePage from './pages/PublicProfilePage'
 import StudioPage from './pages/StudioPage'
-import type { Game, FileEntry, Page, User } from './types'
+import type { Game, FileEntry, Page, User, ChatMessage } from './types'
 function projectToGame(value: Record<string, unknown>): Game {
   const id = String(value.slug ?? value.id ?? 'project')
   const username = String(value.username ?? 'creator')
@@ -73,11 +72,12 @@ export default function App() {
   const [currentProjectId, setCurrentProjectId] = useState('')
   const [code, setCode] = useState<Record<string, string>>(starterFiles)
   const [activeFile, setActiveFile] = useState('app.js')
+  const [openFiles, setOpenFiles] = useState<string[]>(['index.html', 'style.css', 'app.js'])
   const [tree, setTree] = useState(initialTree)
   const [terminalOpen, setTerminalOpen] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [chat, setChat] = useState('')
-  const [chatHistory, setChatHistory] = useState<string[]>([])
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [modal, setModal] = useState<'new-project' | 'api-key' | 'new-file' | 'game' | null>(null)
   const [toast, setToast] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -170,20 +170,51 @@ export default function App() {
   const submitPrompt = async () => {
     if (!chat.trim()) return
     if (!selectedModel) { notify('Connect a key and choose an available Gemini model first'); return }
-    const prompt = chat.trim(); setChat(''); setChatHistory((items) => [...items, `You: ${prompt}`]); setTerminalOpen(true)
-    if (!currentProjectId) { setChatHistory((items) => [...items, 'Studio AI: Create a project to start an AI coding session.']); return }
+    const prompt = chat.trim()
+    setChat('')
+    const userMsgId = Date.now().toString()
+    const aiMsgId = (Date.now() + 1).toString()
+    setChatMessages(prev => [
+      ...prev,
+      { id: userMsgId, role: 'user', text: prompt, time: Date.now() },
+      { id: aiMsgId, role: 'ai', text: 'Thinking…', time: Date.now(), tools: [] }
+    ])
+    setTerminalOpen(true)
+    if (!currentProjectId) {
+      setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: 'Studio AI: Open a project to start an AI coding session.' } : m))
+      return
+    }
     try {
       let answer = ''
+      const toolsUsed: string[] = []
       for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel })) {
-        if (event.type === 'token') { answer += event.data.text; setChatHistory((items) => { const next = [...items]; const last = next[next.length - 1]; if (last?.startsWith('Studio AI:')) next[next.length - 1] = `Studio AI: ${answer}`; else next.push(`Studio AI: ${answer}`); return next }) }
-        if (event.type === 'tool') notify(`Updated ${event.data.path}`)
-        if (event.type === 'reload_preview') setPreviewKey((v) => v + 1)
-        if (event.type === 'error') { setChatHistory((items) => [...items, `Studio AI: ${event.data.message}`]); return }
+        if (event.type === 'token') {
+          answer += event.data.text
+          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: answer, tools: [...toolsUsed] } : m))
+        }
+        if (event.type === 'tool') {
+          toolsUsed.push(event.data.path)
+          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, tools: [...toolsUsed] } : m))
+          notify(`Updated ${event.data.path}`)
+        }
+        if (event.type === 'reload_preview') setPreviewKey(v => v + 1)
+        if (event.type === 'error') {
+          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Error: ${event.data.message}` } : m))
+          return
+        }
       }
       const current = await api<{ files: Array<{ path: string }> }>(`/api/projects/${currentProjectId}/files`)
-      const nextCode: Record<string, string> = {}; for (const file of current.files) { if (/\.(html|css|js|mjs|json)$/.test(file.path)) nextCode[file.path] = (await getFile(currentProjectId, file.path)).content }
-      setCode(nextCode); setPreviewKey((v) => v + 1)
-    } catch (error) { setChatHistory((items) => [...items, `Studio AI: ${error instanceof Error ? error.message : 'Request failed'}`]) }
+      const nextCode: Record<string, string> = {}
+      for (const file of current.files) {
+        if (/\.(html|css|js|mjs|json)$/.test(file.path)) {
+          nextCode[file.path] = (await getFile(currentProjectId, file.path)).content
+        }
+      }
+      setCode(nextCode)
+      setPreviewKey(v => v + 1)
+    } catch (error) {
+      setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Studio AI: ${error instanceof Error ? error.message : 'Request failed'}` } : m))
+    }
   }
   const shareLink = () => {
     if (currentGame?.visibility !== 'public') { notify('Make this project public before sharing its game link'); return }
@@ -237,8 +268,39 @@ export default function App() {
     const name = newFileName.trim()
     if (!name || name.includes('..') || name.startsWith('/') || !/\.(html|css|js|mjs|json|png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(name)) { notify('Use a supported browser file name'); return }
     setTree((items) => items.some((file) => file.name === name) ? items : [...items, { name, kind: 'file', language: name.endsWith('.css') ? 'css' : name.endsWith('.html') ? 'html' : name.endsWith('.json') ? 'json' : 'javascript' }])
-    setCode((files) => ({ ...files, [name]: '' })); setActiveFile(name); setNewFileName(''); setModal(null)
+    setCode((files) => ({ ...files, [name]: '' }))
+    setActiveFile(name)
+    setOpenFiles((tabs) => tabs.includes(name) ? tabs : [...tabs, name])
+    setNewFileName('')
+    setModal(null)
     if (currentProjectId) saveFile(currentProjectId, name, '').catch((error) => notify(error.message))
+  }
+  const deleteProjectFile = async (filePath: string) => {
+    if (!currentProjectId) return
+    if (filePath === 'index.html') {
+      notify('index.html is required for every game project and cannot be deleted')
+      return
+    }
+    try {
+      await deleteFile(currentProjectId, filePath)
+      setTree((items) => items.filter((f) => f.name !== filePath))
+      setCode((files) => {
+        const copy = { ...files }
+        delete copy[filePath]
+        return copy
+      })
+      setOpenFiles((tabs) => {
+        const next = tabs.filter((t) => t !== filePath)
+        if (activeFile === filePath) {
+          setActiveFile(next[0] || 'index.html')
+        }
+        return next
+      })
+      setPreviewKey((v) => v + 1)
+      notify(`Deleted ${filePath}`)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not delete file')
+    }
   }
   const uploadProjectAsset = async (file: File) => {
     if (!currentProjectId) { notify('Open a saved project before uploading assets'); return }
@@ -252,9 +314,43 @@ export default function App() {
   const loadProject = async (id: string, meta: Game) => {
     try {
       const result = await api<{ files: Array<{ path: string }> }>(`/api/projects/${id}/files`)
-      const loaded: Record<string, string> = {}; for (const file of result.files) if (/\.(html|css|js|mjs|json)$/.test(file.path)) loaded[file.path] = (await getFile(id, file.path)).content
-      setCurrentProjectId(id); setCurrentGame(meta); setCode(loaded); setTree(result.files.map(file => ({ name: file.path, kind: 'file', language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript' })))
-      setActiveFile(previous => loaded[previous] !== undefined ? previous : Object.keys(loaded)[0] ?? '')
+      const loaded: Record<string, string> = {}
+      for (const file of result.files) {
+        if (/\.(html|css|js|mjs|json)$/.test(file.path)) {
+          loaded[file.path] = (await getFile(id, file.path)).content
+        }
+      }
+      setCurrentProjectId(id)
+      setCurrentGame(meta)
+      setCode(loaded)
+      const treeList: FileEntry[] = result.files.map(file => ({
+        name: file.path,
+        kind: 'file',
+        language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript'
+      }))
+      setTree(treeList)
+      const firstFile = Object.keys(loaded)[0] || 'index.html'
+      setActiveFile(prev => loaded[prev] !== undefined ? prev : firstFile)
+      setOpenFiles(prev => {
+        const valid = prev.filter(f => loaded[f] !== undefined)
+        return valid.length ? valid : Object.keys(loaded).slice(0, 5)
+      })
+
+      // Load persistent AI conversation history
+      try {
+        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; created_at: number }> }>(`/api/projects/${id}/ai/history`)
+        if (historyData?.conversations) {
+          const msgs: ChatMessage[] = []
+          for (const conv of historyData.conversations) {
+            if (conv.prompt) msgs.push({ id: `${conv.id}-user`, role: 'user', text: conv.prompt, time: conv.created_at })
+            if (conv.response) msgs.push({ id: `${conv.id}-ai`, role: 'ai', text: conv.response, time: conv.created_at })
+          }
+          setChatMessages(msgs)
+        }
+      } catch {
+        // history empty or offline
+      }
+
       if (meta.visibility === 'public') {
         setPreviewUrl(publicGameUrl(meta.creator, meta.id))
       } else {
@@ -268,7 +364,8 @@ export default function App() {
     if (!currentProjectId) return
     try {
       await api(`/api/projects/${currentProjectId}/ai/history`, { method: 'DELETE', body: '{}' })
-      setChatHistory([]); notify('This project’s AI chat history was cleared')
+      setChatMessages([])
+      notify('This project’s AI chat history was cleared')
     } catch (error) { notify(error instanceof Error ? error.message : 'Could not clear chat history') }
   }
 
@@ -347,9 +444,9 @@ export default function App() {
   }
   if (page === 'not-found') return <main className="route-not-found"><span>404</span><h1>This page isn’t available</h1><p>The editor is private to its owner, or this link is incorrect.</p><button className="button button-primary" onClick={() => setPage(user ? 'profile' : 'home')}>Return to Yulya Studio</button></main>
   if (page === 'studio') return <><StudioPage {...{
-    user, currentGame, activeFile, code, language, tree, sidebarOpen, terminalOpen, chat, chatHistory, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel,
+    user, currentGame, activeFile, openFiles, setOpenFiles, code, language, tree, sidebarOpen, terminalOpen, chat, chatMessages, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel,
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
-    notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
+    notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
     onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles,
   }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={addFile}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
@@ -401,4 +498,3 @@ function GameModal({ game, close, play, remix }: { game: Game; close: () => void
   return <Modal close={close} wide><div className="game-modal-art" style={{ '--game-color': game.color } as React.CSSProperties}><span>{game.art}</span><div className="game-art-stars">✦　·　✧</div></div><div className="game-modal-content"><div className="game-genre">{game.genre}</div><h2>{game.title}</h2><p>{game.description}</p><div className="game-modal-meta"><span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span><span>by <b>{game.creator}</b></span><span className="play-count"><Play size={11} fill="currentColor"/> {game.plays} plays</span></div><div className="modal-game-preview"><div className="preview-placeholder"><span>{game.art}</span><p>Open the game on its isolated play origin.</p></div><button className="button button-primary" onClick={play}><Play size={15} fill="currentColor"/> Play game</button></div><button className="remix-button" onClick={remix}><WandSparkles size={14}/> Remix this game <ArrowRight size={13}/></button></div></Modal>
 }
 function Modal({ children, close, wide = false }: { children: React.ReactNode; close: () => void; wide?: boolean }) { return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}><div className={`modal-card ${wide ? 'modal-wide' : ''}`}><button className="modal-close" onClick={close} aria-label="Close"><X size={17}/></button>{children}</div></div> }
-

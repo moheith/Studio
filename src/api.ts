@@ -27,6 +27,12 @@ export async function saveFile(projectId: string, path: string, content: string)
   return api<{ etag: string }>(`/api/projects/${encodeURIComponent(projectId)}/files/${path.split('/').map(encodeURIComponent).join('/')}`, { method: 'PUT', headers: { 'If-Match': fileEtags.get(`${projectId}:${path}`) ?? '' }, body: JSON.stringify({ content }) }).then((result) => { fileEtags.set(`${projectId}:${path}`, result.etag); return result })
 }
 
+export async function deleteFile(projectId: string, path: string) {
+  const result = await api<{ deleted: string }>(`/api/projects/${encodeURIComponent(projectId)}/files/${path.split('/').map(encodeURIComponent).join('/')}`, { method: 'DELETE' })
+  fileEtags.delete(`${projectId}:${path}`)
+  return result
+}
+
 export async function uploadAsset(projectId: string, file: File) {
   const headers = new Headers({ 'Content-Type': file.type || 'application/octet-stream' })
   if (csrfToken) headers.set('X-CSRF-Token', csrfToken)

@@ -1,4 +1,3 @@
-Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 """Yulya Studio API. User projects are stored as inert browser assets; this server never runs them."""
 from __future__ import annotations
 
@@ -893,5 +892,4 @@ async def named_profile(username: str):
 @app.get("/{path:path}", include_in_schema=False)
 async def frontend_routes(path: str):
     return frontend_file(path)
-
 

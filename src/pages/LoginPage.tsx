@@ -43,4 +43,3 @@ export default function LoginPage({ onBack, onRegister, onLogin, notify }: Login
     </form>
   </AuthLayout>
 }
-

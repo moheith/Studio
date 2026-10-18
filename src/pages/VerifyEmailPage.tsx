@@ -39,4 +39,3 @@ export default function VerifyEmailPage({ email, onBack, onLogin, notify }: Veri
     </form>
   </AuthLayout>
 }
-

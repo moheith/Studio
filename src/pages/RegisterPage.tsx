@@ -40,4 +40,3 @@ export default function RegisterPage({ onBack, onLogin, onRegistered, notify }: 
     </form>
   </AuthLayout>
 }
-

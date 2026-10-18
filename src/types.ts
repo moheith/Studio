@@ -12,6 +12,13 @@ export type Game = {
 }
 
 export type FileEntry = { name: string; kind: 'file' | 'folder'; language?: string }
-export type User = { id?: string; username: string; email: string; avatar?: string }
-export type Page = 'home' | 'studio' | 'login' | 'register' | 'verify-email' | 'profile' | 'not-found'
+export type ChatMessage = {
+  id: string
+  role: 'user' | 'ai'
+  text: string
+  time?: number
+  tools?: string[]
+}
 
+export type User = { id?: string; username: string; email: string; avatar?: string; has_api_key?: boolean }
+export type Page = 'home' | 'studio' | 'login' | 'register' | 'verify-email' | 'profile' | 'not-found'
