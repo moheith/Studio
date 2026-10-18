@@ -1,3 +1,4 @@
+Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import {
@@ -17,6 +18,10 @@ function projectToGame(value: Record<string, unknown>): Game {
   const id = String(value.slug ?? value.id ?? 'project')
   const username = String(value.username ?? 'creator')
   return { id, projectId: String(value.id ?? ''), title: String(value.title ?? id), creator: username, genre: 'WEB GAME', color: '#c7a6ff', art: '✦', plays: String(value.plays ?? 0), description: String(value.description ?? 'A game made in Yulya Studio.'), visibility: value.visibility === 'public' ? 'public' : 'private' }
+}
+function publicGameUrl(username: string, slug: string) {
+  const origin = (import.meta.env.VITE_API_ORIGIN || window.location.origin).replace(/\/$/, '')
+  return `${origin}/api/games/${encodeURIComponent(username)}/${encodeURIComponent(slug)}/index.html`
 }
 
 const starterFiles: Record<string, string> = {
@@ -153,7 +158,7 @@ export default function App() {
   }
   const shareLink = () => {
     if (currentGame?.visibility !== 'public') { notify('Make this project public before sharing its game link'); return }
-    navigator.clipboard?.writeText(`${import.meta.env.VITE_PLAY_ORIGIN ?? 'https://play.example.com'}/${user?.username ?? 'you'}/${currentGame?.id ?? 'little-star'}/`).catch(() => {})
+    navigator.clipboard?.writeText(publicGameUrl(user?.username ?? currentGame.creator, currentGame.id)).catch(() => {})
     notify('Game link copied')
   }
   const toggleVisibility = async () => {
@@ -163,7 +168,7 @@ export default function App() {
       await api(`/api/projects/${currentProjectId}/visibility`, { method: 'PATCH', body: JSON.stringify({ visibility: next }) })
       const updated = { ...currentGame, visibility: next as 'public' | 'private' }
       setCurrentGame(updated); setProjects(items => items.map(item => item.projectId === currentProjectId ? updated : item))
-      if (next === 'public') setPreviewUrl(`${import.meta.env.VITE_PLAY_ORIGIN ?? 'https://play.example.com'}/${user?.username}/${updated.id}/`)
+      if (next === 'public') setPreviewUrl(publicGameUrl(user?.username ?? currentGame.creator, updated.id))
       else { const token = await api<{url:string}>(`/api/projects/${currentProjectId}/preview-token`, { method: 'POST', body: '{}' }); setPreviewUrl(token.url) }
       setPreviewKey(v => v + 1); notify(next === 'public' ? 'Game is public in the arcade' : 'Game is private')
     }
@@ -255,7 +260,7 @@ export default function App() {
       <section className="how-section" id="how"><div className="how-title"><div className="eyebrow">FROM THOUGHT TO THUMBS-UP</div><h2>Three steps.<br/><em>One playable idea.</em></h2></div><div className="how-steps"><div className="how-step"><span className="step-index">01</span><div className="step-icon"><MessageSquare size={20}/></div><h3>Tell it what you imagine</h3><p>Start with a sentence, a sketch in your head, or a “what if…”</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">02</span><div className="step-icon peach-step"><Code2 size={20}/></div><h3>Make it yours</h3><p>See the code and the game side by side. Tweak anything you like.</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">03</span><div className="step-icon mint-step"><Rocket size={20}/></div><h3>Send it to a friend</h3><p>Share one link. They can play it, or make their own remix.</p></div></div></section>
       <section className="cta-section" id="community"><div className="cta-spark">✳</div><div><div className="eyebrow">YOUR TURN, CREATOR</div><h2>What will you make<br/>people <em>feel?</em></h2></div><button className="button button-light" onClick={() => setPage('login')}>Let’s find out <ArrowRight size={16}/></button><span className="cta-orbit cta-orbit-a"/><span className="cta-orbit cta-orbit-b"/></section>
     </main><footer className="footer"><a className="brand" href="#home"><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span></a><span>A tiny studio for curious minds.</span><span>Made with care <span className="footer-heart">♥</span></span></footer>
-    {modal === 'game' && currentGame && <GameModal game={currentGame} close={() => setModal(null)} play={() => { if (currentGame.visibility === 'public') window.open(`${import.meta.env.VITE_PLAY_ORIGIN ?? 'https://play.example.com'}/${currentGame.creator}/${currentGame.id}/`, '_blank', 'noopener,noreferrer'); else notify('This project is private'); setModal(null) }} remix={async () => { if (!user) { setModal(null); setPage('login'); return }; if (!currentGame.projectId) { notify('This game cannot be remixed'); return }; try { const result = await api<{project: Record<string, unknown>}>(`/api/projects/${currentGame.projectId}/remix`, { method: 'POST', body: '{}' }); const remix = projectToGame(result.project); setProjects(items => [remix, ...items]); setModal(null); await openStudio(remix) } catch (error) { notify(error instanceof Error ? error.message : 'Could not remix game') } }} />}
+    {modal === 'game' && currentGame && <GameModal game={currentGame} close={() => setModal(null)} play={() => { if (currentGame.visibility === 'public') window.open(publicGameUrl(currentGame.creator, currentGame.id), '_blank', 'noopener,noreferrer'); else notify('This project is private'); setModal(null) }} remix={async () => { if (!user) { setModal(null); setPage('login'); return }; if (!currentGame.projectId) { notify('This game cannot be remixed'); return }; try { const result = await api<{project: Record<string, unknown>}>(`/api/projects/${currentGame.projectId}/remix`, { method: 'POST', body: '{}' }); const remix = projectToGame(result.project); setProjects(items => [remix, ...items]); setModal(null); await openStudio(remix) } catch (error) { notify(error instanceof Error ? error.message : 'Could not remix game') } }} />}
     {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
     {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
     {toast && <div className="toast"><Check size={15}/>{toast}</div>}
@@ -276,3 +281,4 @@ function GameModal({ game, close, play, remix }: { game: Game; close: () => void
   return <Modal close={close} wide><div className="game-modal-art" style={{ '--game-color': game.color } as React.CSSProperties}><span>{game.art}</span><div className="game-art-stars">✦　·　✧</div></div><div className="game-modal-content"><div className="game-genre">{game.genre}</div><h2>{game.title}</h2><p>{game.description}</p><div className="game-modal-meta"><span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span><span>by <b>{game.creator}</b></span><span className="play-count"><Play size={11} fill="currentColor"/> {game.plays} plays</span></div><div className="modal-game-preview"><div className="preview-placeholder"><span>{game.art}</span><p>Open the game on its isolated play origin.</p></div><button className="button button-primary" onClick={play}><Play size={15} fill="currentColor"/> Play game</button></div><button className="remix-button" onClick={remix}><WandSparkles size={14}/> Remix this game <ArrowRight size={13}/></button></div></Modal>
 }
 function Modal({ children, close, wide = false }: { children: React.ReactNode; close: () => void; wide?: boolean }) { return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}><div className={`modal-card ${wide ? 'modal-wide' : ''}`}><button className="modal-close" onClick={close} aria-label="Close"><X size={17}/></button>{children}</div></div> }
+

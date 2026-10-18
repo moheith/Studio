@@ -1,3 +1,4 @@
+Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 """Yulya Studio API. User projects are stored as inert browser assets; this server never runs them."""
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -56,6 +58,7 @@ RESERVED_NAMES = {"api", "auth", "studio", "profile", "settings", "assets", "sta
 USERNAME_RE = re.compile(r"^[a-z0-9_]{3,24}$")
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$")
 PH = PasswordHasher()
+logger = logging.getLogger("yulya.storage")
 
 if APP_ENV == "production":
     for env_name, value in (("SESSION_SECRET", SESSION_SECRET), ("API_KEY_ENCRYPTION_SECRET", KEY_ENCRYPTION_SECRET), ("API_KEY_HMAC_SECRET", KEY_HMAC_SECRET), ("PREVIEW_TOKEN_SECRET", PREVIEW_TOKEN_SECRET), ("MONGODB_URI", MONGODB_URI)):
@@ -85,6 +88,7 @@ class Store:
             await self.db.projects.create_index([("username", 1), ("slug", 1)], unique=True)
             await self.db.projects.create_index([("visibility", 1), ("updated_at", -1)])
             await self.db.files.create_index([("project_id", 1), ("path", 1)], unique=True)
+            await self.db.files.create_index([("owner_id", 1), ("project_id", 1)])
             await self.db.email_codes.create_index("expires_at", expireAfterSeconds=0)
             await self.db.rate_limits.create_index("expires_at", expireAfterSeconds=0)
 
@@ -123,7 +127,11 @@ class MemoryCollection:
         if key is not None: self.data.pop(key, None)
     async def delete_many(self, query: dict[str, Any]) -> None:
         for key in [k for k, v in self.data.items() if _matches(v, query)]: self.data.pop(key, None)
-    def find(self, query: dict[str, Any]): return MemoryCursor([dict(v) for v in self.data.values() if _matches(v, query)])
+    def find(self, query: dict[str, Any], projection: dict[str, int] | None = None):
+        rows = [dict(v) for v in self.data.values() if _matches(v, query)]
+        if projection and projection.get("content") == 0:
+            for row in rows: row.pop("content", None)
+        return MemoryCursor(rows)
     async def count_documents(self, query: dict[str, Any]) -> int: return len([1 for v in self.data.values() if _matches(v, query)])
 
 
@@ -241,8 +249,11 @@ async def persist_project_file(project: dict[str, Any], path: str, content: byte
         if not existing and len(rows) >= 200: raise HTTPException(413, "Project file limit reached")
         if total - (existing or {}).get("size", 0) + len(content) > 50 * 1024 * 1024: raise HTTPException(413, "Project storage limit is 50 MiB")
         etag = hashlib.sha256(content).hexdigest()
-        files_store.put(project, path, content)
-        await store.collection("files").update_one({"project_id": project_id, "path": path}, {"$set": {"size": len(content), "etag": etag, "updated_at": _now()}}, upsert=True)
+        await store.collection("files").update_one(
+            {"project_id": project_id, "path": path},
+            {"$set": {"owner_id": project["owner_id"], "content": content, "size": len(content), "etag": etag, "updated_at": _now()}},
+            upsert=True,
+        )
         await store.collection("projects").update_one({"id": project_id}, {"$set": {"updated_at": _now()}})
         return etag
 
@@ -253,7 +264,6 @@ async def remove_project_file(project: dict[str, Any], path: str, expected_etag:
         existing = await store.collection("files").find_one({"project_id": project_id, "path": path})
         if enforce_etag and (existing or {}).get("etag") != expected_etag:
             raise HTTPException(409, "This file changed while the edit was in progress. Reload before saving.")
-        files_store.delete(project, path)
         await store.collection("files").delete_one({"project_id": project_id, "path": path})
         await store.collection("projects").update_one({"id": project_id}, {"$set": {"updated_at": _now()}})
 
@@ -326,7 +336,27 @@ class ChatBody(BaseModel): prompt: str = Field(min_length=1, max_length=12000); 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await store.start(); yield; await store.close()
+    await store.start()
+    # Bring forward files from the previous local/R2 implementation. MongoDB
+    # becomes authoritative after migration; new saves never depend on a disk.
+    if store.db is not None:
+        legacy_files = await store.collection("files").find({"content": {"$exists": False}}).to_list(10000)
+        for row in legacy_files:
+            project = await store.collection("projects").find_one({"id": row.get("project_id")})
+            if not project:
+                continue
+            try:
+                content = files_store.get(project, row["path"])
+                await store.collection("files").update_one(
+                    {"project_id": row["project_id"], "path": row["path"], "content": {"$exists": False}},
+                    {"$set": {"owner_id": project["owner_id"], "content": content, "size": len(content), "etag": hashlib.sha256(content).hexdigest(), "updated_at": _now()}},
+                )
+            except Exception:
+                logger.warning("Legacy project file could not be migrated (project_id=%s, path=%s)", row.get("project_id"), row.get("path"))
+    try:
+        yield
+    finally:
+        await store.close()
 
 
 app = FastAPI(title="Yulya Studio API", version="0.1.0", lifespan=lifespan)
@@ -338,7 +368,7 @@ async def api_error(_: Request, exc: HTTPException): return JSONResponse(status_
 
 
 @app.get("/api/health")
-async def health(): return {"ok": True, "storage": "r2" if files_store.s3 else "ephemeral-local", "database": "mongodb" if store.db is not None else "memory-development"}
+async def health(): return {"ok": True, "storage": "mongodb-files" if store.db is not None else "memory-development", "database": "mongodb" if store.db is not None else "memory-development"}
 
 
 @app.post("/api/auth/register")
@@ -473,7 +503,14 @@ async def owned_project(user: dict[str, Any], project_id: str) -> dict[str, Any]
     return project
 
 
-async def file_index(project_id: str): return await store.collection("files").find({"project_id": project_id}).to_list(500)
+async def file_index(project_id: str): return await store.collection("files").find({"project_id": project_id}, {"content": 0}).to_list(500)
+
+
+async def project_file_content(project: dict[str, Any], path: str) -> bytes:
+    row = await store.collection("files").find_one({"owner_id": project["owner_id"], "project_id": project["id"], "path": path})
+    if not row or not isinstance(row.get("content"), (bytes, bytearray)):
+        raise HTTPException(404, "File not found")
+    return bytes(row["content"])
 
 
 def starter_files(title: str) -> dict[str, str]:
@@ -499,8 +536,8 @@ async def create_project(body: ProjectBody, user: dict[str, Any] = Depends(mutat
     project = {"id": uuid.uuid4().hex, "owner_id": user["id"], "username": user["username"], "slug": slug, "title": body.title.strip(), "visibility": body.visibility, "created_at": _now(), "updated_at": _now(), "description": "", "plays": 0}
     await store.collection("projects").insert_one(project)
     for path, content in starter_files(project["title"]).items():
-        encoded = content.encode(); files_store.put(project, path, encoded)
-        await store.collection("files").insert_one({"project_id": project["id"], "path": path, "size": len(encoded), "etag": hashlib.sha256(encoded).hexdigest(), "updated_at": _now()})
+        encoded = content.encode()
+        await store.collection("files").insert_one({"owner_id": project["owner_id"], "project_id": project["id"], "path": path, "content": encoded, "size": len(encoded), "etag": hashlib.sha256(encoded).hexdigest(), "updated_at": _now()})
     return {"project": {k: v for k, v in project.items() if k != "_id"}}
 
 
@@ -515,13 +552,13 @@ async def read_project_file(project_id: str, file_path: str, user: dict[str, Any
     project = await owned_project(user, project_id); rel = files_store._relative(file_path)
     row = await store.collection("files").find_one({"project_id": project_id, "path": rel})
     if not row: raise HTTPException(404, "File not found")
-    try: return Response(files_store.get(project, rel), media_type=_mime(rel), headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "ETag": row.get("etag", "")})
-    except HTTPException: raise
+    return Response(await project_file_content(project, rel), media_type=_mime(rel), headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "ETag": row.get("etag", "")})
 
 
 @app.put("/api/projects/{project_id}/files/{file_path:path}")
 async def write_project_file(project_id: str, file_path: str, body: FileBody, user: dict[str, Any] = Depends(mutating_user), if_match: str | None = Header(None)):
     project = await owned_project(user, project_id); rel = files_store._relative(file_path); encoded = body.content.encode()
+    if len(encoded) > 5 * 1024 * 1024: raise HTTPException(413, "Maximum file size is 5 MiB")
     await rate_limit("write-file", f"{user['id']}:{project_id}", 240)
     etag = await persist_project_file(project, rel, encoded, if_match or None, enforce_etag=bool(if_match))
     return {"path": rel, "etag": etag, "saved_at": _now()}
@@ -557,14 +594,13 @@ async def set_visibility(project_id: str, body: VisibilityBody, user: dict[str, 
     if body.visibility == project["visibility"]: return {"visibility": project["visibility"]}
     rows = await file_index(project_id)
     if body.visibility == "public" and not any(x["path"] == "index.html" for x in rows): raise HTTPException(400, "Add index.html before making this game public")
-    files_store.migrate(project, rows, body.visibility)
     await store.collection("projects").update_one({"id": project_id}, {"$set": {"visibility": body.visibility, "updated_at": _now()}})
-    return {"visibility": body.visibility, "url": f"{PLAY_ORIGIN}/{project['username']}/{project['slug']}/" if body.visibility == "public" else None}
+    return {"visibility": body.visibility, "url": f"{API_ORIGIN}/api/games/{project['username']}/{project['slug']}/index.html" if body.visibility == "public" else None}
 
 
 @app.delete("/api/projects/{project_id}")
 async def delete_project(project_id: str, user: dict[str, Any] = Depends(mutating_user)):
-    project = await owned_project(user, project_id); rows = await file_index(project_id); files_store.delete_project(project, rows)
+    project = await owned_project(user, project_id)
     await store.collection("files").delete_many({"project_id": project_id}); await store.collection("projects").delete_one({"id": project_id}); return {"deleted": True}
 
 
@@ -594,8 +630,8 @@ async def remix_project(project_id: str, user: dict[str, Any] = Depends(mutating
     clone = {"id": uuid.uuid4().hex, "owner_id": user["id"], "username": user["username"], "slug": slug, "title": title, "description": f"Remix of @{source['username']}/{source['slug']}", "visibility": "private", "created_at": _now(), "updated_at": _now(), "forked_from": source["id"], "plays": 0}
     await store.collection("projects").insert_one(clone)
     for f in await file_index(project_id):
-        data = files_store.get(source, f["path"]); files_store.put(clone, f["path"], data)
-        await store.collection("files").insert_one({"project_id": clone["id"], "path": f["path"], "size": len(data), "updated_at": _now()})
+        data = await project_file_content(source, f["path"])
+        await store.collection("files").insert_one({"owner_id": clone["owner_id"], "project_id": clone["id"], "path": f["path"], "content": data, "size": len(data), "etag": hashlib.sha256(data).hexdigest(), "updated_at": _now()})
     return {"project": {k: v for k, v in clone.items() if k != "_id"}}
 
 
@@ -610,10 +646,7 @@ def preview_token(project: dict[str, Any], ttl: int = 600) -> str:
 async def issue_preview_token(project_id: str, user: dict[str, Any] = Depends(mutating_user)):
     project = await owned_project(user, project_id)
     token = preview_token(project)
-    if files_store.s3:
-        url = f"{PLAY_ORIGIN}/__preview/{token}/index.html"
-    else:
-        url = f"{API_ORIGIN}/api/worker/private/{project['owner_id']}/{project['id']}/{token}/index.html"
+    url = f"{API_ORIGIN}/api/worker/private/{project['owner_id']}/{project['id']}/{token}/index.html"
     return {"url": url, "expires_in": 600}
 
 
@@ -632,7 +665,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
     messages = await file_index(project_id); file_context = {}; baseline_etags = {item["path"]: item.get("etag") for item in messages}
     for item in messages[:30]:
         if item["path"].lower().endswith((".html", ".css", ".js", ".mjs", ".json")):
-            file_context[item["path"]] = files_store.get(project, item["path"]).decode("utf-8", "replace")[:12000]
+            file_context[item["path"]] = (await project_file_content(project, item["path"])).decode("utf-8", "replace")[:12000]
     tool_declarations = [{"functionDeclarations": [
         {"name":"list_files","description":"List files in the current project only.","parameters":{"type":"OBJECT","properties":{}}},
         {"name":"read_file","description":"Read a text file in the current project only.","parameters":{"type":"OBJECT","properties":{"path":{"type":"STRING"}},"required":["path"]}},
@@ -671,7 +704,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                     call = part["functionCall"]; name = call.get("name"); args = call.get("args", {}); result: dict[str, Any]
                     try:
                         if name == "list_files": result = {"files": [f["path"] for f in await file_index(project_id)]}
-                        elif name == "read_file": result = {"content": files_store.get(project, files_store._relative(args["path"])).decode("utf-8", "replace")[:20000]}
+                        elif name == "read_file": result = {"content": (await project_file_content(project, files_store._relative(args["path"]))).decode("utf-8", "replace")[:20000]}
                         elif name == "write_file":
                             if not isinstance(args.get("path"), str) or not isinstance(args.get("content"), str): raise HTTPException(400, "File path and content must be text")
                             rel = files_store._relative(args["path"]); content = args["content"].encode()
@@ -689,7 +722,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                             matches = []
                             for item in await file_index(project_id):
                                 if item["path"].lower().endswith((".html", ".css", ".js", ".mjs", ".json")):
-                                    text = files_store.get(project, item["path"]).decode("utf-8", "replace")
+                                    text = (await project_file_content(project, item["path"])).decode("utf-8", "replace")
                                     for line_number, line in enumerate(text.splitlines(), 1):
                                         if query in line.lower(): matches.append({"path": item["path"], "line": line_number, "text": line[:500]})
                                         if len(matches) >= 100: break
@@ -711,6 +744,18 @@ async def public_game_meta(username: str, slug: str):
     return {k:v for k,v in project.items() if k not in {"_id","owner_id"}}
 
 
+@app.get("/api/games/{username}/{slug}/{file_path:path}")
+async def public_game_file(username: str, slug: str, file_path: str):
+    project = await store.collection("projects").find_one({"username": username.lower(), "slug": slug.lower(), "visibility": "public"})
+    if not project: raise HTTPException(404, "Game not found")
+    rel = files_store._relative(file_path or "index.html")
+    content = await project_file_content(project, rel)
+    return Response(content, media_type=_mime(rel), headers={
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": f"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'self'; frame-ancestors {APP_ORIGIN}; sandbox allow-scripts",
+    })
+
+
 @app.get("/api/worker/private/{user_id}/{project_id}/{token}/{file_path:path}")
 async def private_preview_file(user_id: str, project_id: str, token: str, file_path: str):
     try:
@@ -721,8 +766,9 @@ async def private_preview_file(user_id: str, project_id: str, token: str, file_p
     except Exception: raise HTTPException(403,"Preview token invalid or expired")
     project = await store.collection("projects").find_one({"id":project_id,"owner_id":user_id})
     if not project or project["visibility"] != "private": raise HTTPException(404,"Preview not found")
-    rel = files_store._relative(file_path); data = files_store.get(project, rel)
-    return Response(data, media_type=_mime(rel), headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Content-Security-Policy":f"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'self'; frame-ancestors {APP_ORIGIN}"})
+    rel = files_store._relative(file_path); data = await project_file_content(project, rel)
+    return Response(data, media_type=_mime(rel), headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Content-Security-Policy":f"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'self'; frame-ancestors {APP_ORIGIN}; sandbox allow-scripts"})
+
 
 FRONTEND_DIST = (Path(__file__).resolve().parent.parent / "dist").resolve()
 
@@ -753,3 +799,5 @@ async def frontend_root():
 @app.get("/{path:path}", include_in_schema=False)
 async def frontend_routes(path: str):
     return frontend_file(path)
+
+
