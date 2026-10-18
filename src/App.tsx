@@ -1,3 +1,4 @@
+Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import {
@@ -117,6 +118,14 @@ export default function App() {
     }).catch(() => {}).finally(() => setSessionReady(true))
     api<{ projects: Array<Record<string, unknown>> }>('/api/gallery').then((data) => setGames(data.projects.map(projectToGame))).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    // Keep the old profile route as a compatible entry point, but expose the
+    // creator's username as the single canonical profile URL.
+    if (sessionReady && page === 'profile' && window.location.pathname === '/profile' && user?.username) {
+      window.history.replaceState({}, '', `/${encodeURIComponent(user.username)}`)
+    }
+  }, [sessionReady, page, user?.username])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -374,3 +383,4 @@ function GameModal({ game, close, play, remix }: { game: Game; close: () => void
   return <Modal close={close} wide><div className="game-modal-art" style={{ '--game-color': game.color } as React.CSSProperties}><span>{game.art}</span><div className="game-art-stars">✦　·　✧</div></div><div className="game-modal-content"><div className="game-genre">{game.genre}</div><h2>{game.title}</h2><p>{game.description}</p><div className="game-modal-meta"><span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span><span>by <b>{game.creator}</b></span><span className="play-count"><Play size={11} fill="currentColor"/> {game.plays} plays</span></div><div className="modal-game-preview"><div className="preview-placeholder"><span>{game.art}</span><p>Open the game on its isolated play origin.</p></div><button className="button button-primary" onClick={play}><Play size={15} fill="currentColor"/> Play game</button></div><button className="remix-button" onClick={remix}><WandSparkles size={14}/> Remix this game <ArrowRight size={13}/></button></div></Modal>
 }
 function Modal({ children, close, wide = false }: { children: React.ReactNode; close: () => void; wide?: boolean }) { return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}><div className={`modal-card ${wide ? 'modal-wide' : ''}`}><button className="modal-close" onClick={close} aria-label="Close"><X size={17}/></button>{children}</div></div> }
+
