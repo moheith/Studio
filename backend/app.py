@@ -465,27 +465,33 @@ async def set_gemini_key(body: KeyBody, user: dict[str, Any] = Depends(mutating_
         resp = await client.get(f"{GEMINI_API_BASE}/models", headers={"x-goog-api-key": key})
         if resp.status_code == 429: raise HTTPException(429, "Gemini rate limit reached while checking this key")
         if resp.status_code != 200: raise HTTPException(400, "Google could not verify this Gemini API key")
-        available = [m for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
-        # The Models endpoint can still list retired models (and audio-only TTS
-        # models). Prefer the current stable text model for the actual key test.
+        available = [m for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", []) and "-tts" not in m.get("name", "")]
+        # Test with the current stable Gemini text model first. If that model is
+        # unavailable or out of quota for this key, try one text-capable Gemma.
         preferred = ("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash")
-        candidate_model = next((model for wanted in preferred for model in available if model.get("name", "").removeprefix("models/") == wanted), None)
-        if candidate_model is None:
-            candidate_model = next((model for model in available if model.get("name", "").startswith("models/gemini-") and "-tts" not in model.get("name", "")), None)
-        candidate = candidate_model.get("name", "").removeprefix("models/") if candidate_model else None
-        if not candidate: raise HTTPException(400, "This key has no text generation model available for a test request")
-        test = await client.post(f"{GEMINI_API_BASE}/models/{candidate}:generateContent", headers={"x-goog-api-key": key}, json={"contents": [{"parts": [{"text": "Reply with OK"}]}], "generationConfig": {"maxOutputTokens": 1}})
-    if test.status_code == 429: raise HTTPException(429, "Gemini rate limit reached while checking this key")
+        gemini = next((m for wanted in preferred for m in available if m.get("name", "").removeprefix("models/") == wanted), None)
+        if gemini is None:
+            gemini = next((m for m in available if m.get("name", "").startswith("models/gemini-")), None)
+        gemma = next((m for m in available if m.get("name", "").startswith("models/gemma-")), None)
+        if not gemini and not gemma: raise HTTPException(400, "This key has no text generation model available for a test request")
+        test_model = gemini or gemma
+        test = await client.post(f"{GEMINI_API_BASE}/{test_model['name']}:generateContent", headers={"x-goog-api-key": key}, json={"contents": [{"parts": [{"text": "Reply with OK"}]}], "generationConfig": {"maxOutputTokens": 1}})
+        fallback_used = bool(gemma and test_model["name"] == gemma["name"])
+        if test.status_code != 200 and gemma and gemini and gemma["name"] != test_model["name"]:
+            fallback_test = await client.post(f"{GEMINI_API_BASE}/{gemma['name']}:generateContent", headers={"x-goog-api-key": key}, json={"contents": [{"parts": [{"text": "Reply with OK"}]}], "generationConfig": {"maxOutputTokens": 1}})
+            if fallback_test.status_code == 200:
+                test = fallback_test; test_model = gemma; fallback_used = True
+            else:
+                test = fallback_test
     if test.status_code != 200:
-        # The Models endpoint already authenticated the key. Report this as a
-        # model test failure rather than claiming the key itself is invalid.
-        raise HTTPException(400, f"Gemini accepted the key, but the {candidate} test request failed (HTTP {test.status_code}). Check model availability and quota, then retry.")
+        if test.status_code == 429: raise HTTPException(429, "Google accepted the key, but verification is out of quota. Try again later or check AI Studio quota.")
+        raise HTTPException(400, f"Google accepted the key, but the {test_model['name'].removeprefix('models/')} verification request failed (HTTP {test.status_code}). Check model availability and quota.")
     fingerprint = _fingerprint(key); existing = await store.collection("users").find_one({"api_key_fingerprint": fingerprint})
     if existing and existing["id"] != user["id"]: raise HTTPException(409, "This API key is already connected to another account")
     ciphertext = _encryptor().encrypt(key.encode()).decode()
     try: await store.collection("users").update_one({"id": user["id"]}, {"$set": {"api_key_fingerprint": fingerprint, "api_key_ciphertext": ciphertext}})
     except DuplicateKeyError: raise HTTPException(409, "This API key is already connected to another account")
-    return {"connected": True}
+    return {"connected": True, "verified_model": test_model["name"].removeprefix("models/"), "fallback_used": fallback_used}
 
 
 @app.delete("/api/keys/gemini")
@@ -762,6 +768,18 @@ async def public_game_file(username: str, slug: str, file_path: str):
     if not project: raise HTTPException(404, "Game not found")
     rel = files_store._relative(file_path or "index.html")
     content = await project_file_content(project, rel)
+    if rel == "index.html":
+        # The clean game URL has no trailing slash. Set a project-relative base
+        # so relative game files load from their own project URL.
+        base_href = f"/{project['username']}/{project['slug']}/"
+        html = content.decode("utf-8", "replace")
+        base_tag = f'<base href="{base_href}">'
+        existing_base = re.search(r"<base\\b[^>]*>", html, flags=re.IGNORECASE)
+        if existing_base: html = html[:existing_base.start()] + base_tag + html[existing_base.end():]
+        else:
+            head = re.search(r"<head(?:\\s[^>]*)?>", html, flags=re.IGNORECASE)
+            html = html[:head.end()] + base_tag + html[head.end():] if head else base_tag + html
+        content = html.encode("utf-8")
     return Response(content, media_type=_mime(rel), headers={
         "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": f"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'self'; frame-ancestors {APP_ORIGIN}; sandbox allow-scripts",
@@ -805,6 +823,35 @@ def frontend_file(path: str = "") -> FileResponse:
 
 @app.get("/", include_in_schema=False)
 async def frontend_root():
+    return frontend_file()
+
+
+@app.get("/{username}/{slug}/edit", include_in_schema=False)
+async def editor_route(username: str, slug: str):
+    if username.lower() == "api": raise HTTPException(404, "API route not found")
+    return frontend_file()
+
+
+@app.get("/{username}/{slug}", include_in_schema=False)
+async def named_public_game(username: str, slug: str):
+    reserved = {"api", "assets", "static", "favicon.ico", "robots.txt", "profile", "login", "register", "verify-email", "studio", "not-found"}
+    if username.lower() == "api": raise HTTPException(404, "API route not found")
+    if username.lower() in reserved: return frontend_file(f"{username}/{slug}")
+    return await public_game_file(username, slug, "index.html")
+
+
+@app.get("/{username}/{slug}/{file_path:path}", include_in_schema=False)
+async def named_public_game_file(username: str, slug: str, file_path: str):
+    reserved = {"api", "assets", "static", "favicon.ico", "robots.txt", "profile", "login", "register", "verify-email", "studio", "not-found"}
+    if username.lower() == "api": raise HTTPException(404, "API route not found")
+    if username.lower() in reserved: return frontend_file(f"{username}/{slug}/{file_path}")
+    return await public_game_file(username, slug, file_path)
+
+
+@app.get("/{username}", include_in_schema=False)
+async def named_profile(username: str):
+    if username.lower() == "api": raise HTTPException(404, "API route not found")
+    if username.lower() in {"favicon.ico", "robots.txt"}: return frontend_file(username)
     return frontend_file()
 
 
