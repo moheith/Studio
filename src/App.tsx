@@ -224,15 +224,25 @@ export default function App() {
   if (page === 'verify-email') return <VerifyEmailPage email={verificationEmail} onBack={() => setPage('register')} onLogin={(nextUser, csrf) => { sessionStorage.removeItem('yulya-verification-email'); completeLogin(nextUser, csrf) }} notify={notify} />
   if (page === 'profile') return <ProfilePage
     user={user} hasKey={hasKey} projects={projects}
-    onHome={() => setPage('home')} onCreate={() => setModal('new-project')} onOpen={(game) => openStudio(game)} onKey={() => setModal('api-key')} onLogout={logout}
+    onHome={() => setPage('home')} onCreate={() => {
+      if (!user?.username) {
+        notify('Claim your unique username before creating a project')
+        document.getElementById('username-setup')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+      setModal('new-project')
+    }} onOpen={(game) => openStudio(game)} onKey={() => setModal('api-key')} onLogout={logout}
     onUsername={async (name) => {
       try {
-        await api('/api/profile/username', { method: 'PUT', body: JSON.stringify({ username: name }) })
-        setUser((current) => current ? { ...current, username: name } : current)
+        const saved = await api<{ username: string }>('/api/profile/username', { method: 'PUT', body: JSON.stringify({ username: name }) })
+        setUser((current) => current ? { ...current, username: saved.username } : current)
         const result = await api<{projects: Array<Record<string, unknown>>}>('/api/projects')
         setProjects(result.projects.map(projectToGame))
         notify('Username saved')
-      } catch (error) { notify(error instanceof Error ? error.message : 'Could not save username') }
+      } catch (error) {
+        notify(error instanceof Error ? error.message : 'Could not save username')
+        throw error
+      }
     }}
   />
   if (page === 'studio') return <><StudioPage {...{
