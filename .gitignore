@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.local-data/
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo

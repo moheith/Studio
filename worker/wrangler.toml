@@ -1,0 +1,14 @@
+name = "yulya-game-host"
+main = "src/index.js"
+compatibility_date = "2026-10-18"
+
+[[r2_buckets]]
+binding = "PRIVATE_GAMES"
+bucket_name = "yulya-private"
+
+[[r2_buckets]]
+binding = "PUBLIC_GAMES"
+bucket_name = "yulya-public"
+
+[vars]
+APP_ORIGIN = "https://app.example.com"
