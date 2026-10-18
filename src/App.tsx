@@ -35,12 +35,12 @@ const initialTree: FileEntry[] = [
 
 export default function App() {
   const pageFromPath = (): Page => {
-    const route = window.location.hash.startsWith('#/') ? window.location.hash.slice(1) : window.location.pathname
+    const route = window.location.pathname
     return ({ '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/profile': 'profile', '/studio': 'studio' }[route] as Page | undefined) ?? 'home'
   }
   const [page, setPageState] = useState<Page>(pageFromPath)
   const setPage = (next: Page) => {
-    const route: Record<Page, string> = { home: '/', login: '/#/login', register: '/#/register', 'verify-email': '/#/verify-email', profile: '/#/profile', studio: '/#/studio' }
+    const route: Record<Page, string> = { home: '/', login: '/login', register: '/register', 'verify-email': '/verify-email', profile: '/profile', studio: '/studio' }
     const path = route[next]
     if (`${window.location.pathname}${window.location.hash}` !== path) window.history.pushState({}, '', path)
     setPageState(next)
