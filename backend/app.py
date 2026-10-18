@@ -15,7 +15,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
 
 import boto3
 import httpx
@@ -25,7 +24,7 @@ from argon2.exceptions import VerifyMismatchError
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from pymongo import AsyncMongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -62,9 +61,9 @@ if APP_ENV == "production":
     for env_name, value in (("SESSION_SECRET", SESSION_SECRET), ("API_KEY_ENCRYPTION_SECRET", KEY_ENCRYPTION_SECRET), ("API_KEY_HMAC_SECRET", KEY_HMAC_SECRET), ("PREVIEW_TOKEN_SECRET", PREVIEW_TOKEN_SECRET), ("MONGODB_URI", MONGODB_URI)):
         if not value or "replace-with" in value.lower() or "placeholder" in value.lower() or (env_name.endswith("SECRET") and len(value) < 32):
             raise RuntimeError(f"{env_name} must be configured with a production secret/value")
-    for env_name in ("APP_ORIGIN", "API_ORIGIN", "PLAY_ORIGIN", "R2_ENDPOINT_URL", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "RESEND_API_KEY", "EMAIL_FROM", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI"):
-        if not os.getenv(env_name): raise RuntimeError(f"{env_name} must be configured for production storage/email")
-    for env_name in ("APP_ORIGIN", "API_ORIGIN", "PLAY_ORIGIN"):
+    for env_name in ("APP_ORIGIN", "API_ORIGIN"):
+        if not os.getenv(env_name): raise RuntimeError(f"{env_name} must be configured for production")
+    for env_name in ("APP_ORIGIN", "API_ORIGIN"):
         if "localhost" in os.getenv(env_name, "").lower() or "example.com" in os.getenv(env_name, "").lower(): raise RuntimeError(f"{env_name} must use the configured production origin")
 
 
@@ -339,7 +338,7 @@ async def api_error(_: Request, exc: HTTPException): return JSONResponse(status_
 
 
 @app.get("/api/health")
-async def health(): return {"ok": True, "storage": "r2" if files_store.s3 else "local-development", "database": "mongodb" if store.db is not None else "memory-development"}
+async def health(): return {"ok": True, "storage": "r2" if files_store.s3 else "ephemeral-local", "database": "mongodb" if store.db is not None else "memory-development"}
 
 
 @app.post("/api/auth/register")
@@ -396,35 +395,6 @@ async def login(body: LoginBody, response: Response, request: Request):
     except VerifyMismatchError: raise HTTPException(401, "Email or password is incorrect")
     csrf = await issue_session(user, response)
     return {"user": _public_user(user), "csrf_token": csrf, "needs_username": not bool(user.get("username"))}
-
-
-@app.get("/api/auth/google")
-async def google_start(response: Response):
-    client_id = os.getenv("GOOGLE_CLIENT_ID", ""); redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", f"{API_ORIGIN}/api/auth/google/callback")
-    if not client_id: raise HTTPException(503, "Google sign-in is not configured")
-    state = secrets.token_urlsafe(30); response = RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({"client_id": client_id, "redirect_uri": redirect_uri, "response_type": "code", "scope": "openid email profile", "state": state, "prompt": "select_account"}))
-    response.set_cookie("yulya_oauth_state", state, httponly=True, secure=COOKIE_SECURE, samesite="lax", max_age=600, path="/"); return response
-
-
-@app.get("/api/auth/google/callback")
-async def google_callback(code: str, state: str, request: Request, response: Response):
-    expected = request.cookies.get("yulya_oauth_state")
-    if not expected or not hmac.compare_digest(expected, state): raise HTTPException(403, "OAuth state validation failed")
-    async with httpx.AsyncClient(timeout=12) as client:
-        token_resp = await client.post("https://oauth2.googleapis.com/token", data={"code": code, "client_id": os.getenv("GOOGLE_CLIENT_ID"), "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"), "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI", f"{API_ORIGIN}/api/auth/google/callback"), "grant_type": "authorization_code"})
-        if token_resp.status_code != 200: raise HTTPException(401, "Google sign-in failed")
-        profile_resp = await client.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {token_resp.json().get('access_token')}"})
-    profile = profile_resp.json()
-    if not profile.get("verified_email"): raise HTTPException(403, "Google account email is not verified")
-    email = profile["email"].lower(); users = store.collection("users"); user = await users.find_one({"email_norm": email})
-    if not user:
-        user = {"id": uuid.uuid4().hex, "email": email, "email_norm": email, "avatar": profile.get("picture"), "created_at": _now(), "username": None}; await users.insert_one(user)
-    if profile.get("picture"): await users.update_one({"id": user["id"]}, {"$set": {"avatar": profile["picture"]}}); user["avatar"] = profile["picture"]
-    token = secrets.token_urlsafe(40); csrf = secrets.token_urlsafe(28)
-    await store.collection("sessions").insert_one({"token_hash": _token_hash(token), "user_id": user["id"], "csrf": csrf, "expires_at": _expires(60 * 60 * 24 * 14)})
-    out = RedirectResponse(APP_ORIGIN + "/?signed_in=1", status_code=303)
-    out.set_cookie(COOKIE_NAME, token, httponly=True, secure=COOKIE_SECURE, samesite="lax", max_age=60 * 60 * 24 * 14, path="/")
-    out.set_cookie("yulya_oauth_state", "", max_age=0, path="/"); out.set_cookie("yulya_csrf", csrf, secure=COOKIE_SECURE, samesite="lax", max_age=60 * 60 * 24 * 14, path="/"); return out
 
 
 @app.get("/api/auth/me")
