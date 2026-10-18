@@ -13,5 +13,5 @@ export type Game = {
 
 export type FileEntry = { name: string; kind: 'file' | 'folder'; language?: string }
 export type User = { id?: string; username: string; email: string; avatar?: string }
-export type Page = 'home' | 'studio' | 'login' | 'register' | 'verify-email' | 'profile'
+export type Page = 'home' | 'studio' | 'login' | 'register' | 'verify-email' | 'profile' | 'not-found'
 
