@@ -253,7 +253,12 @@ export default function App() {
       const result = await api<{ files: Array<{ path: string }> }>(`/api/projects/${id}/files`)
       const loaded: Record<string, string> = {}; for (const file of result.files) if (/\.(html|css|js|mjs|json)$/.test(file.path)) loaded[file.path] = (await getFile(id, file.path)).content
       setCurrentProjectId(id); setCurrentGame(meta); setCode(loaded); setTree(result.files.map(file => ({ name: file.path, kind: 'file', language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript' })))
-      const preview = await api<{ url: string }>(`/api/projects/${id}/preview-token`, { method: 'POST', body: '{}' }).catch(() => ({ url: '' })); setPreviewUrl(preview.url)
+      if (meta.visibility === 'public') {
+        setPreviewUrl(publicGameUrl(meta.creator, meta.id))
+      } else {
+        const preview = await api<{ url: string }>(`/api/projects/${id}/preview-token`, { method: 'POST', body: '{}' }).catch(() => ({ url: '' }))
+        setPreviewUrl(preview.url)
+      }
     } catch (error) { notify(error instanceof Error ? error.message : 'Could not open project') }
   }
 
