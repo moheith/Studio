@@ -465,11 +465,21 @@ async def set_gemini_key(body: KeyBody, user: dict[str, Any] = Depends(mutating_
         resp = await client.get(f"{GEMINI_API_BASE}/models", headers={"x-goog-api-key": key})
         if resp.status_code == 429: raise HTTPException(429, "Gemini rate limit reached while checking this key")
         if resp.status_code != 200: raise HTTPException(400, "Google could not verify this Gemini API key")
-        candidate = next((m.get("name", "").removeprefix("models/") for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])), None)
-        if not candidate: raise HTTPException(400, "This key has no Gemini model available for a test request")
+        available = [m for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
+        # The Models endpoint can still list retired models (and audio-only TTS
+        # models). Prefer the current stable text model for the actual key test.
+        preferred = ("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash")
+        candidate_model = next((model for wanted in preferred for model in available if model.get("name", "").removeprefix("models/") == wanted), None)
+        if candidate_model is None:
+            candidate_model = next((model for model in available if model.get("name", "").startswith("models/gemini-") and "-tts" not in model.get("name", "")), None)
+        candidate = candidate_model.get("name", "").removeprefix("models/") if candidate_model else None
+        if not candidate: raise HTTPException(400, "This key has no text generation model available for a test request")
         test = await client.post(f"{GEMINI_API_BASE}/models/{candidate}:generateContent", headers={"x-goog-api-key": key}, json={"contents": [{"parts": [{"text": "Reply with OK"}]}], "generationConfig": {"maxOutputTokens": 1}})
     if test.status_code == 429: raise HTTPException(429, "Gemini rate limit reached while checking this key")
-    if test.status_code != 200: raise HTTPException(400, "Gemini rejected the key test request")
+    if test.status_code != 200:
+        # The Models endpoint already authenticated the key. Report this as a
+        # model test failure rather than claiming the key itself is invalid.
+        raise HTTPException(400, f"Gemini accepted the key, but the {candidate} test request failed (HTTP {test.status_code}). Check model availability and quota, then retry.")
     fingerprint = _fingerprint(key); existing = await store.collection("users").find_one({"api_key_fingerprint": fingerprint})
     if existing and existing["id"] != user["id"]: raise HTTPException(409, "This API key is already connected to another account")
     ciphertext = _encryptor().encrypt(key.encode()).decode()
@@ -492,7 +502,10 @@ async def models(user: dict[str, Any] = Depends(current_user)):
     async with httpx.AsyncClient(timeout=10) as client: resp = await client.get(f"{GEMINI_API_BASE}/models", headers={"x-goog-api-key": key})
     if resp.status_code == 429: raise HTTPException(429, "Gemini API rate limit reached")
     if resp.status_code != 200: raise HTTPException(502, "Could not load available Gemini models")
-    rows = [{"id": m["name"].removeprefix("models/"), "display_name": m.get("displayName", m["name"]), "input_token_limit": m.get("inputTokenLimit")} for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
+    rows = [{"id": m["name"].removeprefix("models/"), "display_name": m.get("displayName", m["name"]), "input_token_limit": m.get("inputTokenLimit")} for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", []) and "-tts" not in m["name"]]
+    # Put the current stable text model first so the UI picks it as the default.
+    preferred = {"gemini-3.8-flash": 0, "gemini-3.6-flash": 1, "gemini-3-flash": 2}
+    rows.sort(key=lambda model: (preferred.get(model["id"], 100), model["display_name"].lower()))
     return {"models": rows, "connected": True}
 
 
