@@ -75,9 +75,10 @@ export default function App() {
   const saveTimer = useRef<number | undefined>(undefined)
 
   useEffect(() => {
-    const onPopState = () => setPageState(pageFromPath())
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    const onRouteChange = () => setPageState(pageFromPath())
+    window.addEventListener('popstate', onRouteChange)
+    window.addEventListener('hashchange', onRouteChange)
+    return () => { window.removeEventListener('popstate', onRouteChange); window.removeEventListener('hashchange', onRouteChange) }
   }, [])
 
   useEffect(() => {
