@@ -222,7 +222,7 @@ export default function App() {
     if ((nextUser as User & { has_api_key?: boolean }).has_api_key) api<{ models: Array<{ id: string; display_name: string }> }>('/api/models').then(result => { setModels(result.models); setSelectedModel(result.models[0]?.id ?? '') }).catch(() => {})
     const returnTo = sessionStorage.getItem('yulya:return-to')
     if (returnTo) { sessionStorage.removeItem('yulya:return-to'); setPage('studio', returnTo) }
-    else setPage('profile')
+    else setPage('profile', nextUser.username ? `/${encodeURIComponent(nextUser.username)}` : '/profile')
   }
   const addFile = () => {
     const name = newFileName.trim()
