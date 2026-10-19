@@ -1699,6 +1699,80 @@
   white-space: nowrap;
 }
 
+.composer-toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.antigravity-checkbox-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: #171825;
+  border: 1px solid #282a3d;
+  cursor: pointer;
+  user-select: none;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: #8c889e;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.antigravity-checkbox-toggle:hover {
+  background: #1e2030;
+  border-color: #3b3e58;
+  color: #c7c3d9;
+}
+
+.antigravity-checkbox-toggle.is-active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(168, 85, 247, 0.25));
+  border-color: #8b5cf6;
+  color: #f3e8ff;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.25);
+}
+
+.antigravity-checkbox-toggle .antigravity-toggle-box {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid #4a4d66;
+  background: #0f1018;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  transition: all 0.12s;
+}
+
+.antigravity-checkbox-toggle.is-active .antigravity-toggle-box {
+  background: #8b5cf6;
+  border-color: #a78bfa;
+}
+
+.antigravity-checkbox-toggle .check-icon {
+  color: #ffffff;
+  stroke-width: 3;
+}
+
+.antigravity-checkbox-toggle .antigravity-sparkle {
+  color: #9d87c4;
+  transition: transform 0.2s, color 0.15s;
+}
+
+.antigravity-checkbox-toggle.is-active .antigravity-sparkle {
+  color: #c084fc;
+  transform: rotate(15deg) scale(1.1);
+}
+
+.antigravity-checkbox-toggle .antigravity-label-text {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .composer-model-dropdown {
   background: #1a1b24;
   border: 1px solid #2f303f;
@@ -1708,7 +1782,14 @@
   padding: 3px 6px;
   outline: none;
   cursor: pointer;
-  max-width: 175px;
+  max-width: 185px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.composer-model-dropdown.antigravity-active {
+  border-color: #7c3aed;
+  background: #151624;
+  color: #e9d5ff;
 }
 
 .composer-input-container {

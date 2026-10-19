@@ -332,7 +332,7 @@ class KeyBody(BaseModel): api_key: str = Field(min_length=12, max_length=256)
 class ProjectBody(BaseModel): title: str = Field(min_length=1, max_length=60); visibility: str = "private"
 class VisibilityBody(BaseModel): visibility: str
 class FileBody(BaseModel): content: str = Field(max_length=5 * 1024 * 1024)
-class ChatBody(BaseModel): prompt: str = Field(min_length=1, max_length=12000); model: str | None = None
+class ChatBody(BaseModel): prompt: str = Field(min_length=1, max_length=12000); model: str | None = None; antigravity: bool | None = False
 
 
 @asynccontextmanager
@@ -513,12 +513,13 @@ async def models(user: dict[str, Any] = Depends(current_user)):
     rows = [{"id": m["name"].removeprefix("models/"), "display_name": m.get("displayName", m["name"]), "input_token_limit": m.get("inputTokenLimit")} for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", []) and "-tts" not in m["name"]]
     preferred = {"gemini-2.5-pro": 0, "gemini-2.5-flash": 1, "gemini-3.8-flash": 2, "gemini-3.6-flash": 3, "gemini-3-flash": 4}
     rows.sort(key=lambda model: (preferred.get(model["id"], 100), model["display_name"].lower()))
-    best_underlying = next((m["id"] for m in rows if "2.5-pro" in m["id"]), None) or (rows[0]["id"] if rows else "gemini-2.5-flash")
-    rows.insert(0, {
-        "id": f"antigravity:{best_underlying}",
-        "display_name": "✦ Antigravity Autonomous Agent",
-        "input_token_limit": 2000000,
-    })
+    antigravity_preview_models = [
+        {"id": "antigravity-preview-latest", "display_name": "✦ antigravity-preview-latest", "input_token_limit": 2000000},
+        {"id": "antigravity-preview-09-2026", "display_name": "✦ antigravity-preview-09-2026", "input_token_limit": 2000000},
+    ]
+    existing_ids = {m["id"] for m in rows}
+    prepend = [m for m in antigravity_preview_models if m["id"] not in existing_ids]
+    rows = prepend + rows
     return {"models": rows, "connected": True}
 
 
@@ -763,17 +764,16 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
     api_key = await gemini_key(user)
     if not body.model: raise HTTPException(400, "Choose an available model first")
     raw_model = body.model.removeprefix("models/")
-    is_antigravity = raw_model.startswith("antigravity:") or raw_model == "antigravity"
-    if is_antigravity:
-        model = raw_model.split(":", 1)[1] if ":" in raw_model else "gemini-2.5-flash"
-        saved_model_name = f"✦ Antigravity ({model})"
-    else:
-        model = raw_model
-        saved_model_name = raw_model
+    if raw_model.startswith("antigravity:"):
+        raw_model = raw_model.split(":", 1)[1]
+    is_antigravity = bool(body.antigravity) or "antigravity" in raw_model.lower()
+    model = raw_model
+    saved_model_name = f"✦ Antigravity ({model})" if is_antigravity else model
     if not re.fullmatch(r"[a-zA-Z0-9._-]{3,100}", model): raise HTTPException(400, "Invalid model identifier")
-    previous_turns = await get_project_conversation_turns(user["id"], project_id, limit=30)
+    previous_turns = await get_project_conversation_turns(user["id"], project_id, limit=30 if is_antigravity else 12)
     messages = await file_index(project_id); file_context = {}; baseline_etags = {item["path"]: item.get("etag") for item in messages}
-    for item in messages[:50]:
+    max_files = 50 if is_antigravity else 20
+    for item in messages[:max_files]:
         if item["path"].lower().endswith((".html", ".css", ".js", ".mjs", ".json")):
             file_context[item["path"]] = (await project_file_content(project, item["path"])).decode("utf-8", "replace")[:35000]
     tool_declarations = [{"functionDeclarations": [
@@ -791,6 +791,29 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                     "path": {"type": "STRING", "description": "The relative path of the file to read (e.g. 'app.js', 'style.css')."}
                 },
                 "required": ["path"]
+            }
+        },
+        {
+            "name": "create_file",
+            "description": "Create a new file in the project with specified relative path and initial content. If the file is in a subdirectory (e.g. 'js/player.js' or 'assets/map.json'), any parent folders are automatically created.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "path": {"type": "STRING", "description": "The relative path of the file to create (e.g. 'js/utils.js', 'assets/enemies.json')."},
+                    "content": {"type": "STRING", "description": "The complete initial text content for the new file."}
+                },
+                "required": ["path"]
+            }
+        },
+        {
+            "name": "create_folder",
+            "description": "Create a new folder or directory in the project to organize code and assets (e.g. 'assets', 'audio', 'src/levels', 'components').",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "folder_path": {"type": "STRING", "description": "The relative directory path to create (e.g. 'assets/sprites', 'audio', 'components')."}
+                },
+                "required": ["folder_path"]
             }
         },
         {
@@ -833,35 +856,45 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             "parameters": {"type": "OBJECT", "properties": {}}
         },
     ]}]
-    system = (
-        "You are Antigravity, an elite autonomous AI game developer and software architect built directly into Yulya Studio.\n"
-        "Your mission is to autonomously design, code, debug, enhance, and polish production-ready web games using HTML5 Canvas, modern CSS, vanilla JavaScript (or ES modules), and Web Audio API.\n\n"
-        "=== YOUR TOOLKIT (HOW & WHEN TO USE) ===\n"
-        "You have 6 dedicated tools to interact directly with the user's project files. Always use them proactively to perform actions:\n"
-        "1. `list_files()`: Call this to discover all files in the project directory when you need to understand project layout.\n"
-        "2. `read_file(path)`: Call this to inspect existing file contents in full detail before making edits if context is missing.\n"
-        "3. `write_file(path, content)`: Call this to create or update files (e.g. 'index.html', 'style.css', 'app.js').\n"
-        "   - CRITICAL REQUIREMENT: Always write COMPLETE, PRODUCTION-READY, FULLY FUNCTIONAL code. NEVER omit lines, NEVER use lazy placeholders like '// ... existing code ...' or '/* add styles here */'. Write the full file content from start to finish.\n"
-        "   - ROUTING & PATHS: In 'index.html', use relative file links (e.g. href=\"style.css\", src=\"app.js\"). Do NOT hardcode server URLs or custom <base> tags because the runtime automatically injects the correct base href.\n"
-        "   - AUDIO SYNTHESIS: For sound effects (jumps, laser fire, explosions, coin collection, score chimes, game-over tunes), use the browser's native Web Audio API (AudioContext, OscillatorNode, GainNode) to synthesize rich audio procedurally in JavaScript without external mp3/wav files.\n"
-        "   - RESPONSIVE CONTROLS: Implement keyboard (Arrow keys, WASD, Space), mouse/click, and touch controls (virtual buttons or swipe/touch events) so games are immediately playable on both desktop and mobile.\n"
-        "   - CANVAS RENDERING: Ensure requestAnimationFrame game loops are robust, high-DPI aware (handling window.devicePixelRatio), and properly clear and draw frames cleanly.\n"
-        "4. `delete_file(path)`: Call this to remove unneeded or obsolete files. Note: 'index.html' cannot be deleted.\n"
-        "5. `search_files(query)`: Call this to search across project files for variable names, function declarations, or strings.\n"
-        "6. `request_reload()`: ALWAYS call this tool when you have finished writing or modifying files so the live game preview immediately reloads with your latest changes.\n\n"
-        "=== AUTONOMOUS EXECUTION WORKFLOW ===\n"
-        "1. Analyze the user's request thoroughly against the existing project code.\n"
-        "2. If code modifications are required, invoke `write_file` to update all relevant files (HTML, CSS, JS).\n"
-        "3. Invoke `request_reload` when your changes are saved so the preview updates.\n"
-        "4. In your final text response, provide a clean, helpful summary of the mechanics added or bugs fixed, along with controls/instructions on how to play."
-    )
+
+    if is_antigravity:
+        system = (
+            "You are Antigravity, an elite autonomous AI game developer and software architect built directly into Yulya Studio.\n"
+            "Your mission is to autonomously design, code, debug, enhance, and polish production-ready web games using HTML5 Canvas, modern CSS, vanilla JavaScript (or ES modules), and Web Audio API.\n\n"
+            "=== YOUR TOOLKIT (HOW & WHEN TO USE) ===\n"
+            "You have 8 dedicated tools to interact directly with the user's project files. Always use them proactively to perform actions:\n"
+            "1. `list_files()`: Call this to discover all files in the project directory when you need to understand project layout.\n"
+            "2. `read_file(path)`: Call this to inspect existing file contents in full detail before making edits if context is missing.\n"
+            "3. `create_file(path, content)`: Call this to create a new file in the project (e.g. 'js/physics.js', 'assets/levels.json'). Parent directories are automatically created.\n"
+            "4. `create_folder(folder_path)`: Call this to create a new folder/directory (e.g. 'assets', 'audio', 'src/levels', 'components') to structure project code.\n"
+            "5. `write_file(path, content)`: Call this to create or update files (e.g. 'index.html', 'style.css', 'app.js').\n"
+            "   - CRITICAL REQUIREMENT: Always write COMPLETE, PRODUCTION-READY, FULLY FUNCTIONAL code. NEVER omit lines, NEVER use lazy placeholders like '// ... existing code ...' or '/* add styles here */'. Write the full file content from start to finish.\n"
+            "   - ROUTING & PATHS: In 'index.html', use relative file links (e.g. href=\"style.css\", src=\"app.js\"). Do NOT hardcode server URLs or custom <base> tags because the runtime automatically injects the correct base href.\n"
+            "   - AUDIO SYNTHESIS: For sound effects (jumps, laser fire, explosions, coin collection, score chimes, game-over tunes), use the browser's native Web Audio API (AudioContext, OscillatorNode, GainNode) to synthesize rich audio procedurally in JavaScript without external mp3/wav files.\n"
+            "   - RESPONSIVE CONTROLS: Implement keyboard (Arrow keys, WASD, Space), mouse/click, and touch controls (virtual buttons or swipe/touch events) so games are immediately playable on both desktop and mobile.\n"
+            "   - CANVAS RENDERING: Ensure requestAnimationFrame game loops are robust, high-DPI aware (handling window.devicePixelRatio), and properly clear and draw frames cleanly.\n"
+            "6. `delete_file(path)`: Call this to remove unneeded or obsolete files. Note: 'index.html' cannot be deleted.\n"
+            "7. `search_files(query)`: Call this to search across project files for variable names, function declarations, or strings.\n"
+            "8. `request_reload()`: ALWAYS call this tool when you have finished writing or modifying files so the live game preview immediately reloads with your latest changes.\n\n"
+            "=== AUTONOMOUS EXECUTION WORKFLOW ===\n"
+            "1. Analyze the user's request thoroughly against the existing project code.\n"
+            "2. If code modifications are required, invoke `write_file` or `create_file` to update all relevant files (HTML, CSS, JS).\n"
+            "3. Invoke `request_reload` when your changes are saved so the preview updates.\n"
+            "4. In your final text response, provide a clean, helpful summary of the mechanics added or bugs fixed, along with controls/instructions on how to play."
+        )
+    else:
+        system = (
+            "You are Yulya Studio's coding assistant. Only help build browser games using HTML, CSS, JavaScript, JSON, and local static assets. "
+            "Use the provided project tools for edits. Keep explanations concise and summarize completed changes."
+        )
 
     turn_id = uuid.uuid4().hex
     turn = {"id": turn_id, "prompt": body.prompt, "response": "", "model": saved_model_name, "status": "running", "created_at": _now()}
     await record_conversation_turn_start(user["id"], project_id, turn)
 
     async def stream():
-        yield "event: status\ndata: " + json.dumps({"message": "Antigravity Agent analyzing project context…"}) + "\n\n"
+        status_msg = "Antigravity Agent analyzing project context…" if is_antigravity else "Reading project context…"
+        yield "event: status\ndata: " + json.dumps({"message": status_msg}) + "\n\n"
         contents = []
         for prior in previous_turns:
             if prior.get("prompt"):
@@ -872,40 +905,78 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         calls = 0
         response_text: list[str] = []
         thought_text: list[str] = []
+        max_calls = 15 if is_antigravity else 8
+        active_model = model
+        fallback_model = "gemini-2.5-pro"
         async with httpx.AsyncClient(timeout=httpx.Timeout(3000.0, connect=30.0)) as client:
-            while calls < 15:
+            while calls < max_calls:
                 request_body = {"systemInstruction":{"parts":[{"text":system}]},"contents":contents,"tools":tool_declarations,"generationConfig":{"temperature":0.2}}
-                async with client.stream("POST", f"{GEMINI_API_BASE}/models/{model}:streamGenerateContent?alt=sse", headers={"x-goog-api-key": api_key, "Content-Type":"application/json"}, json=request_body) as resp:
-                    if resp.status_code == 429:
+                need_fallback = False
+                async with client.stream("POST", f"{GEMINI_API_BASE}/models/{active_model}:streamGenerateContent?alt=sse", headers={"x-goog-api-key": api_key, "Content-Type":"application/json"}, json=request_body) as resp:
+                    if resp.status_code == 404 and "antigravity" in active_model:
+                        active_model = fallback_model
+                        need_fallback = True
+                    elif resp.status_code == 429:
                         message = "Gemini rate limit reached. Select another model or try again later."
                         await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
                         yield "event: error\ndata: " + json.dumps({"message":message}) + "\n\n"; return
-                    if resp.status_code != 200:
+                    elif resp.status_code != 200:
                         message = "Gemini could not complete this request."
                         await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
                         yield "event: error\ndata: " + json.dumps({"message":message}) + "\n\n"; return
-                    full_parts = []
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "): continue
-                        try: payload = json.loads(line[6:])
-                        except json.JSONDecodeError: continue
-                        for candidate in payload.get("candidates", []):
-                            for part in candidate.get("content", {}).get("parts", []):
-                                if part.get("thought"):
-                                    t = part.get("text", "")
-                                    if t:
-                                        thought_text.append(t)
-                                        yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
-                                elif part.get("text"):
-                                    response_text.append(part["text"])
-                                    yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
-                                if part.get("functionCall"): full_parts.append(part)
+                    else:
+                        full_parts = []
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "): continue
+                            try: payload = json.loads(line[6:])
+                            except json.JSONDecodeError: continue
+                            for candidate in payload.get("candidates", []):
+                                for part in candidate.get("content", {}).get("parts", []):
+                                    if part.get("thought"):
+                                        t = part.get("text", "")
+                                        if t:
+                                            thought_text.append(t)
+                                            yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
+                                    elif part.get("text"):
+                                        response_text.append(part["text"])
+                                        yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
+                                    if part.get("functionCall"): full_parts.append(part)
+
+                if need_fallback:
+                    async with client.stream("POST", f"{GEMINI_API_BASE}/models/{active_model}:streamGenerateContent?alt=sse", headers={"x-goog-api-key": api_key, "Content-Type":"application/json"}, json=request_body) as resp:
+                        if resp.status_code == 429:
+                            message = "Gemini rate limit reached. Select another model or try again later."
+                            await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                            yield "event: error\ndata: " + json.dumps({"message":message}) + "\n\n"; return
+                        if resp.status_code != 200:
+                            message = "Gemini could not complete this request."
+                            await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                            yield "event: error\ndata: " + json.dumps({"message":message}) + "\n\n"; return
+                        full_parts = []
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "): continue
+                            try: payload = json.loads(line[6:])
+                            except json.JSONDecodeError: continue
+                            for candidate in payload.get("candidates", []):
+                                for part in candidate.get("content", {}).get("parts", []):
+                                    if part.get("thought"):
+                                        t = part.get("text", "")
+                                        if t:
+                                            thought_text.append(t)
+                                            yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
+                                    elif part.get("text"):
+                                        response_text.append(part["text"])
+                                        yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
+                                    if part.get("functionCall"): full_parts.append(part)
+
                 if not full_parts: break
                 contents.append({"role":"model","parts":full_parts}); function_results = []
                 for part in full_parts:
                     call = part["functionCall"]; name = call.get("name"); args = call.get("args", {}); result: dict[str, Any]
                     tool_desc = ""
-                    if name == "write_file": tool_desc = f"Writing file: {args.get('path', '')}"
+                    if name == "create_file": tool_desc = f"Creating file: {args.get('path', '')}"
+                    elif name == "create_folder": tool_desc = f"Creating folder: {args.get('folder_path', '')}"
+                    elif name == "write_file": tool_desc = f"Writing file: {args.get('path', '')}"
                     elif name == "read_file": tool_desc = f"Reading file: {args.get('path', '')}"
                     elif name == "delete_file": tool_desc = f"Deleting file: {args.get('path', '')}"
                     elif name == "search_files": tool_desc = f"Searching files for '{args.get('query', '')}'"
@@ -918,10 +989,29 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                     try:
                         if name == "list_files": result = {"files": [f["path"] for f in await file_index(project_id)]}
                         elif name == "read_file": result = {"content": (await project_file_content(project, files_store._relative(args["path"]))).decode("utf-8", "replace")[:50000]}
+                        elif name == "create_file":
+                            if not isinstance(args.get("path"), str): raise HTTPException(400, "File path must be text")
+                            rel = files_store._relative(args["path"])
+                            content = str(args.get("content") or "").encode()
+                            etag = await persist_project_file(project, rel, content, None, enforce_etag=False)
+                            baseline_etags[rel] = etag
+                            result = {"created": rel, "size": len(content)}
+                            yield "event: tool\ndata: " + json.dumps({"name": "create_file", "path": rel}) + "\n\n"
+                        elif name == "create_folder":
+                            if not isinstance(args.get("folder_path"), str): raise HTTPException(400, "Folder path must be text")
+                            clean_folder = args["folder_path"].replace("\\", "/").strip("/")
+                            if not clean_folder or any(p in {".", ".."} or p.startswith(".") for p in clean_folder.split("/")):
+                                raise HTTPException(400, "Invalid folder path")
+                            marker_path = files_store._relative(f"{clean_folder}/.keep.json")
+                            marker_content = b'{"folder": true}'
+                            etag = await persist_project_file(project, marker_path, marker_content, None, enforce_etag=False)
+                            baseline_etags[marker_path] = etag
+                            result = {"created_folder": clean_folder}
+                            yield "event: tool\ndata: " + json.dumps({"name": "create_folder", "path": clean_folder}) + "\n\n"
                         elif name == "write_file":
                             if not isinstance(args.get("path"), str) or not isinstance(args.get("content"), str): raise HTTPException(400, "File path and content must be text")
                             rel = files_store._relative(args["path"]); content = args["content"].encode()
-                            etag = await persist_project_file(project, rel, content, baseline_etags.get(rel), enforce_etag=True)
+                            etag = await persist_project_file(project, rel, content, baseline_etags.get(rel), enforce_etag=False)
                             baseline_etags[rel] = etag
                             result = {"saved": rel}; yield "event: tool\ndata: " + json.dumps({"name":"write_file","path":rel}) + "\n\n"
                         elif name == "delete_file":

@@ -82,8 +82,14 @@ export default function App() {
   const [toast, setToast] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [hasKey, setHasKey] = useState(false)
-  const [models, setModels] = useState<Array<{ id: string; display_name: string }>>([])
-  const [selectedModel, setSelectedModel] = useState('')
+  const [models, setModels] = useState<Array<{ id: string; display_name: string }>>([
+    {"id": "antigravity-preview-latest", "display_name": "✦ antigravity-preview-latest"},
+    {"id": "antigravity-preview-09-2026", "display_name": "✦ antigravity-preview-09-2026"},
+    {"id": "gemini-2.5-pro", "display_name": "Gemini 2.5 Pro"},
+    {"id": "gemini-2.5-flash", "display_name": "Gemini 2.5 Flash"},
+  ])
+  const [selectedModel, setSelectedModel] = useState('antigravity-preview-latest')
+  const [isAntigravityMode, setIsAntigravityMode] = useState<boolean>(true)
   const [projectName, setProjectName] = useState('little-star')
   const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [saveState, setSaveState] = useState('Saved')
@@ -201,10 +207,13 @@ export default function App() {
     setChat('')
     const userMsgId = Date.now().toString()
     const aiMsgId = (Date.now() + 1).toString()
+    const modelTag = isAntigravityMode
+      ? (selectedModel.toLowerCase().includes('antigravity') ? selectedModel : `✦ Antigravity (${selectedModel})`)
+      : selectedModel
     setChatMessages(prev => [
       ...prev,
       { id: userMsgId, role: 'user', text: prompt, time: Date.now() },
-      { id: aiMsgId, role: 'ai', text: 'Thinking…', time: Date.now(), tools: [], model: selectedModel }
+      { id: aiMsgId, role: 'ai', text: 'Thinking…', time: Date.now(), tools: [], model: modelTag }
     ])
     setTerminalOpen(true)
     if (!currentProjectId) {
@@ -230,7 +239,7 @@ export default function App() {
     try {
       let answer = ''
       const toolsUsed: string[] = []
-      for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel }, controller.signal)) {
+      for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel, antigravity: isAntigravityMode }, controller.signal)) {
         resetActivityTimer()
         if (event.type === 'thought') {
           const chunk = event.data.text || ''
@@ -244,9 +253,15 @@ export default function App() {
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: answer, tools: [...toolsUsed] } : m))
         }
         if (event.type === 'tool') {
+          const actionName = event.data.name || 'write_file'
+          const label = actionName === 'create_folder'
+            ? `Created folder ${event.data.path}`
+            : actionName === 'create_file'
+            ? `Created ${event.data.path}`
+            : `Updated ${event.data.path}`
           toolsUsed.push(event.data.path)
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, tools: [...toolsUsed] } : m))
-          notify(`Updated ${event.data.path}`)
+          notify(label)
         }
         if (event.type === 'reload_preview') setPreviewKey(v => v + 1)
         if (event.type === 'error') {
@@ -549,6 +564,7 @@ export default function App() {
   if (page === 'not-found') return <main className="route-not-found"><span>404</span><h1>This page isn’t available</h1><p>The editor is private to its owner, or this link is incorrect.</p><button className="button button-primary" onClick={() => setPage(user ? 'profile' : 'home')}>Return to Yulya Studio</button></main>
   if (page === 'studio') return <><StudioPage {...{
     user, currentGame, activeFile, openFiles, setOpenFiles, code, language, tree, sidebarOpen, terminalOpen, chat, chatMessages, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel, dirtyFiles, setDirtyFiles,
+    isAntigravityMode, setIsAntigravityMode,
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
     notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, renameProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
     isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles,

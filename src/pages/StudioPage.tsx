@@ -58,6 +58,8 @@ type StudioProps = {
   onReloadFiles: () => void
   isAiGenerating?: boolean
   stopAiGeneration?: () => void
+  isAntigravityMode?: boolean
+  setIsAntigravityMode?: (v: boolean) => void
 }
 
 type ActivityTab = 'explorer' | 'search' | 'assets'
@@ -1968,7 +1970,9 @@ export default function StudioPage(p: StudioProps) {
                 <Sparkles size={15} className="copilot-icon" />
                 <span className="copilot-title">COPILOT CHAT</span>
                 <span className="copilot-model-badge">
-                  {p.selectedModel?.includes('antigravity') ? '✦ Antigravity' : (p.selectedModel ? p.selectedModel.replace('models/', '') : 'Gemini')}
+                  {p.isAntigravityMode
+                    ? `✦ Antigravity (${p.selectedModel ? p.selectedModel.replace('models/', '').replace('antigravity-', '') : 'preview'})`
+                    : (p.selectedModel ? p.selectedModel.replace('models/', '') : 'Gemini')}
                 </span>
               </div>
 
@@ -2074,7 +2078,11 @@ export default function StudioPage(p: StudioProps) {
                 const modelDisplay = msg.model
                   ? msg.model.replace('models/', '')
                   : (p.selectedModel ? p.selectedModel.replace('models/', '') : 'gemini-2.5-flash')
-                const isAntigravity = !isUser && (modelDisplay.toLowerCase().includes('antigravity') || (p.selectedModel?.toLowerCase().includes('antigravity') ?? false))
+                const isAntigravity = !isUser && (
+                  Boolean(p.isAntigravityMode) ||
+                  modelDisplay.toLowerCase().includes('antigravity') ||
+                  (p.selectedModel?.toLowerCase().includes('antigravity') ?? false)
+                )
                 const isThoughtOpen = expandedThoughts[msg.id] !== false
 
                 return (
@@ -2085,7 +2093,7 @@ export default function StudioPage(p: StudioProps) {
                           <span className={`bubble-avatar-tag ${isAntigravity ? 'antigravity-tag' : ''}`}>
                             <Sparkles size={11} />
                           </span>
-                          <span className="bubble-name">{isAntigravity ? '✦ Antigravity' : 'Copilot'}</span>
+                          <span className="bubble-name">{isAntigravity ? '✦ Antigravity Agent' : 'Copilot'}</span>
                           {msg.time && (
                             <span className="bubble-timestamp">
                               {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -2193,31 +2201,53 @@ export default function StudioPage(p: StudioProps) {
                 <span className="composer-context">
                   <LockKeyhole size={10} /> {p.currentGame?.id ?? 'project'}
                 </span>
-                <select
-                  className="composer-model-dropdown"
-                  value={p.selectedModel}
-                  onChange={e => {
-                    if (e.target.value === 'connect-key') {
-                      p.setModal('api-key')
-                    } else {
-                      p.setSelectedModel(e.target.value)
-                    }
-                  }}
-                  onClick={() => {
-                    if (!p.models.length) {
-                      p.setModal('api-key')
-                    }
-                  }}
-                  aria-label="Gemini Model"
-                >
-                  {p.models.length ? (
-                    p.models.map(m => (
-                      <option key={m.id} value={m.id}>{m.display_name}</option>
-                    ))
-                  ) : (
-                    <option value="connect-key">⚙ Connect Gemini Key</option>
-                  )}
-                </select>
+
+                <div className="composer-toolbar-controls">
+                  {/* Antigravity Agent Checkbox Toggle */}
+                  <label
+                    className={`antigravity-checkbox-toggle ${p.isAntigravityMode ? 'is-active' : ''}`}
+                    title="Enable Antigravity Autonomous Agent (multi-file tools, folder creation, 15 iterations)"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(p.isAntigravityMode)}
+                      onChange={e => p.setIsAntigravityMode?.(e.target.checked)}
+                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                    />
+                    <span className="antigravity-toggle-box">
+                      {p.isAntigravityMode ? <Check size={10} className="check-icon" /> : null}
+                    </span>
+                    <Sparkles size={11} className="antigravity-sparkle" />
+                    <span className="antigravity-label-text">Antigravity</span>
+                  </label>
+
+                  {/* Model Selector Dropdown */}
+                  <select
+                    className={`composer-model-dropdown ${p.isAntigravityMode ? 'antigravity-active' : ''}`}
+                    value={p.selectedModel}
+                    onChange={e => {
+                      if (e.target.value === 'connect-key') {
+                        p.setModal('api-key')
+                      } else {
+                        p.setSelectedModel(e.target.value)
+                      }
+                    }}
+                    onClick={() => {
+                      if (!p.models.length) {
+                        p.setModal('api-key')
+                      }
+                    }}
+                    aria-label="AI Model"
+                  >
+                    {p.models.length ? (
+                      p.models.map(m => (
+                        <option key={m.id} value={m.id}>{m.display_name}</option>
+                      ))
+                    ) : (
+                      <option value="connect-key">⚙ Connect Gemini Key</option>
+                    )}
+                  </select>
+                </div>
               </div>
 
               <div className="composer-input-container">
@@ -2230,7 +2260,9 @@ export default function StudioPage(p: StudioProps) {
                       if (!p.isAiGenerating) p.submitPrompt()
                     }
                   }}
-                  placeholder="Ask Copilot or describe changes… (Enter to send, Shift+Enter for newline)"
+                  placeholder={p.isAntigravityMode
+                    ? "Ask Antigravity to build, modify, or debug… (Tools & reasoning active)"
+                    : "Ask Copilot or describe changes… (Enter to send, Shift+Enter for newline)"}
                   rows={2}
                 />
                 {p.isAiGenerating ? (
