@@ -1527,7 +1527,7 @@
   gap: 6px;
   padding: 10px 13px;
   word-break: break-word;
-  transition: all 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease;
   position: relative;
 }
 
@@ -2052,8 +2052,8 @@
 }
 
 @keyframes pulse-live {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.2); opacity: 0.7; }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 @media (max-width: 900px) {
@@ -2310,12 +2310,11 @@
   gap: 8px;
   padding: 8px 12px;
   border-radius: 6px;
-  background: rgba(196, 169, 244, 0.08);
-  border: 1px solid rgba(196, 169, 244, 0.2);
+  background: #161723;
+  border: 1px solid #282a3d;
   color: #c4a9f4;
   font-size: 11px;
   font-family: var(--mono);
-  animation: pulse-live 2s infinite ease-in-out;
 }
 
 .copilot-generating-bar .stop-link {

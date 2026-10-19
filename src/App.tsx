@@ -198,10 +198,24 @@ export default function App() {
     const controller = new AbortController()
     aiAbortController.current = controller
     setIsAiGenerating(true)
+
+    // Cooldown / inactivity timeout: automatically aborts if no output arrives within 60s
+    let activityTimer: number | undefined
+    const resetActivityTimer = () => {
+      if (activityTimer) window.clearTimeout(activityTimer)
+      activityTimer = window.setTimeout(() => {
+        controller.abort()
+        setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: 'Studio AI: Request timed out after 60 seconds with no response from the model.' } : m))
+        notify('AI request timed out')
+      }, 60000)
+    }
+    resetActivityTimer()
+
     try {
       let answer = ''
       const toolsUsed: string[] = []
       for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel }, controller.signal)) {
+        resetActivityTimer()
         if (event.type === 'token') {
           answer += event.data.text
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: answer, tools: [...toolsUsed] } : m))
@@ -238,6 +252,7 @@ export default function App() {
         setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Studio AI: ${error instanceof Error ? error.message : 'Request failed'}` } : m))
       }
     } finally {
+      if (activityTimer) window.clearTimeout(activityTimer)
       setIsAiGenerating(false)
       aiAbortController.current = null
     }
