@@ -2407,33 +2407,40 @@
 /* ========================================================
    THOUGHT PROCESS & TOOL ACTIVITY ACCORDION
    ======================================================== */
+.bubble-avatar-tag.antigravity-tag {
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.35);
+}
+
 .copilot-thought-accordion {
   border-radius: 6px;
-  border: 1px solid #232537;
-  background: #11121b;
+  border: 1px solid #282a3d;
+  background: #0d0e17;
   margin-bottom: 8px;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .thought-accordion-toggle {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   padding: 6px 10px;
-  background: #161724;
+  background: #141521;
   border: 0;
-  color: #9f9ab3;
+  color: #b0abcb;
   font-size: 10px;
   font-family: var(--mono);
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s;
+  transition: background 0.12s, color 0.12s;
 }
 
 .thought-accordion-toggle:hover {
-  background: #1d1e2e;
-  color: #ded9ec;
+  background: #1b1c2e;
+  color: #fff;
 }
 
 .thought-icon {
@@ -2443,7 +2450,8 @@
 
 .thought-toggle-title {
   flex: 1;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .thought-chevron {
@@ -2457,10 +2465,10 @@
 }
 
 .thought-accordion-body {
-  padding: 8px 10px;
-  background: #0b0c13;
-  border-top: 1px solid #1c1d29;
-  max-height: 240px;
+  padding: 8px 12px;
+  background: #08080f;
+  border-top: 1px solid #1a1b29;
+  max-height: 360px;
   overflow-y: auto;
 }
 
@@ -2469,8 +2477,8 @@
   white-space: pre-wrap;
   font-family: var(--mono);
   font-size: 10.5px;
-  line-height: 1.5;
-  color: #a8a4b8;
+  line-height: 1.55;
+  color: #a49fc0;
 }
 
 /* ========================================================

@@ -1968,7 +1968,7 @@ export default function StudioPage(p: StudioProps) {
                 <Sparkles size={15} className="copilot-icon" />
                 <span className="copilot-title">COPILOT CHAT</span>
                 <span className="copilot-model-badge">
-                  {p.selectedModel ? p.selectedModel.replace('models/', '') : 'Gemini'}
+                  {p.selectedModel?.includes('antigravity') ? '✦ Antigravity' : (p.selectedModel ? p.selectedModel.replace('models/', '') : 'Gemini')}
                 </span>
               </div>
 
@@ -2074,16 +2074,18 @@ export default function StudioPage(p: StudioProps) {
                 const modelDisplay = msg.model
                   ? msg.model.replace('models/', '')
                   : (p.selectedModel ? p.selectedModel.replace('models/', '') : 'gemini-2.5-flash')
+                const isAntigravity = !isUser && (modelDisplay.toLowerCase().includes('antigravity') || (p.selectedModel?.toLowerCase().includes('antigravity') ?? false))
+                const isThoughtOpen = expandedThoughts[msg.id] !== false
 
                 return (
                   <div key={msg.id} className={`copilot-bubble ${isUser ? 'user-msg' : 'ai-msg'}`}>
                     <div className="bubble-top">
                       {!isUser ? (
                         <>
-                          <span className="bubble-avatar-tag">
+                          <span className={`bubble-avatar-tag ${isAntigravity ? 'antigravity-tag' : ''}`}>
                             <Sparkles size={11} />
                           </span>
-                          <span className="bubble-name">Copilot</span>
+                          <span className="bubble-name">{isAntigravity ? '✦ Antigravity' : 'Copilot'}</span>
                           {msg.time && (
                             <span className="bubble-timestamp">
                               {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -2124,18 +2126,18 @@ export default function StudioPage(p: StudioProps) {
                         <button
                           type="button"
                           className="thought-accordion-toggle"
-                          onClick={() => setExpandedThoughts(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                          onClick={() => setExpandedThoughts(prev => ({ ...prev, [msg.id]: prev[msg.id] === undefined ? false : !prev[msg.id] }))}
                         >
                           <Brain size={12} className="thought-icon" />
                           <span className="thought-toggle-title">
-                            {p.isAiGenerating && idx === p.chatMessages.length - 1 ? 'Thinking & Executing Tools…' : 'Thinking Process & Tool Activity'}
+                            {p.isAiGenerating && idx === p.chatMessages.length - 1 ? '✦ Thinking & Executing Tools…' : '✦ Antigravity Reasoning & Tool Activity'}
                           </span>
                           <ChevronDown
                             size={12}
-                            className={`thought-chevron ${(expandedThoughts[msg.id] ?? (p.isAiGenerating && idx === p.chatMessages.length - 1)) ? 'is-open' : ''}`}
+                            className={`thought-chevron ${isThoughtOpen ? 'is-open' : ''}`}
                           />
                         </button>
-                        {(expandedThoughts[msg.id] ?? (p.isAiGenerating && idx === p.chatMessages.length - 1)) && (
+                        {isThoughtOpen && (
                           <div className="thought-accordion-body">
                             <pre>{msg.thought}</pre>
                           </div>
@@ -2167,7 +2169,7 @@ export default function StudioPage(p: StudioProps) {
                     {!isUser && (
                       <div className="bubble-model-footer">
                         <Sparkles size={9} className="model-sparkle" />
-                        <span>{modelDisplay}</span>
+                        <span>{isAntigravity ? (modelDisplay.startsWith('✦') ? modelDisplay : `✦ Antigravity (${modelDisplay.replace('antigravity:', '')})`) : modelDisplay}</span>
                       </div>
                     )}
                   </div>
