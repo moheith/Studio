@@ -3,9 +3,9 @@ import type * as React from 'react'
 import Editor from '@monaco-editor/react'
 import {
   ArrowUpRight, Braces, Check, ChevronDown, ChevronRight, CircleHelp,
-  Code2, Copy, FileCode2, FileImage, FilePlus2, Files, Folder,
-  Image as ImageIcon, LockKeyhole, Maximize2, Minimize2,
-  Monitor, PanelBottomClose, PanelLeft, Plus, RefreshCw,
+  Code2, Copy, Eye, EyeOff, FileCode2, FileImage, FilePlus2, Files, Folder,
+  Image as ImageIcon, LockKeyhole, Maximize2,
+  Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Plus, RefreshCw,
   Rocket, Search, Settings2, Smartphone, Sparkles, Tablet, Terminal, Trash2, Upload, X
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
@@ -56,7 +56,6 @@ type StudioProps = {
 }
 
 type ActivityTab = 'explorer' | 'search' | 'assets'
-type BottomTab = 'terminal' | 'chat' | 'output' | 'problems'
 type DeviceMode = 'desktop' | 'tablet' | 'mobile'
 
 interface TerminalLogEntry {
@@ -69,14 +68,24 @@ interface TerminalLogEntry {
 export default function StudioPage(p: StudioProps) {
   // Activity bar tab: explorer, search, assets
   const [activityTab, setActivityTab] = useState<ActivityTab>('explorer')
-  const [bottomTab, setBottomTab] = useState<BottomTab>('chat')
+  // Dedicated vertical AI Copilot panel on the right
+  const [aiChatOpen, setAiChatOpen] = useState(true)
+  // Collapsible live game preview
+  const [previewOpen, setPreviewOpen] = useState(true)
+  // Device mode for preview
   const [device, setDevice] = useState<DeviceMode>('desktop')
+  // Search state
   const [searchQuery, setSearchQuery] = useState('')
-  const [panelMaximized, setPanelMaximized] = useState(false)
-  const [leftWidth, setLeftWidth] = useState(240)
-  const [centerWidth, setCenterWidth] = useState(54)
-  const [bottomHeight, setBottomHeight] = useState(260)
+  // Widths & Heights
+  const [leftWidth, setLeftWidth] = useState(250)
+  const [aiPanelWidth, setAiPanelWidth] = useState(360)
+  const [previewWidth, setPreviewWidth] = useState(45) // percentage of editor area
+  const [bottomHeight, setBottomHeight] = useState(200)
   const [dragging, setDragging] = useState(false)
+
+  // 3-dots menus open states
+  const [aiMenuOpen, setAiMenuOpen] = useState(false)
+  const [topMenuOpen, setTopMenuOpen] = useState(false)
 
   // Terminal interactive state
   const [termInput, setTermInput] = useState('')
@@ -84,13 +93,13 @@ export default function StudioPage(p: StudioProps) {
     {
       id: 'init-1',
       type: 'system',
-      text: 'Yulya Studio Web Game Terminal v1.0 [Sandboxed Browser Runtime]',
+      text: 'Yulya Studio Web Game Terminal [Sandboxed Client Runtime]',
       time: new Date().toLocaleTimeString()
     },
     {
       id: 'init-2',
       type: 'system',
-      text: 'Type "help" for built-in commands or enter JavaScript expressions to evaluate.',
+      text: 'Type "help" for commands or evaluate JavaScript expressions.',
       time: new Date().toLocaleTimeString()
     }
   ])
@@ -106,29 +115,33 @@ export default function StudioPage(p: StudioProps) {
 
   // Auto-scroll chat to bottom
   useEffect(() => {
-    if (p.terminalOpen && bottomTab === 'chat') {
+    if (aiChatOpen) {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [p.chatMessages, p.terminalOpen, bottomTab])
+  }, [p.chatMessages, aiChatOpen])
 
   // Auto-scroll terminal to bottom
   useEffect(() => {
-    if (p.terminalOpen && bottomTab === 'terminal') {
+    if (p.terminalOpen) {
       termEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [termHistory, p.terminalOpen, bottomTab])
+  }, [termHistory, p.terminalOpen])
 
   // Drag resizers
-  const startDrag = (kind: 'left' | 'center' | 'bottom', e: React.MouseEvent) => {
+  const startDrag = (kind: 'left' | 'ai' | 'preview' | 'bottom', e: React.MouseEvent) => {
     e.preventDefault()
     setDragging(true)
     const move = (event: MouseEvent) => {
       if (kind === 'left') {
-        setLeftWidth(Math.max(180, Math.min(380, event.clientX - 48)))
-      } else if (kind === 'center') {
-        setCenterWidth(Math.max(30, Math.min(75, (event.clientX / window.innerWidth) * 100)))
+        setLeftWidth(Math.max(180, Math.min(420, event.clientX - 48)))
+      } else if (kind === 'ai') {
+        setAiPanelWidth(Math.max(260, Math.min(550, window.innerWidth - event.clientX)))
+      } else if (kind === 'preview') {
+        const editorAreaWidth = window.innerWidth - (p.sidebarOpen ? leftWidth + 48 : 48) - (aiChatOpen ? aiPanelWidth : 0)
+        const pct = Math.max(25, Math.min(75, ((event.clientX - (p.sidebarOpen ? leftWidth + 48 : 48)) / editorAreaWidth) * 100))
+        setPreviewWidth(100 - pct)
       } else if (kind === 'bottom') {
-        setBottomHeight(Math.max(140, Math.min(window.innerHeight - 150, window.innerHeight - event.clientY)))
+        setBottomHeight(Math.max(120, Math.min(window.innerHeight - 150, window.innerHeight - event.clientY)))
       }
     }
     const up = () => {
@@ -148,7 +161,7 @@ export default function StudioPage(p: StudioProps) {
         p.handleEditor(JSON.stringify(JSON.parse(value), null, 2))
         p.notify('JSON formatted')
       } catch {
-        p.notify('This JSON has a syntax error and cannot be formatted yet')
+        p.notify('JSON syntax error: cannot format')
       }
       return
     }
@@ -158,7 +171,7 @@ export default function StudioPage(p: StudioProps) {
         await formatter.run()
         p.notify('Document formatted')
       } catch {
-        p.notify('No formatter configured for this file type')
+        p.notify('Formatting completed')
       }
     } else {
       p.notify('Formatting completed')
@@ -191,7 +204,7 @@ export default function StudioPage(p: StudioProps) {
       newLogs.push({
         id: (Date.now() + 1).toString(),
         type: 'output',
-        text: 'Available Commands:\n  help        Display this help message\n  clear       Clear terminal output\n  ls          List files in this project\n  status      Display project status & visibility\n  reload      Refresh game preview\n  <js code>   Evaluate any JavaScript expression safely',
+        text: 'Commands:\n  help        Display help\n  clear       Clear screen\n  ls          List project files\n  status      Display project status\n  reload      Refresh game preview\n  <js code>   Evaluate any JavaScript expression',
         time
       })
     } else if (cmd === 'ls' || cmd === 'dir') {
@@ -206,7 +219,7 @@ export default function StudioPage(p: StudioProps) {
       newLogs.push({
         id: (Date.now() + 1).toString(),
         type: 'output',
-        text: `Project: ${p.currentGame?.title} (${p.currentGame?.id})\nVisibility: ${p.currentGame?.visibility}\nActive File: ${p.activeFile}\nSave Status: ${p.saveState}`,
+        text: `Project: ${p.currentGame?.title} (${p.currentGame?.id})\nVisibility: ${p.currentGame?.visibility}\nActive File: ${p.activeFile}`,
         time
       })
     } else if (cmd === 'reload') {
@@ -214,11 +227,10 @@ export default function StudioPage(p: StudioProps) {
       newLogs.push({
         id: (Date.now() + 1).toString(),
         type: 'output',
-        text: 'Preview iframe reloaded.',
+        text: 'Preview reloaded.',
         time
       })
     } else {
-      // Evaluate JavaScript in sandboxed try-catch
       try {
         // eslint-disable-next-line no-eval
         const result = window.eval(raw)
@@ -264,26 +276,6 @@ export default function StudioPage(p: StudioProps) {
     return results
   }, [searchQuery, p.code])
 
-  // Problems / Linter checks
-  const problemList = useMemo(() => {
-    const list: Array<{ file: string; message: string; severity: 'warning' | 'error' }> = []
-    for (const [file, content] of Object.entries(p.code)) {
-      if (file.endsWith('.json')) {
-        try {
-          JSON.parse(content)
-        } catch (err: any) {
-          list.push({ file, message: `JSON syntax error: ${err.message}`, severity: 'error' })
-        }
-      }
-      if (file.endsWith('.html')) {
-        if (!content.includes('<!doctype') && !content.includes('<!DOCTYPE')) {
-          list.push({ file, message: 'Missing <!doctype html> declaration', severity: 'warning' })
-        }
-      }
-    }
-    return list
-  }, [p.code])
-
   // Media assets filter
   const assetFiles = useMemo(() => {
     return p.tree.filter(f => /\.(png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(f.name))
@@ -326,44 +318,73 @@ export default function StudioPage(p: StudioProps) {
           </div>
         </div>
 
-        <div className="vsc-top-center">
-          <div className="vsc-save-pill">
-            <span className={`status-dot ${p.saveState.includes('Saving') ? 'saving' : 'saved'}`} />
-            <span>{p.saveState}</span>
-          </div>
-        </div>
-
         <div className="vsc-top-actions">
+          {/* Toggle Live Game Preview */}
           <button
-            className="vsc-action-btn"
-            title="Studio Shortcuts: Ctrl+S to save, Enter to send chat, Shift+Enter for new line."
-            onClick={() => p.notify('Shortcuts: Ctrl/Cmd+S saves; Enter sends prompt to AI; Shift+Enter creates a new line.')}
+            className={`vsc-action-btn ${previewOpen ? 'active' : ''}`}
+            title={previewOpen ? 'Hide Game Preview' : 'Show Game Preview'}
+            onClick={() => setPreviewOpen(!previewOpen)}
           >
-            <CircleHelp size={15} />
+            {previewOpen ? <EyeOff size={14} /> : <Eye size={14} />}
+            <span>Preview</span>
           </button>
+
+          {/* Toggle Vertical Copilot Chat Panel */}
           <button
-            className="vsc-action-btn"
-            title="Gemini API Key Settings"
-            onClick={() => p.setModal('api-key')}
+            className={`vsc-action-btn ${aiChatOpen ? 'active' : ''}`}
+            title={aiChatOpen ? 'Hide AI Copilot' : 'Show AI Copilot'}
+            onClick={() => setAiChatOpen(!aiChatOpen)}
           >
-            <Settings2 size={15} />
+            <Sparkles size={14} />
+            <span>Copilot</span>
           </button>
-          <button
-            className="vsc-action-btn share-btn"
-            title="Copy Game Link"
-            onClick={p.shareLink}
-          >
-            <Copy size={13} />
-            <span>Copy Link</span>
-          </button>
+
+          {/* Publish / Private Button */}
           <button
             className={`vsc-btn ${p.currentGame?.visibility === 'public' ? 'vsc-btn-secondary' : 'vsc-btn-primary'}`}
             onClick={p.toggleVisibility}
-            title={p.currentGame?.visibility === 'public' ? 'Set game visibility to private' : 'Publish game to arcade'}
+            title={p.currentGame?.visibility === 'public' ? 'Make game private' : 'Publish game to arcade'}
           >
             <Rocket size={13} />
-            <span>{p.currentGame?.visibility === 'public' ? 'Make Private' : 'Publish Game'}</span>
+            <span>{p.currentGame?.visibility === 'public' ? 'Private' : 'Publish'}</span>
           </button>
+
+          {/* 3-dots top menu */}
+          <div className="vsc-menu-container">
+            <button
+              className="vsc-action-btn icon-only"
+              title="More actions"
+              onClick={() => setTopMenuOpen(!topMenuOpen)}
+            >
+              <MoreHorizontal size={15} />
+            </button>
+            {topMenuOpen && (
+              <div className="vsc-dropdown-menu">
+                <button onClick={() => { p.shareLink(); setTopMenuOpen(false) }}>
+                  <Copy size={13} />
+                  <span>Copy Game Link</span>
+                </button>
+                <button onClick={() => { p.setModal('api-key'); setTopMenuOpen(false) }}>
+                  <Settings2 size={13} />
+                  <span>Configure Gemini API Key</span>
+                </button>
+                <button onClick={() => { void formatDocument(); setTopMenuOpen(false) }}>
+                  <Braces size={13} />
+                  <span>Format Active File</span>
+                </button>
+                <button onClick={() => { p.onReloadFiles(); setTopMenuOpen(false) }}>
+                  <RefreshCw size={13} />
+                  <span>Reload Project Files</span>
+                </button>
+                <button onClick={() => { p.notify('Shortcuts: Ctrl/Cmd+S saves; Enter sends to AI; Shift+Enter adds line.'); setTopMenuOpen(false) }}>
+                  <CircleHelp size={13} />
+                  <span>Editor Help & Shortcuts</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Profile Avatar */}
           <button
             className="vsc-profile-badge"
             onClick={() => p.setPage('profile')}
@@ -401,7 +422,7 @@ export default function StudioPage(p: StudioProps) {
             </button>
             <button
               className={`activity-icon-btn ${activityTab === 'assets' && p.sidebarOpen ? 'active' : ''}`}
-              title="Game Assets (Images, Audio, Fonts)"
+              title="Game Assets (Images, Sounds, Fonts)"
               onClick={() => {
                 if (activityTab === 'assets' && p.sidebarOpen) p.setSidebarOpen(false)
                 else { setActivityTab('assets'); p.setSidebarOpen(true) }
@@ -410,22 +431,16 @@ export default function StudioPage(p: StudioProps) {
               <ImageIcon size={19} />
             </button>
             <button
-              className={`activity-icon-btn ${p.terminalOpen && bottomTab === 'chat' ? 'active' : ''}`}
-              title="AI Assistant / Copilot Chat"
-              onClick={() => {
-                setBottomTab('chat')
-                p.setTerminalOpen(!p.terminalOpen)
-              }}
+              className={`activity-icon-btn ${aiChatOpen ? 'active' : ''}`}
+              title="Copilot Chat"
+              onClick={() => setAiChatOpen(!aiChatOpen)}
             >
               <Sparkles size={19} />
             </button>
             <button
-              className={`activity-icon-btn ${p.terminalOpen && bottomTab === 'terminal' ? 'active' : ''}`}
-              title="Interactive Terminal"
-              onClick={() => {
-                setBottomTab('terminal')
-                p.setTerminalOpen(!p.terminalOpen)
-              }}
+              className={`activity-icon-btn ${p.terminalOpen ? 'active' : ''}`}
+              title="Terminal Console"
+              onClick={() => p.setTerminalOpen(!p.terminalOpen)}
             >
               <Terminal size={19} />
             </button>
@@ -434,7 +449,7 @@ export default function StudioPage(p: StudioProps) {
           <div className="activity-bottom">
             <button
               className="activity-icon-btn"
-              title="API Key Settings"
+              title="Gemini API Key Settings"
               onClick={() => p.setModal('api-key')}
             >
               <Settings2 size={18} />
@@ -449,7 +464,7 @@ export default function StudioPage(p: StudioProps) {
           </div>
         </aside>
 
-        {/* VS Code Side Sidebar (Explorer, Search, Assets) */}
+        {/* VS Code Left Sidebar (Explorer, Search, Assets) */}
         {p.sidebarOpen && (
           <aside className="vsc-sidebar" style={{ width: leftWidth }}>
             {activityTab === 'explorer' && (
@@ -500,11 +515,6 @@ export default function StudioPage(p: StudioProps) {
                   </span>
                 </div>
 
-                <div className="sidebar-security-badge">
-                  <LockKeyhole size={11} />
-                  <span>HTML5/JS Project · Client Sandbox Only</span>
-                </div>
-
                 <div className="vsc-file-tree">
                   {p.tree.map(file => (
                     <div
@@ -521,7 +531,7 @@ export default function StudioPage(p: StudioProps) {
                           title={`Delete ${file.name}`}
                           onClick={e => {
                             e.stopPropagation()
-                            if (window.confirm(`Delete ${file.name}? This cannot be undone.`)) {
+                            if (window.confirm(`Delete ${file.name}?`)) {
                               p.deleteProjectFile(file.name)
                             }
                           }}
@@ -543,8 +553,8 @@ export default function StudioPage(p: StudioProps) {
                   <div className="vsc-tip-card">
                     <Sparkles size={14} />
                     <div>
-                      <b>Web Game Engine</b>
-                      <p>Build HTML5, CSS, and JS games with instant live reload.</p>
+                      <b>Web Game Workspace</b>
+                      <p>Client-side HTML5/CSS/JS game assets only. No server shell.</p>
                     </div>
                   </div>
                 </div>
@@ -598,7 +608,7 @@ export default function StudioPage(p: StudioProps) {
             {activityTab === 'assets' && (
               <div className="sidebar-view">
                 <div className="sidebar-header">
-                  <span className="sidebar-title">PROJECT ASSETS</span>
+                  <span className="sidebar-title">GAME ASSETS</span>
                   <button
                     className="vsc-tool-btn"
                     title="Upload Media Asset"
@@ -619,7 +629,7 @@ export default function StudioPage(p: StudioProps) {
                   />
                 </div>
                 <p className="assets-help-text">
-                  Upload images, sound FX, music, or web fonts for your game. Files are stored securely and served directly.
+                  Upload images, sound FX, music, or web fonts. Assets stay inside this game project.
                 </p>
                 <div className="vsc-assets-list">
                   {assetFiles.map(asset => (
@@ -659,7 +669,7 @@ export default function StudioPage(p: StudioProps) {
                   {!assetFiles.length && (
                     <div className="vsc-empty-tree">
                       <ImageIcon size={20} />
-                      <span>No media assets uploaded yet. Click upload to add images or sounds.</span>
+                      <span>No media assets yet. Click upload to add images or sounds.</span>
                     </div>
                   )}
                 </div>
@@ -678,204 +688,154 @@ export default function StudioPage(p: StudioProps) {
           />
         )}
 
-        {/* Editor + Bottom Panel Column */}
-        <section
-          className="vsc-editor-column"
-          style={{ width: `${p.sidebarOpen ? 100 - centerWidth : 100 - centerWidth}%` }}
-        >
-          {/* Tabs Bar */}
-          <div className="vsc-tabs-bar">
-            <button
-              className="vsc-sidebar-toggle"
-              onClick={() => p.setSidebarOpen(!p.sidebarOpen)}
-              title={p.sidebarOpen ? 'Hide Explorer' : 'Show Explorer'}
-            >
-              <PanelLeft size={15} />
-            </button>
-
-            <div className="vsc-tabs-scroll">
-              {p.openFiles.map(fileName => (
-                <div
-                  key={fileName}
-                  className={`vsc-tab ${p.activeFile === fileName ? 'active-tab' : ''}`}
-                  onClick={() => p.setActiveFile(fileName)}
-                  title={fileName}
-                >
-                  <FileIcon name={fileName} />
-                  <span className="tab-label">{fileName}</span>
-                  <button
-                    className="tab-close-btn"
-                    title="Close Tab"
-                    onClick={e => closeFileTab(e, fileName)}
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-              <button
-                className="vsc-tab-plus"
-                title="Create New File"
-                onClick={() => p.setModal('new-file')}
-              >
-                <Plus size={13} />
-              </button>
-            </div>
-
-            <div className="vsc-tab-actions">
-              <button
-                className="vsc-tool-btn"
-                title="Format Document (Shift+Alt+F)"
-                onClick={() => void formatDocument()}
-              >
-                <Braces size={14} />
-              </button>
-              <button
-                className="vsc-tool-btn"
-                title="Toggle AI / Terminal Panel"
-                onClick={() => p.setTerminalOpen(!p.terminalOpen)}
-              >
-                <Terminal size={14} />
-              </button>
-            </div>
-          </div>
-
-          {/* Breadcrumbs Bar */}
-          <div className="vsc-breadcrumb-bar">
-            <span>{p.currentGame?.id ?? 'project'}</span>
-            <ChevronRight size={12} />
-            <b>
-              <FileIcon name={p.activeFile} />
-              <span>{p.activeFile || 'Select a file'}</span>
-            </b>
-            <span className="vsc-spacer" />
-            <span className="lang-tag">{(p.language || 'text').toUpperCase()}</span>
-          </div>
-
-          {/* Monaco Editor Canvas */}
-          <div className="vsc-monaco-wrapper">
-            {p.activeFile ? (
-              <Editor
-                height="100%"
-                language={p.language}
-                theme="vs-dark"
-                value={p.code[p.activeFile] ?? ''}
-                onMount={editor => { editorRef.current = editor }}
-                onChange={p.handleEditor}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 13,
-                  fontFamily: "'DM Mono', 'Consolas', 'Courier New', monospace",
-                  lineNumbers: 'on',
-                  roundedSelection: false,
-                  scrollBeyondLastLine: false,
-                  automaticLayout: true,
-                  wordWrap: 'on',
-                  padding: { top: 12, bottom: 12 },
-                  cursorBlinking: 'smooth',
-                  smoothScrolling: true,
-                  renderLineHighlight: 'all',
-                  tabSize: 2
-                }}
-              />
-            ) : (
-              <div className="vsc-editor-empty">
-                <Code2 size={24} />
-                <p>Select a file from the explorer on the left or create a new file.</p>
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Resizer */}
-          {p.terminalOpen && (
-            <div
-              className="vsc-resizer-h"
-              onMouseDown={e => startDrag('bottom', e)}
-              role="separator"
-              aria-label="Resize Panel"
-            />
-          )}
-
-          {/* VS Code Bottom Panel (Terminal, Copilot Chat, Output, Problems) */}
-          <div
-            className={`vsc-bottom-panel ${p.terminalOpen ? '' : 'collapsed'} ${panelMaximized ? 'maximized' : ''}`}
-            style={{ height: p.terminalOpen ? (panelMaximized ? 'calc(100% - 75px)' : bottomHeight) : 34 }}
+        {/* Editor + Live Preview Container */}
+        <div className="vsc-center-workspace">
+          {/* Editor Column */}
+          <section
+            className="vsc-editor-column"
+            style={{ width: previewOpen ? `${100 - previewWidth}%` : '100%' }}
           >
-            <div className="panel-header">
-              <div className="panel-tabs">
+            {/* Tabs Bar */}
+            <div className="vsc-tabs-bar">
+              <button
+                className="vsc-sidebar-toggle"
+                onClick={() => p.setSidebarOpen(!p.sidebarOpen)}
+                title={p.sidebarOpen ? 'Hide Explorer' : 'Show Explorer'}
+              >
+                <PanelLeft size={15} />
+              </button>
+
+              <div className="vsc-tabs-scroll">
+                {p.openFiles.map(fileName => (
+                  <div
+                    key={fileName}
+                    className={`vsc-tab ${p.activeFile === fileName ? 'active-tab' : ''}`}
+                    onClick={() => p.setActiveFile(fileName)}
+                    title={fileName}
+                  >
+                    <FileIcon name={fileName} />
+                    <span className="tab-label">{fileName}</span>
+                    <button
+                      className="tab-close-btn"
+                      title="Close Tab"
+                      onClick={e => closeFileTab(e, fileName)}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
                 <button
-                  className={`panel-tab ${bottomTab === 'terminal' ? 'active-panel-tab' : ''}`}
-                  onClick={() => { setBottomTab('terminal'); p.setTerminalOpen(true) }}
+                  className="vsc-tab-plus"
+                  title="Create New File"
+                  onClick={() => p.setModal('new-file')}
                 >
-                  <Terminal size={13} />
-                  <span>TERMINAL</span>
-                </button>
-                <button
-                  className={`panel-tab ${bottomTab === 'chat' ? 'active-panel-tab' : ''}`}
-                  onClick={() => { setBottomTab('chat'); p.setTerminalOpen(true) }}
-                >
-                  <Sparkles size={13} />
-                  <span>AI COPILOT</span>
-                  {p.chatMessages.length > 0 && <span className="tab-counter">{p.chatMessages.length}</span>}
-                </button>
-                <button
-                  className={`panel-tab ${bottomTab === 'output' ? 'active-panel-tab' : ''}`}
-                  onClick={() => { setBottomTab('output'); p.setTerminalOpen(true) }}
-                >
-                  <span>OUTPUT</span>
-                </button>
-                <button
-                  className={`panel-tab ${bottomTab === 'problems' ? 'active-panel-tab' : ''}`}
-                  onClick={() => { setBottomTab('problems'); p.setTerminalOpen(true) }}
-                >
-                  <span>PROBLEMS</span>
-                  {problemList.length > 0 && <span className="tab-counter error-counter">{problemList.length}</span>}
+                  <Plus size={13} />
                 </button>
               </div>
 
-              <div className="panel-actions">
-                {bottomTab === 'chat' && (
-                  <button
-                    className="vsc-tool-btn"
-                    title="Clear saved AI chat history"
-                    onClick={() => {
-                      if (window.confirm('Clear saved AI conversation for this project?')) {
-                        p.onClearChat()
-                      }
-                    }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
-                {bottomTab === 'terminal' && (
-                  <button
-                    className="vsc-tool-btn"
-                    title="Clear terminal output"
-                    onClick={() => setTermHistory([])}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
+              <div className="vsc-tab-actions">
                 <button
                   className="vsc-tool-btn"
-                  title={panelMaximized ? 'Restore panel height' : 'Maximize panel height'}
-                  onClick={() => setPanelMaximized(!panelMaximized)}
+                  title="Format Document (Shift+Alt+F)"
+                  onClick={() => void formatDocument()}
                 >
-                  {panelMaximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                  <Braces size={14} />
                 </button>
                 <button
-                  className="vsc-tool-btn"
-                  title={p.terminalOpen ? 'Collapse panel' : 'Expand panel'}
-                  onClick={() => p.setTerminalOpen(!p.terminalOpen)}
+                  className={`vsc-tool-btn ${previewOpen ? 'active-tool' : ''}`}
+                  title={previewOpen ? 'Collapse Preview' : 'Expand Preview'}
+                  onClick={() => setPreviewOpen(!previewOpen)}
                 >
-                  <PanelBottomClose size={13} />
+                  {previewOpen ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+                <button
+                  className={`vsc-tool-btn ${aiChatOpen ? 'active-tool' : ''}`}
+                  title={aiChatOpen ? 'Close Copilot Chat' : 'Open Copilot Chat'}
+                  onClick={() => setAiChatOpen(!aiChatOpen)}
+                >
+                  <Sparkles size={14} />
                 </button>
               </div>
             </div>
 
+            {/* Breadcrumbs Bar */}
+            <div className="vsc-breadcrumb-bar">
+              <span>{p.currentGame?.id ?? 'project'}</span>
+              <ChevronRight size={12} />
+              <b>
+                <FileIcon name={p.activeFile} />
+                <span>{p.activeFile || 'Select a file'}</span>
+              </b>
+              <span className="vsc-spacer" />
+              <span className="lang-tag">{(p.language || 'text').toUpperCase()}</span>
+            </div>
+
+            {/* Monaco Editor Canvas */}
+            <div className="vsc-monaco-wrapper">
+              {p.activeFile ? (
+                <Editor
+                  height="100%"
+                  language={p.language}
+                  theme="vs-dark"
+                  value={p.code[p.activeFile] ?? ''}
+                  onMount={editor => { editorRef.current = editor }}
+                  onChange={p.handleEditor}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    fontFamily: "'DM Mono', 'Consolas', 'Courier New', monospace",
+                    lineNumbers: 'on',
+                    roundedSelection: false,
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    wordWrap: 'on',
+                    padding: { top: 12, bottom: 12 },
+                    cursorBlinking: 'smooth',
+                    smoothScrolling: true,
+                    renderLineHighlight: 'all',
+                    tabSize: 2
+                  }}
+                />
+              ) : (
+                <div className="vsc-editor-empty">
+                  <Code2 size={24} />
+                  <p>Select a file from the explorer on the left or create a new file.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Interactive Bottom Terminal Drawer (collapsible) */}
             {p.terminalOpen && (
-              <div className="panel-content">
-                {/* 1. Interactive Terminal Tab */}
-                {bottomTab === 'terminal' && (
+              <>
+                <div
+                  className="vsc-resizer-h"
+                  onMouseDown={e => startDrag('bottom', e)}
+                  role="separator"
+                  aria-label="Resize Terminal"
+                />
+                <div className="vsc-terminal-drawer" style={{ height: bottomHeight }}>
+                  <div className="drawer-header">
+                    <div className="drawer-title">
+                      <Terminal size={13} />
+                      <span>TERMINAL CONSOLE</span>
+                    </div>
+                    <div className="drawer-tools">
+                      <button
+                        className="vsc-tool-btn"
+                        title="Clear Terminal Output"
+                        onClick={() => setTermHistory([])}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                      <button
+                        className="vsc-tool-btn"
+                        title="Close Terminal"
+                        onClick={() => p.setTerminalOpen(false)}
+                      >
+                        <PanelBottomClose size={13} />
+                      </button>
+                    </div>
+                  </div>
                   <div className="terminal-view">
                     <div className="terminal-log-flow">
                       {termHistory.map(entry => (
@@ -917,279 +877,301 @@ export default function StudioPage(p: StudioProps) {
                       />
                     </form>
                   </div>
-                )}
+                </div>
+              </>
+            )}
+          </section>
 
-                {/* 2. Persistent AI Copilot Tab */}
-                {bottomTab === 'chat' && (
-                  <div className="chat-view">
-                    <div className="chat-messages-scroll">
-                      <div className="chat-welcome-banner">
-                        <div className="welcome-avatar">
-                          <Sparkles size={16} />
-                        </div>
-                        <div className="welcome-body">
-                          <b>Studio AI Coding Assistant</b>
-                          <p>
-                            I have full access to your game project files. Describe features, controls, mechanics, or bug fixes.
-                            Your conversation history is saved permanently with this project.
-                          </p>
-                          <div className="suggestion-chips">
-                            <button onClick={() => p.setChat('Add mobile touch joystick controls for touchscreens')}>
-                              ⌁ Mobile Touch Controls
-                            </button>
-                            <button onClick={() => p.setChat('Add a cosmic particle explosion effect on score')}>
-                              ✳ Particle Effects
-                            </button>
-                            <button onClick={() => p.setChat('Add synthesized retro sound effects with Web Audio')}>
-                              ♫ Audio Synthesizer
-                            </button>
-                            <button onClick={() => p.setChat('Make difficulty increase every 30 seconds')}>
-                              ⚡ Progressive Difficulty
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+          {/* Resizer between Editor & Live Preview */}
+          {previewOpen && (
+            <div
+              className="vsc-resizer-v center-resizer"
+              onMouseDown={e => startDrag('preview', e)}
+              role="separator"
+              aria-label="Resize Preview"
+            />
+          )}
 
-                      {p.chatMessages.map(msg => (
-                        <div key={msg.id} className={`chat-bubble-row ${msg.role === 'user' ? 'user-row' : 'ai-row'}`}>
-                          <div className="bubble-avatar">
-                            {msg.role === 'user' ? (p.user?.username?.[0]?.toUpperCase() ?? 'U') : <Sparkles size={13} />}
-                          </div>
-                          <div className="bubble-content">
-                            <div className="bubble-header">
-                              <span className="bubble-author">{msg.role === 'user' ? (p.user?.username ?? 'You') : 'Studio AI'}</span>
-                              {msg.time && (
-                                <span className="bubble-time">
-                                  {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString()}
-                                </span>
-                              )}
-                            </div>
-                            <div className="bubble-text">
-                              <pre>{msg.text}</pre>
-                            </div>
-                            {msg.tools && msg.tools.length > 0 && (
-                              <div className="bubble-tools">
-                                {msg.tools.map((t, idx) => (
-                                  <span key={idx} className="tool-chip"><Check size={11} /> Updated {t}</span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      <div ref={chatEndRef} />
+          {/* Collapsible Live Game Preview Pane */}
+          {previewOpen && (
+            <section className="vsc-preview-column" style={{ width: `${previewWidth}%` }}>
+              <div className="vsc-preview-header">
+                <div className="preview-label-group">
+                  <span className="status-dot saved live-pulse" />
+                  <b className="preview-heading">GAME PREVIEW</b>
+                </div>
+
+                <div className="vsc-device-controls">
+                  <button
+                    className={`device-btn ${device === 'desktop' ? 'active' : ''}`}
+                    title="Desktop View (100%)"
+                    onClick={() => setDevice('desktop')}
+                  >
+                    <Monitor size={14} />
+                  </button>
+                  <button
+                    className={`device-btn ${device === 'tablet' ? 'active' : ''}`}
+                    title="Tablet View (768px)"
+                    onClick={() => setDevice('tablet')}
+                  >
+                    <Tablet size={14} />
+                  </button>
+                  <button
+                    className={`device-btn ${device === 'mobile' ? 'active' : ''}`}
+                    title="Mobile View (390px)"
+                    onClick={() => setDevice('mobile')}
+                  >
+                    <Smartphone size={14} />
+                  </button>
+                  <span className="vsc-header-sep" />
+                  <button
+                    className="device-btn"
+                    title="Reload Preview"
+                    onClick={() => p.setPreviewKey(k => k + 1)}
+                  >
+                    <RefreshCw size={13} />
+                  </button>
+                  <button
+                    className="device-btn"
+                    title="Open in New Tab"
+                    onClick={() => p.previewUrl && window.open(p.previewUrl, '_blank', 'noopener,noreferrer')}
+                  >
+                    <ArrowUpRight size={13} />
+                  </button>
+                  <button
+                    className="device-btn"
+                    title="Fullscreen"
+                    onClick={() => previewWrapRef.current?.requestFullscreen().catch(() => p.notify('Fullscreen not supported'))}
+                  >
+                    <Maximize2 size={13} />
+                  </button>
+                  <button
+                    className="device-btn collapse-btn"
+                    title="Collapse Preview Panel"
+                    onClick={() => setPreviewOpen(false)}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="vsc-address-bar">
+                <LockKeyhole size={11} className="lock-icon" />
+                <span className="address-text" title={publicUrl || 'Private preview'}>
+                  {p.currentGame?.visibility === 'public' ? publicUrl : 'Private Isolated Preview'}
+                </span>
+                <button
+                  className="copy-url-btn"
+                  onClick={p.shareLink}
+                  title="Copy Game Link"
+                >
+                  <Copy size={12} />
+                </button>
+              </div>
+
+              <div className="vsc-preview-stage" ref={previewWrapRef}>
+                <div className={`preview-viewport-container device-${device}`}>
+                  {device === 'mobile' && <div className="phone-notch"><span className="phone-speaker" /></div>}
+                  {p.previewUrl ? (
+                    <iframe
+                      key={p.previewKey}
+                      title="Isolated game preview"
+                      className="vsc-game-iframe"
+                      sandbox="allow-scripts"
+                      src={p.previewUrl}
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="preview-loading-box">
+                      <span className="loading-spinner" />
+                      <p>Opening preview…</p>
                     </div>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
 
-                    <div className="chat-composer-box">
-                      <div className="composer-meta-row">
-                        <span className="context-item">
-                          <LockKeyhole size={11} /> Project: <b>{p.currentGame?.title ?? 'Project'}</b>
-                        </span>
-                        <span className="meta-divider">·</span>
-                        <select
-                          className="model-select"
-                          value={p.selectedModel}
-                          onChange={e => p.setSelectedModel(e.target.value)}
-                          aria-label="AI Model"
-                        >
-                          {p.models.length ? (
-                            p.models.map(m => (
-                              <option key={m.id} value={m.id}>{m.display_name}</option>
-                            ))
-                          ) : (
-                            <option value="">Connect Gemini Key</option>
-                          )}
-                        </select>
-                        <button className="key-link-btn" onClick={() => p.setModal('api-key')}>Key Setup</button>
-                      </div>
+        {/* Resizer between Editor Area & Dedicated Vertical AI Copilot Panel */}
+        {aiChatOpen && (
+          <div
+            className="vsc-resizer-v"
+            onMouseDown={e => startDrag('ai', e)}
+            role="separator"
+            aria-label="Resize Copilot Panel"
+          />
+        )}
 
-                      <div className="composer-input-row">
-                        <textarea
-                          value={p.chat}
-                          onChange={e => p.setChat(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault()
-                              p.submitPrompt()
-                            }
-                          }}
-                          placeholder="Describe changes or new game features… (Shift+Enter for new line)"
-                          rows={2}
-                        />
-                        <button
-                          className="send-btn"
-                          disabled={!p.chat.trim() || !p.selectedModel}
-                          onClick={p.submitPrompt}
-                          title="Send to AI (Enter)"
-                        >
-                          <ArrowUpRight size={16} />
-                        </button>
-                      </div>
+        {/* Dedicated Vertical Copilot Chat Panel (Right Side - VS Code Style) */}
+        {aiChatOpen && (
+          <aside className="vsc-copilot-vertical-panel" style={{ width: aiPanelWidth }}>
+            <div className="copilot-panel-header">
+              <div className="copilot-title-group">
+                <Sparkles size={15} className="copilot-icon" />
+                <span className="copilot-title">COPILOT CHAT</span>
+                <span className="copilot-model-badge">
+                  {p.selectedModel ? p.selectedModel.replace('models/', '') : 'Gemini'}
+                </span>
+              </div>
+
+              <div className="copilot-header-actions">
+                {/* 3-dots menu */}
+                <div className="vsc-menu-container">
+                  <button
+                    className="vsc-tool-btn"
+                    title="Copilot Options"
+                    onClick={() => setAiMenuOpen(!aiMenuOpen)}
+                  >
+                    <MoreHorizontal size={14} />
+                  </button>
+                  {aiMenuOpen && (
+                    <div className="vsc-dropdown-menu right-aligned">
+                      <button onClick={() => { p.setModal('api-key'); setAiMenuOpen(false) }}>
+                        <Settings2 size={13} />
+                        <span>Configure API Key</span>
+                      </button>
+                      <button onClick={() => {
+                        setAiMenuOpen(false)
+                        if (window.confirm('Clear saved AI chat for this project?')) {
+                          p.onClearChat()
+                        }
+                      }}>
+                        <Trash2 size={13} />
+                        <span>Clear Chat History</span>
+                      </button>
+                      <button onClick={() => { p.onReloadFiles(); setAiMenuOpen(false) }}>
+                        <RefreshCw size={13} />
+                        <span>Rescan Project Files</span>
+                      </button>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
-                {/* 3. Output Tab */}
-                {bottomTab === 'output' && (
-                  <div className="output-view">
-                    <div className="output-item"><Check size={13} className="text-success" /> Save status: {p.saveState}</div>
-                    <div className="output-item"><Check size={13} className="text-success" /> Static files loaded ({p.tree.length} files)</div>
-                    <div className="output-item"><Check size={13} className="text-success" /> Isolated browser preview synchronized</div>
-                    <div className="output-item text-muted">HTML5 games run purely in your client browser sandbox. No server shell is executed.</div>
-                  </div>
-                )}
+                <button
+                  className="vsc-tool-btn"
+                  title="Close Copilot Panel"
+                  onClick={() => setAiChatOpen(false)}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
 
-                {/* 4. Problems Tab */}
-                {bottomTab === 'problems' && (
-                  <div className="problems-view">
-                    {problemList.length > 0 ? (
-                      problemList.map((pr, idx) => (
-                        <div key={idx} className={`problem-item ${pr.severity}`}>
-                          <span className="problem-file">{pr.file}:</span>
-                          <span className="problem-msg">{pr.message}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="no-problems">
-                        <Check size={16} className="text-success" />
-                        <span>No problems detected in workspace files.</span>
-                      </div>
+            {/* Chat Message Scroll */}
+            <div className="copilot-chat-scroll">
+              <div className="copilot-intro-card">
+                <div className="intro-icon-wrap">
+                  <Sparkles size={16} />
+                </div>
+                <div className="intro-text">
+                  <b>VS Code Game Copilot</b>
+                  <p>
+                    I have full context of this game project's code. Describe changes, gameplay mechanics, controls, or styling.
+                  </p>
+                  <div className="copilot-chips">
+                    <button onClick={() => p.setChat('Add mobile touch joystick and tap controls')}>
+                      ⌁ Touch Controls
+                    </button>
+                    <button onClick={() => p.setChat('Add a particle explosion effect when scoring')}>
+                      ✳ Particle Effects
+                    </button>
+                    <button onClick={() => p.setChat('Add synthesized retro sound effects with Web Audio')}>
+                      ♫ Web Audio SFX
+                    </button>
+                    <button onClick={() => p.setChat('Make the game progressively harder every 20 seconds')}>
+                      ⚡ Difficulty Ramp
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {p.chatMessages.map(msg => (
+                <div key={msg.id} className={`copilot-bubble ${msg.role === 'user' ? 'user-msg' : 'ai-msg'}`}>
+                  <div className="bubble-top">
+                    <span className="bubble-avatar-tag">
+                      {msg.role === 'user' ? (p.user?.username?.[0]?.toUpperCase() ?? 'U') : <Sparkles size={12} />}
+                    </span>
+                    <span className="bubble-name">{msg.role === 'user' ? (p.user?.username ?? 'You') : 'Copilot'}</span>
+                    {msg.time && (
+                      <span className="bubble-timestamp">
+                        {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     )}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* VS Code Bottom Status Bar */}
-          <footer className="vsc-statusbar">
-            <div className="status-left">
-              <span className="status-item"><Code2 size={12} /> {p.currentGame?.id ?? 'workspace'}</span>
-              <span className="status-item">{problemList.length} Problems</span>
-              <span className="status-item">UTF-8</span>
-            </div>
-            <div className="status-center">
-              <span className="status-item"><span className="status-dot saved" /> {p.saveState}</span>
-            </div>
-            <div className="status-right">
-              <span className="status-item">Spaces: 2</span>
-              <span className="status-item">{(p.language || 'text').toUpperCase()}</span>
-              <span className="status-item ai-status">
-                <Sparkles size={11} /> {p.selectedModel ? p.selectedModel.replace('models/', '') : 'Connect Key'}
-              </span>
-            </div>
-          </footer>
-        </section>
-
-        {/* Resizer between Editor & Preview */}
-        <div
-          className="vsc-resizer-v center-resizer"
-          onMouseDown={e => startDrag('center', e)}
-          role="separator"
-          aria-label="Resize Preview"
-        />
-
-        {/* Live Game Preview Pane */}
-        <section className="vsc-preview-column" style={{ width: `${centerWidth}%` }}>
-          <div className="vsc-preview-header">
-            <div className="preview-label-group">
-              <span className="status-dot saved live-pulse" />
-              <b className="preview-heading">GAME PREVIEW</b>
-              <span className="preview-badge">LIVE</span>
-            </div>
-
-            <div className="vsc-device-controls">
-              <button
-                className={`device-btn ${device === 'desktop' ? 'active' : ''}`}
-                title="Desktop View (100%)"
-                onClick={() => setDevice('desktop')}
-              >
-                <Monitor size={14} />
-              </button>
-              <button
-                className={`device-btn ${device === 'tablet' ? 'active' : ''}`}
-                title="Tablet View (768px)"
-                onClick={() => setDevice('tablet')}
-              >
-                <Tablet size={14} />
-              </button>
-              <button
-                className={`device-btn ${device === 'mobile' ? 'active' : ''}`}
-                title="Mobile Phone View (390px)"
-                onClick={() => setDevice('mobile')}
-              >
-                <Smartphone size={14} />
-              </button>
-              <span className="vsc-header-sep" />
-              <button
-                className="device-btn"
-                title="Reload Game Preview"
-                onClick={() => p.setPreviewKey(k => k + 1)}
-              >
-                <RefreshCw size={13} />
-              </button>
-              <button
-                className="device-btn"
-                title="Open Game in a New Tab"
-                onClick={() => p.previewUrl && window.open(p.previewUrl, '_blank', 'noopener,noreferrer')}
-              >
-                <ArrowUpRight size={13} />
-              </button>
-              <button
-                className="device-btn"
-                title="Fullscreen Game"
-                onClick={() => previewWrapRef.current?.requestFullscreen().catch(() => p.notify('Fullscreen mode not available'))}
-              >
-                <Maximize2 size={13} />
-              </button>
-            </div>
-          </div>
-
-          <div className="vsc-address-bar">
-            <LockKeyhole size={11} className="lock-icon" />
-            <span className="address-text" title={publicUrl || 'Private isolated preview'}>
-              {p.currentGame?.visibility === 'public' ? publicUrl : 'Private Isolated Preview'}
-            </span>
-            <button
-              className="copy-url-btn"
-              onClick={p.shareLink}
-              title="Copy Public Game Link"
-            >
-              <Copy size={12} />
-            </button>
-          </div>
-
-          <div className="vsc-preview-stage" ref={previewWrapRef}>
-            <div className={`preview-viewport-container device-${device}`}>
-              {device === 'mobile' && <div className="phone-notch"><span className="phone-speaker" /></div>}
-              {p.previewUrl ? (
-                <iframe
-                  key={p.previewKey}
-                  title="Isolated game preview"
-                  className="vsc-game-iframe"
-                  sandbox="allow-scripts"
-                  src={p.previewUrl}
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="preview-loading-box">
-                  <span className="loading-spinner" />
-                  <p>Opening isolated game preview…</p>
+                  <div className="bubble-body">
+                    <pre>{msg.text}</pre>
+                  </div>
+                  {msg.tools && msg.tools.length > 0 && (
+                    <div className="bubble-tool-pills">
+                      {msg.tools.map((toolPath, idx) => (
+                        <span key={idx} className="tool-pill"><Check size={10} /> Edited {toolPath}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+              ))}
+              <div ref={chatEndRef} />
             </div>
-          </div>
 
-          <div className="vsc-preview-footer">
-            <div className="footer-left">
-              <span className="status-dot saved" />
-              <span>Auto-reloading on save · {p.saveState}</span>
+            {/* Copilot Chat Composer */}
+            <div className="copilot-composer">
+              <div className="composer-toolbar">
+                <span className="composer-context">
+                  <LockKeyhole size={10} /> {p.currentGame?.id ?? 'project'}
+                </span>
+                <select
+                  className="composer-model-dropdown"
+                  value={p.selectedModel}
+                  onChange={e => {
+                    if (e.target.value === 'connect-key') {
+                      p.setModal('api-key')
+                    } else {
+                      p.setSelectedModel(e.target.value)
+                    }
+                  }}
+                  onClick={() => {
+                    if (!p.models.length) {
+                      p.setModal('api-key')
+                    }
+                  }}
+                  aria-label="Gemini Model"
+                >
+                  {p.models.length ? (
+                    p.models.map(m => (
+                      <option key={m.id} value={m.id}>{m.display_name}</option>
+                    ))
+                  ) : (
+                    <option value="connect-key">⚙ Connect Gemini Key</option>
+                  )}
+                </select>
+              </div>
+
+              <div className="composer-input-container">
+                <textarea
+                  value={p.chat}
+                  onChange={e => p.setChat(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      p.submitPrompt()
+                    }
+                  }}
+                  placeholder="Ask Copilot or describe changes… (Enter to send, Shift+Enter for newline)"
+                  rows={2}
+                />
+                <button
+                  className="copilot-send-btn"
+                  disabled={!p.chat.trim() || !p.selectedModel}
+                  onClick={p.submitPrompt}
+                  title="Send message (Enter)"
+                >
+                  <ArrowUpRight size={15} />
+                </button>
+              </div>
             </div>
-            <button className="preview-reload-btn" onClick={() => p.setPreviewKey(k => k + 1)}>
-              <RefreshCw size={11} /> Reload
-            </button>
-          </div>
-        </section>
+          </aside>
+        )}
       </div>
     </div>
   )
