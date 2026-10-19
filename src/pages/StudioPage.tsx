@@ -3,9 +3,9 @@ import type * as React from 'react'
 import Editor from '@monaco-editor/react'
 import {
   ArrowUpRight, Braces, Check, ChevronDown, ChevronRight, CircleHelp,
-  Code2, Copy, Eye, EyeOff, FileCode2, FileImage, FilePlus2, Files, Folder,
-  Image as ImageIcon, LockKeyhole, Maximize2,
-  Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Plus, RefreshCw,
+  Code2, Copy, Download, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
+  FolderMinus, FolderOpen, FolderPlus, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
+  Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
   Rocket, Search, Settings2, Smartphone, Sparkles, Tablet, Terminal, Trash2, Upload, X
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
@@ -46,8 +46,9 @@ type StudioProps = {
   setMobileNav: (v: boolean) => void
   setTree: React.Dispatch<React.SetStateAction<FileEntry[]>>
   setNewFileName: (s: string) => void
-  addFile: () => void
-  deleteProjectFile: (path: string) => void
+  addFile: (explicitName?: string) => void
+  deleteProjectFile: (path: string) => Promise<void> | void
+  renameProjectFile?: (oldPath: string, newPath: string) => Promise<void> | void
   toggleVisibility: () => void
   setSelectedModel: (s: string) => void
   uploadProjectAsset: (file: File) => void
@@ -63,6 +64,107 @@ interface TerminalLogEntry {
   type: 'input' | 'output' | 'error' | 'system'
   text: string
   time: string
+}
+
+interface FileNode {
+  id: string
+  name: string
+  path: string
+  kind: 'file' | 'folder'
+  depth: number
+  children?: FileNode[]
+  language?: string
+}
+
+function buildTreeHierarchy(entries: FileEntry[], emptyFolders: Set<string>): FileNode[] {
+  type RawFolder = {
+    __isFolder: true
+    __path: string
+    __name: string
+    __children: Record<string, any>
+  }
+  type RawFile = {
+    __isFolder: false
+    __path: string
+    __name: string
+    __language?: string
+  }
+
+  const root: Record<string, any> = {}
+
+  const ensureBranch = (parts: string[]) => {
+    let curr = root
+    let accumulated = ''
+    for (const part of parts) {
+      accumulated = accumulated ? `${accumulated}/${part}` : part
+      if (!curr[part]) {
+        curr[part] = {
+          __isFolder: true,
+          __path: accumulated,
+          __name: part,
+          __children: {}
+        } as RawFolder
+      }
+      curr = curr[part].__children
+    }
+  }
+
+  // 1. Add empty folders
+  for (const folder of emptyFolders) {
+    const parts = folder.replace(/\\/g, '/').split('/').filter(Boolean)
+    if (parts.length > 0) ensureBranch(parts)
+  }
+
+  // 2. Add files from entries
+  for (const file of entries) {
+    const parts = file.name.replace(/\\/g, '/').split('/').filter(Boolean)
+    if (parts.length === 0) continue
+    const fileName = parts.pop()!
+    if (parts.length > 0) ensureBranch(parts)
+    let curr = root
+    for (const part of parts) {
+      curr = curr[part].__children
+    }
+    curr[fileName] = {
+      __isFolder: false,
+      __path: file.name,
+      __name: fileName,
+      __language: file.language
+    } as RawFile
+  }
+
+  // 3. Convert nested dict into sorted FileNode array recursively
+  const toNodes = (dict: Record<string, any>, depth: number): FileNode[] => {
+    const folders: FileNode[] = []
+    const files: FileNode[] = []
+
+    for (const key of Object.keys(dict).sort((a, b) => a.localeCompare(b))) {
+      const item = dict[key]
+      if (item.__isFolder) {
+        folders.push({
+          id: item.__path,
+          name: item.__name,
+          path: item.__path,
+          kind: 'folder',
+          depth,
+          children: toNodes(item.__children, depth + 1)
+        })
+      } else {
+        files.push({
+          id: item.__path,
+          name: item.__name,
+          path: item.__path,
+          kind: 'file',
+          depth,
+          language: item.__language
+        })
+      }
+    }
+
+    return [...folders, ...files]
+  }
+
+  return toNodes(root, 0)
 }
 
 export default function StudioPage(p: StudioProps) {
@@ -86,6 +188,17 @@ export default function StudioPage(p: StudioProps) {
   // 3-dots menus open states
   const [aiMenuOpen, setAiMenuOpen] = useState(false)
   const [topMenuOpen, setTopMenuOpen] = useState(false)
+  const [explorerMenuOpen, setExplorerMenuOpen] = useState(false)
+
+  // Explorer advanced features: collapsing folders, empty folders, inline creation, renaming, context menu, loading
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
+  const [emptyFolders, setEmptyFolders] = useState<Set<string>>(new Set())
+  const [creatingItem, setCreatingItem] = useState<{ type: 'file' | 'folder'; parentPath: string } | null>(null)
+  const [renamingItem, setRenamingItem] = useState<{ path: string; name: string; kind: 'file' | 'folder' } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: { path: string; name: string; kind: 'file' | 'folder' } | null } | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [processingPath, setProcessingPath] = useState<string | null>(null)
 
   // Terminal interactive state
   const [termInput, setTermInput] = useState('')
@@ -126,6 +239,438 @@ export default function StudioPage(p: StudioProps) {
       termEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [termHistory, p.terminalOpen])
+
+  // Hierarchical file tree calculation
+  const hierarchicalTree = useMemo(() => {
+    return buildTreeHierarchy(p.tree, emptyFolders)
+  }, [p.tree, emptyFolders])
+
+  const toggleFolder = (folderPath: string) => {
+    setCollapsedFolders(prev => {
+      const next = new Set(prev)
+      if (next.has(folderPath)) next.delete(folderPath)
+      else next.add(folderPath)
+      return next
+    })
+  }
+
+  const collapseAllFolders = () => {
+    const allFolderPaths: string[] = []
+    const collect = (nodes: FileNode[]) => {
+      for (const node of nodes) {
+        if (node.kind === 'folder') {
+          allFolderPaths.push(node.path)
+          if (node.children) collect(node.children)
+        }
+      }
+    }
+    collect(hierarchicalTree)
+    setCollapsedFolders(new Set(allFolderPaths))
+  }
+
+  const expandAllFolders = () => {
+    setCollapsedFolders(new Set())
+  }
+
+  const startCreate = (type: 'file' | 'folder', parentPath: string = '') => {
+    setCreatingItem({ type, parentPath })
+    if (parentPath) {
+      setCollapsedFolders(prev => {
+        const next = new Set(prev)
+        next.delete(parentPath)
+        return next
+      })
+    }
+  }
+
+  const commitCreate = async (type: 'file' | 'folder', parentPath: string, rawName: string) => {
+    const clean = rawName.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
+    if (!clean || clean.includes('..')) {
+      p.notify('Invalid name')
+      return
+    }
+    const fullPath = parentPath ? `${parentPath}/${clean}` : clean
+
+    if (type === 'folder') {
+      setEmptyFolders(prev => new Set([...prev, fullPath]))
+      setCollapsedFolders(prev => {
+        const next = new Set(prev)
+        next.delete(fullPath)
+        if (parentPath) next.delete(parentPath)
+        return next
+      })
+      p.notify(`Folder "${clean}" created`)
+      return
+    }
+
+    const ext = fullPath.split('.').pop()?.toLowerCase()
+    const hasExt = ext && ext !== fullPath
+    const finalFilePath = hasExt ? fullPath : `${fullPath}.js`
+
+    setProcessingPath(finalFilePath)
+    try {
+      p.addFile(finalFilePath)
+      if (parentPath) {
+        setCollapsedFolders(prev => {
+          const next = new Set(prev)
+          next.delete(parentPath)
+          return next
+        })
+      }
+    } finally {
+      setProcessingPath(null)
+    }
+  }
+
+  const deleteFolder = async (folderPath: string) => {
+    const filesInFolder = p.tree.filter(f => f.name === folderPath || f.name.startsWith(`${folderPath}/`))
+    const confirmMsg = filesInFolder.length > 0
+      ? `Delete folder "${folderPath}" and all ${filesInFolder.length} file(s) inside it?`
+      : `Delete empty folder "${folderPath}"?`
+    if (!window.confirm(confirmMsg)) return
+
+    setProcessingPath(folderPath)
+    try {
+      for (const file of filesInFolder) {
+        if (file.name === 'index.html') continue
+        await p.deleteProjectFile(file.name)
+      }
+      setEmptyFolders(prev => {
+        const next = new Set(prev)
+        for (const f of next) {
+          if (f === folderPath || f.startsWith(`${folderPath}/`)) next.delete(f)
+        }
+        return next
+      })
+      p.notify(`Deleted folder "${folderPath}"`)
+    } catch (err: any) {
+      p.notify(err?.message || 'Could not delete folder')
+    } finally {
+      setProcessingPath(null)
+    }
+  }
+
+  const renameFolder = async (oldFolderPath: string, newFolderName: string) => {
+    const cleanName = newFolderName.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
+    if (!cleanName || cleanName.includes('..') || cleanName.includes('/')) {
+      p.notify('Please enter a valid folder name (no slashes or dots)')
+      return
+    }
+    const parent = oldFolderPath.includes('/') ? oldFolderPath.slice(0, oldFolderPath.lastIndexOf('/')) : ''
+    const newFolderPath = parent ? `${parent}/${cleanName}` : cleanName
+    if (newFolderPath === oldFolderPath) return
+
+    setProcessingPath(oldFolderPath)
+    try {
+      const filesInFolder = p.tree.filter(f => f.name.startsWith(`${oldFolderPath}/`))
+      if (p.renameProjectFile) {
+        for (const file of filesInFolder) {
+          const suffix = file.name.slice(oldFolderPath.length)
+          const newFilePath = `${newFolderPath}${suffix}`
+          await p.renameProjectFile(file.name, newFilePath)
+        }
+      }
+      setEmptyFolders(prev => {
+        const next = new Set(prev)
+        if (next.has(oldFolderPath)) {
+          next.delete(oldFolderPath)
+          next.add(newFolderPath)
+        }
+        for (const f of Array.from(next)) {
+          if (f.startsWith(`${oldFolderPath}/`)) {
+            next.delete(f)
+            next.add(`${newFolderPath}${f.slice(oldFolderPath.length)}`)
+          }
+        }
+        return next
+      })
+      setCollapsedFolders(prev => {
+        const next = new Set(prev)
+        if (next.has(oldFolderPath)) {
+          next.delete(oldFolderPath)
+          next.add(newFolderPath)
+        }
+        return next
+      })
+      p.notify(`Renamed folder to "${newFolderPath}"`)
+    } catch (err: any) {
+      p.notify(err?.message || 'Could not rename folder')
+    } finally {
+      setProcessingPath(null)
+    }
+  }
+
+  const downloadFile = (filePath: string) => {
+    const content = p.code[filePath] ?? ''
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filePath.split('/').pop() || 'file'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    p.notify(`Downloaded ${filePath}`)
+  }
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return
+    setIsRefreshing(true)
+    try {
+      await p.onReloadFiles()
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  const triggerUpload = () => {
+    document.getElementById('vsc-asset-file-input')?.click()
+  }
+
+  const handleContextMenu = (e: React.MouseEvent, node: FileNode | null) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const x = Math.min(e.clientX, window.innerWidth - 220)
+    const y = Math.min(e.clientY, window.innerHeight - 270)
+    setContextMenu({
+      x,
+      y,
+      item: node ? { path: node.path, name: node.name, kind: node.kind } : null
+    })
+  }
+
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      setContextMenu(null)
+      setExplorerMenuOpen(false)
+      setAiMenuOpen(false)
+      setTopMenuOpen(false)
+    }
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setContextMenu(null)
+        setExplorerMenuOpen(false)
+        setAiMenuOpen(false)
+        setTopMenuOpen(false)
+        setCreatingItem(null)
+        setRenamingItem(null)
+      }
+    }
+    window.addEventListener('click', handleGlobalClick)
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => {
+      window.removeEventListener('click', handleGlobalClick)
+      window.removeEventListener('keydown', handleGlobalKeyDown)
+    }
+  }, [])
+
+  const renderTreeNodes = (nodes: FileNode[]) => {
+    return nodes.map(node => {
+      if (node.kind === 'folder') {
+        const isCollapsed = collapsedFolders.has(node.path)
+        const isProcessing = processingPath === node.path
+        const isRenaming = renamingItem?.path === node.path
+        const childCount = (node.children?.length ?? 0)
+
+        return (
+          <div key={node.id} className="vsc-tree-folder-group">
+            <div
+              className={`vsc-tree-row vsc-folder-row ${isProcessing ? 'is-loading' : ''}`}
+              style={{ paddingLeft: `${node.depth * 14 + 10}px` }}
+              onClick={() => toggleFolder(node.path)}
+              onContextMenu={e => handleContextMenu(e, node)}
+              title={node.path}
+            >
+              <span className="tree-folder-chevron">
+                {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+              </span>
+              <span className="tree-folder-icon">
+                {isCollapsed ? <Folder size={14} className="folder-icon" /> : <FolderOpen size={14} className="folder-icon-open" />}
+              </span>
+
+              {isRenaming ? (
+                <input
+                  className="vsc-inline-tree-input"
+                  autoFocus
+                  defaultValue={node.name}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                    else if (e.key === 'Escape') setRenamingItem(null)
+                  }}
+                  onBlur={e => {
+                    const val = e.currentTarget.value.trim()
+                    setRenamingItem(null)
+                    if (val && val !== node.name) {
+                      void renameFolder(node.path, val)
+                    }
+                  }}
+                  onClick={e => e.stopPropagation()}
+                />
+              ) : (
+                <span className="tree-file-name folder-name">
+                  {node.name}
+                  {childCount > 0 && <span className="tree-child-count">{childCount}</span>}
+                </span>
+              )}
+
+              {isProcessing ? (
+                <Loader2 size={12} className="animate-spin text-muted" />
+              ) : (
+                <div className="tree-row-actions">
+                  <button
+                    className="tree-row-action-btn"
+                    title="New File Inside Folder"
+                    onClick={e => {
+                      e.stopPropagation()
+                      startCreate('file', node.path)
+                    }}
+                  >
+                    <FilePlus size={12} />
+                  </button>
+                  <button
+                    className="tree-row-action-btn"
+                    title="New Folder Inside Folder"
+                    onClick={e => {
+                      e.stopPropagation()
+                      startCreate('folder', node.path)
+                    }}
+                  >
+                    <FolderPlus size={12} />
+                  </button>
+                  <button
+                    className="tree-row-action-btn danger"
+                    title="Delete Folder"
+                    onClick={e => {
+                      e.stopPropagation()
+                      void deleteFolder(node.path)
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Inline creation inside this folder */}
+            {!isCollapsed && creatingItem?.parentPath === node.path && (
+              <div
+                className="vsc-tree-row vsc-inline-create-row"
+                style={{ paddingLeft: `${(node.depth + 1) * 14 + 10}px` }}
+              >
+                <span className="tree-file-icon">
+                  {creatingItem.type === 'file' ? <FileCode2 size={13} className="text-accent" /> : <FolderPlus size={13} className="text-folder" />}
+                </span>
+                <input
+                  className="vsc-inline-tree-input"
+                  autoFocus
+                  placeholder={creatingItem.type === 'file' ? 'filename.js' : 'folder-name'}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                    else if (e.key === 'Escape') setCreatingItem(null)
+                  }}
+                  onBlur={e => {
+                    const val = e.currentTarget.value.trim()
+                    const type = creatingItem.type
+                    const parent = creatingItem.parentPath
+                    setCreatingItem(null)
+                    if (val) void commitCreate(type, parent, val)
+                  }}
+                  onClick={e => e.stopPropagation()}
+                />
+              </div>
+            )}
+
+            {/* Child nodes */}
+            {!isCollapsed && node.children && (
+              <div className="vsc-folder-children">
+                {renderTreeNodes(node.children)}
+              </div>
+            )}
+          </div>
+        )
+      }
+
+      // File Node
+      const isProcessing = processingPath === node.path
+      const isRenaming = renamingItem?.path === node.path
+      const isActive = p.activeFile === node.path
+
+      return (
+        <div
+          key={node.id}
+          className={`vsc-tree-row ${isActive ? 'active' : ''} ${isProcessing ? 'is-loading' : ''}`}
+          style={{ paddingLeft: `${node.depth * 14 + 10}px` }}
+          onClick={() => openFileTab(node.path)}
+          onContextMenu={e => handleContextMenu(e, node)}
+          title={node.path}
+        >
+          <span className="tree-file-icon">
+            <FileIcon name={node.name} />
+          </span>
+
+          {isRenaming ? (
+            <input
+              className="vsc-inline-tree-input"
+              autoFocus
+              defaultValue={node.name}
+              onKeyDown={e => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+                else if (e.key === 'Escape') setRenamingItem(null)
+              }}
+              onBlur={e => {
+                const val = e.currentTarget.value.trim()
+                setRenamingItem(null)
+                if (val && val !== node.name && p.renameProjectFile) {
+                  const parent = node.path.includes('/') ? node.path.slice(0, node.path.lastIndexOf('/')) : ''
+                  const newFilePath = parent ? `${parent}/${val}` : val
+                  setProcessingPath(node.path)
+                  Promise.resolve(p.renameProjectFile(node.path, newFilePath)).finally(() => setProcessingPath(null))
+                }
+              }}
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <span className="tree-file-name">{node.name}</span>
+          )}
+
+          {isProcessing ? (
+            <Loader2 size={12} className="animate-spin text-muted" />
+          ) : (
+            <div className="tree-row-actions">
+              {node.path !== 'index.html' && (
+                <button
+                  className="tree-row-action-btn"
+                  title={`Rename ${node.name}`}
+                  onClick={e => {
+                    e.stopPropagation()
+                    setRenamingItem({ path: node.path, name: node.name, kind: 'file' })
+                  }}
+                >
+                  <Pencil size={11} />
+                </button>
+              )}
+              {node.path !== 'index.html' && (
+                <button
+                  className="tree-row-action-btn danger"
+                  title={`Delete ${node.name}`}
+                  onClick={e => {
+                    e.stopPropagation()
+                    if (window.confirm(`Delete ${node.name}?`)) {
+                      setProcessingPath(node.path)
+                      Promise.resolve(p.deleteProjectFile(node.path)).finally(() => setProcessingPath(null))
+                    }
+                  }}
+                >
+                  <Trash2 size={11} />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )
+    })
+  }
 
   // Drag resizers
   const startDrag = (kind: 'left' | 'ai' | 'preview' | 'bottom', e: React.MouseEvent) => {
@@ -474,15 +1019,22 @@ export default function StudioPage(p: StudioProps) {
                   <div className="sidebar-tools">
                     <button
                       className="vsc-tool-btn"
-                      title="New File"
-                      onClick={() => p.setModal('new-file')}
+                      title="New File (Root)"
+                      onClick={() => startCreate('file', '')}
                     >
-                      <FilePlus2 size={14} />
+                      <FilePlus size={14} />
+                    </button>
+                    <button
+                      className="vsc-tool-btn"
+                      title="New Folder (Root)"
+                      onClick={() => startCreate('folder', '')}
+                    >
+                      <FolderPlus size={14} />
                     </button>
                     <button
                       className="vsc-tool-btn"
                       title="Upload Game Asset (PNG, JPG, Audio, Fonts)"
-                      onClick={() => document.getElementById('vsc-asset-file-input')?.click()}
+                      onClick={triggerUpload}
                     >
                       <Upload size={14} />
                     </button>
@@ -493,55 +1045,136 @@ export default function StudioPage(p: StudioProps) {
                       hidden
                       onChange={e => {
                         const file = e.target.files?.[0]
-                        if (file) p.uploadProjectAsset(file)
+                        if (file) {
+                          setIsUploading(true)
+                          Promise.resolve(p.uploadProjectAsset(file)).finally(() => setIsUploading(false))
+                        }
                         e.currentTarget.value = ''
                       }}
                     />
                     <button
-                      className="vsc-tool-btn"
+                      className={`vsc-tool-btn ${isRefreshing ? 'is-spinning' : ''}`}
                       title="Refresh Project Files"
-                      onClick={p.onReloadFiles}
+                      onClick={handleRefresh}
+                      disabled={isRefreshing}
                     >
-                      <RefreshCw size={13} />
+                      <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
                     </button>
+                    <button
+                      className="vsc-tool-btn"
+                      title="Collapse All Folders"
+                      onClick={collapseAllFolders}
+                    >
+                      <FolderMinus size={14} />
+                    </button>
+                    {/* Explorer 3-dots Menu */}
+                    <div className="vsc-menu-container">
+                      <button
+                        className="vsc-tool-btn"
+                        title="More Explorer Options"
+                        onClick={e => {
+                          e.stopPropagation()
+                          setExplorerMenuOpen(!explorerMenuOpen)
+                        }}
+                      >
+                        <MoreHorizontal size={14} />
+                      </button>
+                      {explorerMenuOpen && (
+                        <div className="vsc-dropdown-menu" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => { setExplorerMenuOpen(false); startCreate('file', '') }}>
+                            <FilePlus size={13} />
+                            <span>New File…</span>
+                          </button>
+                          <button onClick={() => { setExplorerMenuOpen(false); startCreate('folder', '') }}>
+                            <FolderPlus size={13} />
+                            <span>New Folder…</span>
+                          </button>
+                          <button onClick={() => { setExplorerMenuOpen(false); triggerUpload() }}>
+                            <Upload size={13} />
+                            <span>Upload Asset…</span>
+                          </button>
+                          <button onClick={() => { setExplorerMenuOpen(false); void handleRefresh() }}>
+                            <RefreshCw size={13} />
+                            <span>Refresh Explorer</span>
+                          </button>
+                          <button onClick={() => { setExplorerMenuOpen(false); collapseAllFolders() }}>
+                            <FolderMinus size={13} />
+                            <span>Collapse All Folders</span>
+                          </button>
+                          <button onClick={() => { setExplorerMenuOpen(false); expandAllFolders() }}>
+                            <FolderOpen size={13} />
+                            <span>Expand All Folders</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="vsc-project-header">
+                {/* Progress bar during refresh/scan */}
+                {isRefreshing && <div className="vsc-explorer-progress-bar" />}
+
+                {/* Project Header Row */}
+                <div
+                  className="vsc-project-header"
+                  onContextMenu={e => handleContextMenu(e, null)}
+                >
                   <ChevronDown size={14} />
                   <Folder size={14} className="folder-icon" />
                   <span className="project-name-label">
                     {p.currentGame?.id?.toUpperCase() ?? 'PROJECT'}
                   </span>
+                  {isRefreshing ? (
+                    <span className="vsc-scan-indicator">
+                      <Loader2 size={10} className="animate-spin" />
+                      <span>Scanning…</span>
+                    </span>
+                  ) : isUploading ? (
+                    <span className="vsc-scan-indicator">
+                      <Loader2 size={10} className="animate-spin" />
+                      <span>Uploading…</span>
+                    </span>
+                  ) : (
+                    <span className="vsc-file-count-badge">
+                      {p.tree.length} files
+                    </span>
+                  )}
                 </div>
 
-                <div className="vsc-file-tree">
-                  {p.tree.map(file => (
-                    <div
-                      key={file.name}
-                      className={`vsc-tree-row ${p.activeFile === file.name ? 'active' : ''}`}
-                      onClick={() => file.kind === 'file' && openFileTab(file.name)}
-                      title={file.name}
-                    >
-                      <span className="tree-file-icon"><FileIcon name={file.name} /></span>
-                      <span className="tree-file-name">{file.name}</span>
-                      {file.name !== 'index.html' && (
-                        <button
-                          className="tree-row-delete"
-                          title={`Delete ${file.name}`}
-                          onClick={e => {
-                            e.stopPropagation()
-                            if (window.confirm(`Delete ${file.name}?`)) {
-                              p.deleteProjectFile(file.name)
-                            }
-                          }}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
+                {/* File Tree View with Hierarchy and Right-Click support */}
+                <div
+                  className="vsc-file-tree"
+                  onContextMenu={e => handleContextMenu(e, null)}
+                >
+                  {/* Root inline creation row */}
+                  {creatingItem && creatingItem.parentPath === '' && (
+                    <div className="vsc-tree-row vsc-inline-create-row" style={{ paddingLeft: '10px' }}>
+                      <span className="tree-file-icon">
+                        {creatingItem.type === 'file' ? <FileCode2 size={13} className="text-accent" /> : <FolderPlus size={13} className="text-folder" />}
+                      </span>
+                      <input
+                        className="vsc-inline-tree-input"
+                        autoFocus
+                        placeholder={creatingItem.type === 'file' ? 'filename.js' : 'folder-name'}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') e.currentTarget.blur()
+                          else if (e.key === 'Escape') setCreatingItem(null)
+                        }}
+                        onBlur={e => {
+                          const val = e.currentTarget.value.trim()
+                          const type = creatingItem.type
+                          setCreatingItem(null)
+                          if (val) void commitCreate(type, '', val)
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      />
                     </div>
-                  ))}
-                  {!p.tree.length && (
+                  )}
+
+                  {/* Render Hierarchical Tree */}
+                  {renderTreeNodes(hierarchicalTree)}
+
+                  {!p.tree.length && !creatingItem && (
                     <div className="vsc-empty-tree">
                       <Folder size={16} />
                       <span>Loading project files…</span>
@@ -553,8 +1186,8 @@ export default function StudioPage(p: StudioProps) {
                   <div className="vsc-tip-card">
                     <Sparkles size={14} />
                     <div>
-                      <b>Web Game Workspace</b>
-                      <p>Client-side HTML5/CSS/JS game assets only. No server shell.</p>
+                      <b>VS Code Game Explorer</b>
+                      <p>Right-click any file or folder for quick options. Client-side game runtime.</p>
                     </div>
                   </div>
                 </div>
@@ -1173,9 +1806,126 @@ export default function StudioPage(p: StudioProps) {
           </aside>
         )}
       </div>
+      {/* Global Explorer Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="vsc-context-menu"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onClick={e => e.stopPropagation()}
+        >
+          {contextMenu.item?.kind === 'file' && (
+            <>
+              <div className="context-menu-header">{contextMenu.item.path}</div>
+              <button onClick={() => { openFileTab(contextMenu.item!.path); setContextMenu(null) }}>
+                <FileCode2 size={13} />
+                <span>Open File</span>
+              </button>
+              {contextMenu.item.path !== 'index.html' && (
+                <button onClick={() => { setRenamingItem(contextMenu.item!); setContextMenu(null) }}>
+                  <Pencil size={13} />
+                  <span>Rename File…</span>
+                </button>
+              )}
+              <button onClick={() => {
+                navigator.clipboard?.writeText(contextMenu.item!.path)
+                p.notify(`Copied "${contextMenu.item!.path}"`)
+                setContextMenu(null)
+              }}>
+                <Copy size={13} />
+                <span>Copy Path</span>
+              </button>
+              <button onClick={() => { downloadFile(contextMenu.item!.path); setContextMenu(null) }}>
+                <Download size={13} />
+                <span>Download File</span>
+              </button>
+              <div className="context-menu-sep" />
+              {contextMenu.item.path !== 'index.html' && (
+                <button className="danger" onClick={() => {
+                  const path = contextMenu.item!.path
+                  setContextMenu(null)
+                  if (window.confirm(`Delete ${path}?`)) {
+                    setProcessingPath(path)
+                    Promise.resolve(p.deleteProjectFile(path)).finally(() => setProcessingPath(null))
+                  }
+                }}>
+                  <Trash2 size={13} />
+                  <span>Delete File</span>
+                </button>
+              )}
+            </>
+          )}
+
+          {contextMenu.item?.kind === 'folder' && (
+            <>
+              <div className="context-menu-header">📁 {contextMenu.item.path}</div>
+              <button onClick={() => { startCreate('file', contextMenu.item!.path); setContextMenu(null) }}>
+                <FilePlus size={13} />
+                <span>New File in Folder…</span>
+              </button>
+              <button onClick={() => { startCreate('folder', contextMenu.item!.path); setContextMenu(null) }}>
+                <FolderPlus size={13} />
+                <span>New Folder in Folder…</span>
+              </button>
+              <button onClick={() => { setRenamingItem(contextMenu.item!); setContextMenu(null) }}>
+                <Pencil size={13} />
+                <span>Rename Folder…</span>
+              </button>
+              <button onClick={() => {
+                navigator.clipboard?.writeText(contextMenu.item!.path)
+                p.notify(`Copied "${contextMenu.item!.path}"`)
+                setContextMenu(null)
+              }}>
+                <Copy size={13} />
+                <span>Copy Path</span>
+              </button>
+              <div className="context-menu-sep" />
+              <button className="danger" onClick={() => {
+                const path = contextMenu.item!.path
+                setContextMenu(null)
+                void deleteFolder(path)
+              }}>
+                <Trash2 size={13} />
+                <span>Delete Folder</span>
+              </button>
+            </>
+          )}
+
+          {!contextMenu.item && (
+            <>
+              <div className="context-menu-header">PROJECT EXPLORER</div>
+              <button onClick={() => { startCreate('file', ''); setContextMenu(null) }}>
+                <FilePlus size={13} />
+                <span>New File…</span>
+              </button>
+              <button onClick={() => { startCreate('folder', ''); setContextMenu(null) }}>
+                <FolderPlus size={13} />
+                <span>New Folder…</span>
+              </button>
+              <button onClick={() => { triggerUpload(); setContextMenu(null) }}>
+                <Upload size={13} />
+                <span>Upload Asset…</span>
+              </button>
+              <div className="context-menu-sep" />
+              <button onClick={() => { setContextMenu(null); void handleRefresh() }}>
+                <RefreshCw size={13} />
+                <span>Refresh Explorer</span>
+              </button>
+              <button onClick={() => { expandAllFolders(); setContextMenu(null) }}>
+                <FolderOpen size={13} />
+                <span>Expand All Folders</span>
+              </button>
+              <button onClick={() => { collapseAllFolders(); setContextMenu(null) }}>
+                <FolderMinus size={13} />
+                <span>Collapse All Folders</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
+
 
 function FileIcon({ name }: { name: string }) {
   const ext = name.split('.').pop()?.toLowerCase()

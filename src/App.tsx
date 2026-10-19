@@ -264,16 +264,56 @@ export default function App() {
     if (returnTo) { sessionStorage.removeItem('yulya:return-to'); setPage('studio', returnTo) }
     else setPage('profile', nextUser.username ? `/${encodeURIComponent(nextUser.username)}` : '/profile')
   }
-  const addFile = () => {
-    const name = newFileName.trim()
-    if (!name || name.includes('..') || name.startsWith('/') || !/\.(html|css|js|mjs|json|png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(name)) { notify('Use a supported browser file name'); return }
+  const addFile = (explicitName?: string) => {
+    const raw = typeof explicitName === 'string' ? explicitName : newFileName
+    const name = raw.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
+    if (!name || name.includes('..') || !/\.(html|css|js|mjs|json|png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(name)) { notify('Use a supported browser file name'); return }
     setTree((items) => items.some((file) => file.name === name) ? items : [...items, { name, kind: 'file', language: name.endsWith('.css') ? 'css' : name.endsWith('.html') ? 'html' : name.endsWith('.json') ? 'json' : 'javascript' }])
-    setCode((files) => ({ ...files, [name]: '' }))
+    setCode((files) => ({ ...files, [name]: files[name] ?? '' }))
     setActiveFile(name)
     setOpenFiles((tabs) => tabs.includes(name) ? tabs : [...tabs, name])
     setNewFileName('')
     setModal(null)
     if (currentProjectId) saveFile(currentProjectId, name, '').catch((error) => notify(error.message))
+  }
+  const renameProjectFile = async (oldPath: string, newPath: string) => {
+    if (!currentProjectId || oldPath === newPath) return
+    if (oldPath === 'index.html') {
+      notify('index.html is required and cannot be renamed')
+      return
+    }
+    const clean = newPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
+    if (!clean || clean.includes('..') || !/\.(html|css|js|mjs|json|png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(clean)) {
+      notify('Please enter a valid file name with supported extension')
+      return
+    }
+    if (code[clean] !== undefined) {
+      notify(`File "${clean}" already exists`)
+      return
+    }
+    try {
+      const content = code[oldPath] ?? ''
+      await saveFile(currentProjectId, clean, content)
+      await deleteFile(currentProjectId, oldPath)
+      setCode((files) => {
+        const copy = { ...files }
+        copy[clean] = copy[oldPath] ?? ''
+        delete copy[oldPath]
+        return copy
+      })
+      setTree((items) => items.map(f => f.name === oldPath ? {
+        ...f,
+        name: clean,
+        language: clean.endsWith('.css') ? 'css' : clean.endsWith('.html') ? 'html' : clean.endsWith('.json') ? 'json' : 'javascript'
+      } : f))
+      setOpenFiles((tabs) => tabs.map(t => t === oldPath ? clean : t))
+      if (activeFile === oldPath) setActiveFile(clean)
+      setPreviewKey((v) => v + 1)
+      notify(`Renamed to ${clean}`)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not rename file')
+      throw error
+    }
   }
   const deleteProjectFile = async (filePath: string) => {
     if (!currentProjectId) return
@@ -446,9 +486,9 @@ export default function App() {
   if (page === 'studio') return <><StudioPage {...{
     user, currentGame, activeFile, openFiles, setOpenFiles, code, language, tree, sidebarOpen, terminalOpen, chat, chatMessages, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel,
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
-    notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
+    notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, renameProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
     onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles,
-  }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={addFile}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
+  }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={() => addFile()}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
   return <div className="site-shell">
     <header className="topbar home-topbar">
