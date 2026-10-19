@@ -188,7 +188,7 @@ export default function App() {
     setChatMessages(prev => [
       ...prev,
       { id: userMsgId, role: 'user', text: prompt, time: Date.now() },
-      { id: aiMsgId, role: 'ai', text: 'Thinking…', time: Date.now(), tools: [] }
+      { id: aiMsgId, role: 'ai', text: 'Thinking…', time: Date.now(), tools: [], model: selectedModel }
     ])
     setTerminalOpen(true)
     if (!currentProjectId) {
@@ -404,12 +404,12 @@ export default function App() {
 
       // Load persistent AI conversation history
       try {
-        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; created_at: number }> }>(`/api/projects/${id}/ai/history`)
+        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; model?: string; created_at: number }> }>(`/api/projects/${id}/ai/history`)
         if (historyData?.conversations) {
           const msgs: ChatMessage[] = []
           for (const conv of historyData.conversations) {
             if (conv.prompt) msgs.push({ id: `${conv.id}-user`, role: 'user', text: conv.prompt, time: conv.created_at })
-            if (conv.response) msgs.push({ id: `${conv.id}-ai`, role: 'ai', text: conv.response, time: conv.created_at })
+            if (conv.response) msgs.push({ id: `${conv.id}-ai`, role: 'ai', text: conv.response, time: conv.created_at, model: conv.model })
           }
           setChatMessages(msgs)
         }

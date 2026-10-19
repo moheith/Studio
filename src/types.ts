@@ -18,6 +18,7 @@ export type ChatMessage = {
   text: string
   time?: number
   tools?: string[]
+  model?: string
 }
 
 export type User = { id?: string; username: string; email: string; avatar?: string; has_api_key?: boolean }

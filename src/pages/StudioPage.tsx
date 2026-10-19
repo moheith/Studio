@@ -207,6 +207,14 @@ export default function StudioPage(p: StudioProps) {
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null)
   const [moveModalItem, setMoveModalItem] = useState<{ path: string; name: string; kind: 'file' | 'folder' } | null>(null)
   const [customMoveTarget, setCustomMoveTarget] = useState('')
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null)
+
+  const copyMessageText = (id: string, text: string) => {
+    navigator.clipboard?.writeText(text)
+    setCopiedMsgId(id)
+    window.setTimeout(() => setCopiedMsgId(null), 1500)
+    p.notify('Copied to clipboard')
+  }
 
   // Terminal interactive state
   const [termInput, setTermInput] = useState('')
@@ -1889,23 +1897,23 @@ export default function StudioPage(p: StudioProps) {
               {p.chatMessages.length === 0 && (
                 <div className="copilot-empty-state">
                   <div className="empty-sparkle-icon">
-                    <Sparkles size={22} />
+                    <Sparkles size={20} />
                   </div>
-                  <div className="empty-title">Ask Copilot or use a quick command</div>
+                  <div className="empty-title">Ask Copilot or choose a prompt</div>
                   <div className="copilot-quick-commands">
-                    <button onClick={() => p.setChat(`/fix Review #${p.activeFile} and fix any syntax or logic bugs`)}>
+                    <button onClick={() => p.setChat('Review the game code and fix any bugs')}>
                       <code>/fix</code>
-                      <span>Fix {p.activeFile}</span>
+                      <span>Fix bugs</span>
                     </button>
-                    <button onClick={() => p.setChat(`/explain Explain the game architecture and functions in #${p.activeFile}`)}>
+                    <button onClick={() => p.setChat('Explain the game architecture and logic')}>
                       <code>/explain</code>
-                      <span>Explain code</span>
+                      <span>Explain game</span>
                     </button>
-                    <button onClick={() => p.setChat(`Add synthesized retro sound effects using Web Audio API`)}>
+                    <button onClick={() => p.setChat('Add synthesized retro sound effects using Web Audio API')}>
                       <code>/audio</code>
                       <span>Web Audio SFX</span>
                     </button>
-                    <button onClick={() => p.setChat(`Add responsive touch controls for mobile players`)}>
+                    <button onClick={() => p.setChat('Add responsive touch controls for mobile screens')}>
                       <code>/touch</code>
                       <span>Mobile controls</span>
                     </button>
@@ -1913,58 +1921,77 @@ export default function StudioPage(p: StudioProps) {
                 </div>
               )}
 
-              {p.chatMessages.map(msg => (
-                <div key={msg.id} className={`copilot-bubble ${msg.role === 'user' ? 'user-msg' : 'ai-msg'}`}>
-                  <div className="bubble-top">
-                    <span className="bubble-avatar-tag">
-                      {msg.role === 'user' ? (p.user?.username?.[0]?.toUpperCase() ?? 'U') : <Sparkles size={12} />}
-                    </span>
-                    <span className="bubble-name">{msg.role === 'user' ? (p.user?.username ?? 'You') : 'Copilot'}</span>
-                    {msg.time && (
-                      <span className="bubble-timestamp">
-                        {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
-                    <div className="bubble-actions">
-                      <button
-                        className="bubble-action-btn"
-                        title="Copy message"
-                        onClick={() => {
-                          navigator.clipboard?.writeText(msg.text)
-                          p.notify('Copied to clipboard')
-                        }}
-                      >
-                        <Copy size={11} />
-                      </button>
-                      {msg.role === 'ai' && (
-                        <button
-                          className="bubble-action-btn"
-                          title="Insert into active editor"
-                          onClick={() => {
-                            const codeBlockMatch = msg.text.match(/```(?:[a-z]*\n)?([\s\S]*?)```/)
-                            const toInsert = codeBlockMatch ? codeBlockMatch[1] : msg.text
-                            p.handleEditor(toInsert)
-                            p.notify(`Inserted into ${p.activeFile}`)
-                          }}
-                        >
-                          <Code2 size={11} />
-                          <span>Insert</span>
-                        </button>
+              {p.chatMessages.map(msg => {
+                const isUser = msg.role === 'user'
+                const modelDisplay = msg.model
+                  ? msg.model.replace('models/', '')
+                  : (p.selectedModel ? p.selectedModel.replace('models/', '') : 'gemini-2.5-flash')
+
+                return (
+                  <div key={msg.id} className={`copilot-bubble ${isUser ? 'user-msg' : 'ai-msg'}`}>
+                    <div className="bubble-top">
+                      {!isUser ? (
+                        <>
+                          <span className="bubble-avatar-tag">
+                            <Sparkles size={11} />
+                          </span>
+                          <span className="bubble-name">Copilot</span>
+                          {msg.time && (
+                            <span className="bubble-timestamp">
+                              {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                          <button
+                            className="vsc-copy-btn"
+                            title="Copy response"
+                            onClick={() => copyMessageText(msg.id, msg.text)}
+                          >
+                            {copiedMsgId === msg.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            className="vsc-copy-btn"
+                            title="Copy message"
+                            onClick={() => copyMessageText(msg.id, msg.text)}
+                          >
+                            {copiedMsgId === msg.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+                          </button>
+                          {msg.time && (
+                            <span className="bubble-timestamp">
+                              {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                          <span className="bubble-name">{p.user?.username ?? 'You'}</span>
+                          <span className="bubble-avatar-tag">
+                            {p.user?.username?.[0]?.toUpperCase() ?? 'U'}
+                          </span>
+                        </>
                       )}
                     </div>
-                  </div>
-                  <div className="bubble-body">
-                    <pre>{msg.text}</pre>
-                  </div>
-                  {msg.tools && msg.tools.length > 0 && (
-                    <div className="bubble-tool-pills">
-                      {msg.tools.map((toolPath, idx) => (
-                        <span key={idx} className="tool-pill"><Check size={10} /> Edited {toolPath}</span>
-                      ))}
+
+                    <div className="bubble-body">
+                      <pre>{msg.text}</pre>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {msg.tools && msg.tools.length > 0 && (
+                      <div className="bubble-tool-pills">
+                        {msg.tools.map((toolPath, idx) => (
+                          <span key={idx} className="tool-pill"><Check size={10} /> Edited {toolPath}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {!isUser && (
+                      <div className="bubble-model-footer">
+                        <Sparkles size={9} className="model-sparkle" />
+                        <span>{modelDisplay}</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
               {p.isAiGenerating && (
                 <div className="copilot-generating-bar">
                   <Loader2 size={12} className="animate-spin text-accent" />
@@ -2010,17 +2037,6 @@ export default function StudioPage(p: StudioProps) {
                 </select>
               </div>
 
-              <div className="composer-context-bar">
-                <span className="composer-pill active-file" title={`Active file context: ${p.activeFile}`}>
-                  <FileCode2 size={10} />
-                  <span>#{p.activeFile}</span>
-                </span>
-                <span className="composer-pill" title="Project Context">
-                  <Folder size={10} />
-                  <span>@{p.currentGame?.id ?? 'project'}</span>
-                </span>
-              </div>
-
               <div className="composer-input-container">
                 <textarea
                   value={p.chat}
@@ -2031,7 +2047,7 @@ export default function StudioPage(p: StudioProps) {
                       if (!p.isAiGenerating) p.submitPrompt()
                     }
                   }}
-                  placeholder={`Ask Copilot about #${p.activeFile}… (Enter to send, Shift+Enter for newline)`}
+                  placeholder="Ask Copilot or describe changes… (Enter to send, Shift+Enter for newline)"
                   rows={2}
                 />
                 {p.isAiGenerating ? (

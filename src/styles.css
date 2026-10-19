@@ -1525,17 +1525,30 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: #14151e;
-  border: 1px solid #252636;
-  max-width: 100%;
+  padding: 10px 13px;
   word-break: break-word;
+  transition: all 0.12s ease;
+  position: relative;
 }
 
+/* User Message: Aligned to Right */
 .copilot-bubble.user-msg {
-  background: #16241e;
-  border-color: #214334;
+  align-self: flex-end;
+  max-width: 82%;
+  background: #232635;
+  border: 1px solid #32364a;
+  border-radius: 12px 12px 3px 12px;
+  color: #f1edfa;
+}
+
+/* AI Message: Aligned to Left */
+.copilot-bubble.ai-msg {
+  align-self: flex-start;
+  max-width: 92%;
+  background: #14151f;
+  border: 1px solid #242635;
+  border-radius: 12px 12px 12px 3px;
+  color: #ded9ec;
 }
 
 .bubble-top {
@@ -1544,37 +1557,88 @@
   gap: 7px;
 }
 
+.user-msg .bubble-top {
+  justify-content: flex-end;
+}
+
 .bubble-avatar-tag {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
   border-radius: 4px;
-  background: #282136;
-  color: #c4a9f4;
-  font: 700 10px var(--display);
+  font: 700 10px var(--sans);
   display: grid;
   place-items: center;
   flex: none;
 }
 
 .user-msg .bubble-avatar-tag {
-  background: #163626;
-  color: #00ffaa;
+  background: #34384d;
+  color: #e5e0f2;
+}
+
+.ai-msg .bubble-avatar-tag {
+  background: #242235;
+  color: #c4a9f4;
 }
 
 .bubble-name {
   font: 600 11px var(--sans);
-  color: #e4e0f0;
-}
-
-.user-msg .bubble-name {
-  color: #79eec3;
+  color: #cfcbde;
 }
 
 .bubble-timestamp {
-  margin-left: auto;
-  font-size: 9px;
-  color: #6a6778;
+  font-size: 10px;
+  color: #696578;
   font-family: var(--mono);
+  margin-left: 2px;
+}
+
+.user-msg .bubble-timestamp {
+  margin-left: 0;
+  margin-right: 2px;
+}
+
+/* VS Code Style Copy Button */
+.vsc-copy-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 0;
+  background: transparent;
+  color: #79768a;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.12s;
+  flex: none;
+  margin-left: 4px;
+}
+
+.vsc-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.vsc-copy-btn .text-success {
+  color: #58d68d;
+}
+
+/* Model Footer below AI message */
+.bubble-model-footer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  font-family: var(--mono);
+  color: #726e82;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.bubble-model-footer .model-sparkle {
+  color: #9d87c4;
 }
 
 .bubble-body pre {
