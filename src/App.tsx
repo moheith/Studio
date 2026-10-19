@@ -86,7 +86,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState('')
   const [projectName, setProjectName] = useState('little-star')
   const [visibility, setVisibility] = useState<'private' | 'public'>('private')
-  const [saveState, setSaveState] = useState('All changes saved')
+  const [saveState, setSaveState] = useState('Saved')
   const [previewKey, setPreviewKey] = useState(0)
   const [newFileName, setNewFileName] = useState('')
   const [mobileNav, setMobileNav] = useState(false)
@@ -130,7 +130,7 @@ export default function App() {
         if (!currentProjectId || !activeFile) { setToast('Open a project file before saving'); return }
         window.clearTimeout(saveTimer.current)
         setSaveState('Saving…')
-        saveFile(currentProjectId, activeFile, code[activeFile] ?? '').then(() => { setSaveState('All changes saved'); setPreviewKey(value => value + 1); setToast('Project saved') }).catch(error => { setSaveState('Save failed'); setToast(error instanceof Error ? error.message : 'Could not save project') })
+        saveFile(currentProjectId, activeFile, code[activeFile] ?? '').then(() => { setSaveState('Saved'); setPreviewKey(value => value + 1); setToast('Project saved') }).catch(error => { setSaveState('Save failed'); setToast(error instanceof Error ? error.message : 'Could not save project') })
       }
       if (event.key === 'Escape') { setModal(null); setMobileNav(false) }
     }
@@ -154,7 +154,7 @@ export default function App() {
     setSaveState('Saving…')
     window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => {
-      if (currentProjectId) saveFile(currentProjectId, activeFile, content).then(() => { setSaveState('All changes saved'); setPreviewKey((v) => v + 1) }).catch((error) => { setSaveState('Save failed'); notify(error.message) })
+      if (currentProjectId) saveFile(currentProjectId, activeFile, content).then(() => { setSaveState('Saved'); setPreviewKey((v) => v + 1) }).catch((error) => { setSaveState('Save failed'); notify(error.message) })
       else setSaveState('Local preview')
     }, 500)
   }
