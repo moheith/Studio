@@ -4,7 +4,7 @@ import Editor from '@monaco-editor/react'
 import {
   ArrowUpRight, Braces, Check, ChevronDown, ChevronRight, CircleHelp,
   Code2, Copy, Download, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
-  FolderMinus, FolderOpen, FolderPlus, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
+  FolderMinus, FolderInput, FolderOpen, FolderPlus, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
   Rocket, Search, Settings2, Smartphone, Sparkles, Tablet, Terminal, Trash2, Upload, X
 } from 'lucide-react'
@@ -200,6 +200,12 @@ export default function StudioPage(p: StudioProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [processingPath, setProcessingPath] = useState<string | null>(null)
 
+  // Drag and drop & move to folder
+  const [draggedItem, setDraggedItem] = useState<{ path: string; name: string; kind: 'file' | 'folder' } | null>(null)
+  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null)
+  const [moveModalItem, setMoveModalItem] = useState<{ path: string; name: string; kind: 'file' | 'folder' } | null>(null)
+  const [customMoveTarget, setCustomMoveTarget] = useState('')
+
   // Terminal interactive state
   const [termInput, setTermInput] = useState('')
   const [termHistory, setTermHistory] = useState<TerminalLogEntry[]>([
@@ -239,6 +245,25 @@ export default function StudioPage(p: StudioProps) {
       termEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [termHistory, p.terminalOpen])
+
+  // List of all folder paths in the project (for Move to Folder dialog)
+  const existingFolderPaths = useMemo(() => {
+    const set = new Set<string>()
+    for (const file of p.tree) {
+      const parts = file.name.split('/')
+      if (parts.length > 1) {
+        let current = ''
+        for (let i = 0; i < parts.length - 1; i++) {
+          current = current ? `${current}/${parts[i]}` : parts[i]
+          set.add(current)
+        }
+      }
+    }
+    for (const folder of emptyFolders) {
+      set.add(folder)
+    }
+    return Array.from(set).sort()
+  }, [p.tree, emptyFolders])
 
   // Hierarchical file tree calculation
   const hierarchicalTree = useMemo(() => {
@@ -400,6 +425,93 @@ export default function StudioPage(p: StudioProps) {
     }
   }
 
+  const moveFolder = async (oldFolderPath: string, targetParentFolderPath: string) => {
+    const cleanTarget = targetParentFolderPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
+    const folderName = oldFolderPath.split('/').pop() || oldFolderPath
+    const newFolderPath = cleanTarget ? `${cleanTarget}/${folderName}` : folderName
+    if (newFolderPath === oldFolderPath) return
+    if (cleanTarget === oldFolderPath || cleanTarget.startsWith(`${oldFolderPath}/`)) {
+      p.notify('Cannot move a folder into itself or its subfolder')
+      return
+    }
+    setProcessingPath(oldFolderPath)
+    try {
+      const filesInFolder = p.tree.filter(f => f.name.startsWith(`${oldFolderPath}/`))
+      if (p.renameProjectFile) {
+        for (const file of filesInFolder) {
+          const suffix = file.name.slice(oldFolderPath.length)
+          const newFilePath = `${newFolderPath}${suffix}`
+          await p.renameProjectFile(file.name, newFilePath)
+        }
+      }
+      setEmptyFolders(prev => {
+        const next = new Set(prev)
+        if (next.has(oldFolderPath)) {
+          next.delete(oldFolderPath)
+          next.add(newFolderPath)
+        }
+        for (const f of Array.from(next)) {
+          if (f.startsWith(`${oldFolderPath}/`)) {
+            next.delete(f)
+            next.add(`${newFolderPath}${f.slice(oldFolderPath.length)}`)
+          }
+        }
+        return next
+      })
+      setCollapsedFolders(prev => {
+        const next = new Set(prev)
+        if (next.has(oldFolderPath)) {
+          next.delete(oldFolderPath)
+          next.add(newFolderPath)
+        }
+        if (cleanTarget) next.delete(cleanTarget)
+        return next
+      })
+      p.notify(`Moved folder to "${newFolderPath}/"`)
+    } catch (err: any) {
+      p.notify(err?.message || 'Could not move folder')
+    } finally {
+      setProcessingPath(null)
+    }
+  }
+
+  const moveItem = async (sourcePath: string, targetFolderPath: string, kind: 'file' | 'folder') => {
+    if (kind === 'folder') {
+      await moveFolder(sourcePath, targetFolderPath)
+      return
+    }
+    const cleanTarget = targetFolderPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
+    if (sourcePath === 'index.html' && cleanTarget) {
+      p.notify('index.html must remain in the project root directory')
+      return
+    }
+    const fileName = sourcePath.split('/').pop() || sourcePath
+    const newPath = cleanTarget ? `${cleanTarget}/${fileName}` : fileName
+    if (newPath === sourcePath) return
+    if (p.tree.some(f => f.name === newPath)) {
+      p.notify(`File "${newPath}" already exists`)
+      return
+    }
+    setProcessingPath(sourcePath)
+    try {
+      if (p.renameProjectFile) {
+        await p.renameProjectFile(sourcePath, newPath)
+        if (cleanTarget) {
+          setCollapsedFolders(prev => {
+            const next = new Set(prev)
+            next.delete(cleanTarget)
+            return next
+          })
+        }
+        p.notify(`Moved "${fileName}" to ${cleanTarget ? `"${cleanTarget}/"` : 'root'}`)
+      }
+    } catch (err: any) {
+      p.notify(err?.message || 'Could not move file')
+    } finally {
+      setProcessingPath(null)
+    }
+  }
+
   const downloadFile = (filePath: string) => {
     const content = p.code[filePath] ?? ''
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
@@ -480,11 +592,40 @@ export default function StudioPage(p: StudioProps) {
         return (
           <div key={node.id} className="vsc-tree-folder-group">
             <div
-              className={`vsc-tree-row vsc-folder-row ${isProcessing ? 'is-loading' : ''}`}
+              className={`vsc-tree-row vsc-folder-row ${isProcessing ? 'is-loading' : ''} ${dragOverTarget === node.path ? 'is-drag-over' : ''} ${draggedItem?.path === node.path ? 'is-dragging' : ''}`}
               style={{ paddingLeft: `${node.depth * 14 + 10}px` }}
               onClick={() => toggleFolder(node.path)}
               onContextMenu={e => handleContextMenu(e, node)}
               title={node.path}
+              draggable
+              onDragStart={e => {
+                e.stopPropagation()
+                setDraggedItem({ path: node.path, name: node.name, kind: 'folder' })
+                e.dataTransfer.setData('text/plain', node.path)
+                e.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragEnd={() => {
+                setDraggedItem(null)
+                setDragOverTarget(null)
+              }}
+              onDragOver={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                e.dataTransfer.dropEffect = 'move'
+                if (dragOverTarget !== node.path) setDragOverTarget(node.path)
+              }}
+              onDragLeave={e => {
+                e.preventDefault()
+                if (dragOverTarget === node.path) setDragOverTarget(null)
+              }}
+              onDrop={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                setDragOverTarget(null)
+                if (draggedItem && draggedItem.path !== node.path) {
+                  void moveItem(draggedItem.path, node.path, draggedItem.kind)
+                }
+              }}
             >
               <span className="tree-folder-chevron">
                 {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
@@ -603,11 +744,22 @@ export default function StudioPage(p: StudioProps) {
       return (
         <div
           key={node.id}
-          className={`vsc-tree-row ${isActive ? 'active' : ''} ${isProcessing ? 'is-loading' : ''}`}
+          className={`vsc-tree-row ${isActive ? 'active' : ''} ${isProcessing ? 'is-loading' : ''} ${draggedItem?.path === node.path ? 'is-dragging' : ''}`}
           style={{ paddingLeft: `${node.depth * 14 + 10}px` }}
           onClick={() => openFileTab(node.path)}
           onContextMenu={e => handleContextMenu(e, node)}
           title={node.path}
+          draggable={node.path !== 'index.html'}
+          onDragStart={e => {
+            e.stopPropagation()
+            setDraggedItem({ path: node.path, name: node.name, kind: 'file' })
+            e.dataTransfer.setData('text/plain', node.path)
+            e.dataTransfer.effectAllowed = 'move'
+          }}
+          onDragEnd={() => {
+            setDraggedItem(null)
+            setDragOverTarget(null)
+          }}
         >
           <span className="tree-file-icon">
             <FileIcon name={node.name} />
@@ -1150,8 +1302,23 @@ export default function StudioPage(p: StudioProps) {
 
                 {/* File Tree View with Hierarchy and Right-Click support */}
                 <div
-                  className="vsc-file-tree"
+                  className={`vsc-file-tree ${dragOverTarget === '__root__' ? 'is-root-drag-over' : ''}`}
                   onContextMenu={e => handleContextMenu(e, null)}
+                  onDragOver={e => {
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    if (dragOverTarget !== '__root__') setDragOverTarget('__root__')
+                  }}
+                  onDragLeave={e => {
+                    if (e.currentTarget === e.target) setDragOverTarget(null)
+                  }}
+                  onDrop={e => {
+                    e.preventDefault()
+                    setDragOverTarget(null)
+                    if (draggedItem) {
+                      void moveItem(draggedItem.path, '', draggedItem.kind)
+                    }
+                  }}
                 >
                   {/* Root inline creation row */}
                   {creatingItem && creatingItem.parentPath === '' && (
@@ -1844,10 +2011,20 @@ export default function StudioPage(p: StudioProps) {
                 <Copy size={13} />
                 <span>Copy Path</span>
               </button>
+              <button onClick={() => { setMoveModalItem(contextMenu.item!); setContextMenu(null) }}>
+                <FolderInput size={13} />
+                <span>Move to Folder…</span>
+              </button>
               <button onClick={() => { downloadFile(contextMenu.item!.path); setContextMenu(null) }}>
                 <Download size={13} />
                 <span>Download File</span>
               </button>
+              {contextMenu.item!.path !== 'index.html' && (
+                <button onClick={() => { setMoveModalItem(contextMenu.item!); setContextMenu(null) }}>
+                  <FolderInput size={13} />
+                  <span>Move to Folder…</span>
+                </button>
+              )}
               <div className="context-menu-sep" />
               {contextMenu.item.path !== 'index.html' && (
                 <button className="danger" onClick={() => {
@@ -1930,6 +2107,100 @@ export default function StudioPage(p: StudioProps) {
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {/* Move to Folder Modal */}
+      {moveModalItem && (
+        <div className="vsc-move-modal-backdrop" onClick={() => setMoveModalItem(null)}>
+          <div className="vsc-move-modal" onClick={e => e.stopPropagation()}>
+            <div className="vsc-modal-header">
+              <div className="vsc-modal-title">
+                <FolderInput size={15} className="text-accent" />
+                <span>Move {moveModalItem.kind === 'folder' ? 'Folder' : 'File'}</span>
+              </div>
+              <button className="vsc-tool-btn" onClick={() => setMoveModalItem(null)}>
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="vsc-move-source-info">
+              Moving: <code>{moveModalItem.path}</code>
+            </div>
+
+            <div className="vsc-move-list-title">Select destination folder:</div>
+
+            <div className="vsc-move-folders-list">
+              <button
+                className="vsc-move-folder-item"
+                onClick={() => {
+                  const item = moveModalItem
+                  setMoveModalItem(null)
+                  void moveItem(item.path, '', item.kind)
+                }}
+              >
+                <Folder size={14} />
+                <span>/ (Project Root)</span>
+              </button>
+
+              {existingFolderPaths.map((folder: string) => {
+                if (moveModalItem.kind === 'folder' && (folder === moveModalItem.path || folder.startsWith(`${moveModalItem.path}/`))) {
+                  return null
+                }
+                return (
+                  <button
+                    key={folder}
+                    className="vsc-move-folder-item"
+                    onClick={() => {
+                      const item = moveModalItem
+                      setMoveModalItem(null)
+                      void moveItem(item.path, folder, item.kind)
+                    }}
+                  >
+                    <Folder size={14} />
+                    <span>{folder}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="vsc-move-custom-divider">
+              <span>or enter a folder path</span>
+            </div>
+
+            <div className="vsc-move-custom-input-group">
+              <input
+                className="vsc-move-input"
+                placeholder="e.g. src/entities or assets/audio"
+                value={customMoveTarget}
+                onChange={e => setCustomMoveTarget(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && customMoveTarget.trim()) {
+                    const item = moveModalItem
+                    const target = customMoveTarget.trim()
+                    setMoveModalItem(null)
+                    setCustomMoveTarget('')
+                    void moveItem(item.path, target, item.kind)
+                  }
+                }}
+              />
+              <button
+                className="vsc-btn vsc-btn-primary"
+                disabled={!customMoveTarget.trim()}
+                onClick={() => {
+                  if (customMoveTarget.trim()) {
+                    const item = moveModalItem
+                    const target = customMoveTarget.trim()
+                    setMoveModalItem(null)
+                    setCustomMoveTarget('')
+                    void moveItem(item.path, target, item.kind)
+                  }
+                }}
+              >
+                Move
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
