@@ -441,7 +441,11 @@ export default function StudioPage(p: StudioProps) {
   }
 
   useEffect(() => {
-    const handleGlobalClick = () => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target?.closest('.vsc-menu-container') || target?.closest('.vsc-context-menu')) {
+        return
+      }
       setContextMenu(null)
       setExplorerMenuOpen(false)
       setAiMenuOpen(false)
@@ -899,12 +903,15 @@ export default function StudioPage(p: StudioProps) {
             <button
               className="vsc-action-btn icon-only"
               title="More actions"
-              onClick={() => setTopMenuOpen(!topMenuOpen)}
+              onClick={e => {
+                e.stopPropagation()
+                setTopMenuOpen(prev => !prev)
+              }}
             >
               <MoreHorizontal size={15} />
             </button>
             {topMenuOpen && (
-              <div className="vsc-dropdown-menu">
+              <div className="vsc-dropdown-menu right-aligned" onClick={e => e.stopPropagation()}>
                 <button onClick={() => { p.shareLink(); setTopMenuOpen(false) }}>
                   <Copy size={13} />
                   <span>Copy Game Link</span>
@@ -1074,7 +1081,7 @@ export default function StudioPage(p: StudioProps) {
                         title="More Explorer Options"
                         onClick={e => {
                           e.stopPropagation()
-                          setExplorerMenuOpen(!explorerMenuOpen)
+                          setExplorerMenuOpen(prev => !prev)
                         }}
                       >
                         <MoreHorizontal size={14} />
@@ -1654,12 +1661,15 @@ export default function StudioPage(p: StudioProps) {
                   <button
                     className="vsc-tool-btn"
                     title="Copilot Options"
-                    onClick={() => setAiMenuOpen(!aiMenuOpen)}
+                    onClick={e => {
+                      e.stopPropagation()
+                      setAiMenuOpen(prev => !prev)
+                    }}
                   >
                     <MoreHorizontal size={14} />
                   </button>
                   {aiMenuOpen && (
-                    <div className="vsc-dropdown-menu right-aligned">
+                    <div className="vsc-dropdown-menu right-aligned" onClick={e => e.stopPropagation()}>
                       <button onClick={() => { p.setModal('api-key'); setAiMenuOpen(false) }}>
                         <Settings2 size={13} />
                         <span>Configure API Key</span>
