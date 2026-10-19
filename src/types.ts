@@ -16,6 +16,7 @@ export type ChatMessage = {
   id: string
   role: 'user' | 'ai'
   text: string
+  thought?: string
   time?: number
   tools?: string[]
   model?: string

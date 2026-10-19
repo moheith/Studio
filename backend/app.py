@@ -679,7 +679,7 @@ async def get_project_conversation_turns(owner_id: str, project_id: str, limit: 
     # 2. Check legacy per-turn documents
     rows = await store.collection("conversations").find({"owner_id": owner_id, "project_id": project_id, "turns": {"$exists": False}}).sort("created_at", -1).limit(limit).to_list(limit)
     rows.reverse()
-    return [{"id": row.get("id", str(row.get("_id", ""))), "prompt": row.get("prompt", ""), "response": row.get("response", ""), "model": row.get("model", ""), "created_at": row.get("created_at", 0), "status": row.get("status", "complete")} for row in rows]
+    return [{"id": row.get("id", str(row.get("_id", ""))), "prompt": row.get("prompt", ""), "response": row.get("response", ""), "thought": row.get("thought", ""), "model": row.get("model", ""), "created_at": row.get("created_at", 0), "status": row.get("status", "complete")} for row in rows]
 
 
 async def record_conversation_turn_start(owner_id: str, project_id: str, turn: dict[str, Any]) -> None:
@@ -696,7 +696,7 @@ async def record_conversation_turn_start(owner_id: str, project_id: str, turn: d
             )
         else:
             legacy_rows = await col.find({"owner_id": owner_id, "project_id": project_id, "turns": {"$exists": False}}).sort("created_at", 1).to_list(100)
-            existing_turns = [{"id": r.get("id", str(r.get("_id", ""))), "prompt": r.get("prompt", ""), "response": r.get("response", ""), "model": r.get("model", ""), "created_at": r.get("created_at", 0), "status": r.get("status", "complete")} for r in legacy_rows]
+            existing_turns = [{"id": r.get("id", str(r.get("_id", ""))), "prompt": r.get("prompt", ""), "response": r.get("response", ""), "thought": r.get("thought", ""), "model": r.get("model", ""), "created_at": r.get("created_at", 0), "status": r.get("status", "complete")} for r in legacy_rows]
             all_turns = (existing_turns + [turn])[-100:]
             await col.delete_many({"owner_id": owner_id, "project_id": project_id, "turns": {"$exists": False}})
             await col.update_one(
@@ -713,12 +713,12 @@ async def record_conversation_turn_start(owner_id: str, project_id: str, turn: d
             await col.update_one({"owner_id": owner_id, "project_id": project_id}, {"$set": {"turns": turns, "updated_at": _now()}})
 
 
-async def record_conversation_turn_complete(owner_id: str, project_id: str, turn_id: str, response_text: str, status: str = "complete") -> None:
+async def record_conversation_turn_complete(owner_id: str, project_id: str, turn_id: str, response_text: str, thought_text: str = "", status: str = "complete") -> None:
     col = store.collection("conversations")
     if store.db is not None:
         await col.update_one(
             {"owner_id": owner_id, "project_id": project_id, "turns.id": turn_id},
-            {"$set": {"turns.$.response": response_text[:24000], "turns.$.status": status, "turns.$.completed_at": _now(), "updated_at": _now()}}
+            {"$set": {"turns.$.response": response_text[:24000], "turns.$.thought": thought_text[:32000], "turns.$.status": status, "turns.$.completed_at": _now(), "updated_at": _now()}}
         )
     else:
         doc = await col.find_one({"owner_id": owner_id, "project_id": project_id})
@@ -726,6 +726,7 @@ async def record_conversation_turn_complete(owner_id: str, project_id: str, turn
             for t in doc["turns"]:
                 if t.get("id") == turn_id:
                     t["response"] = response_text[:24000]
+                    t["thought"] = thought_text[:32000]
                     t["status"] = status
                     t["completed_at"] = _now()
                     break
@@ -788,7 +789,8 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         contents.append({"role":"user","parts":[{"text":f"Project files (context only): {json.dumps(file_context)}\n\nRequest: {body.prompt}"}]})
         calls = 0
         response_text: list[str] = []
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=12)) as client:
+        thought_text: list[str] = []
+        async with httpx.AsyncClient(timeout=httpx.Timeout(3000.0, connect=30.0)) as client:
             while calls < 8:
                 request_body = {"systemInstruction":{"parts":[{"text":system}]},"contents":contents,"tools":tool_declarations,"generationConfig":{"temperature":0.2}}
                 async with client.stream("POST", f"{GEMINI_API_BASE}/models/{model}:streamGenerateContent?alt=sse", headers={"x-goog-api-key": api_key, "Content-Type":"application/json"}, json=request_body) as resp:
@@ -807,7 +809,11 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                         except json.JSONDecodeError: continue
                         for candidate in payload.get("candidates", []):
                             for part in candidate.get("content", {}).get("parts", []):
-                                if part.get("text") and not part.get("thought"):
+                                if part.get("thought"):
+                                    t = part.get("text", "")
+                                    thought_text.append(t)
+                                    yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
+                                elif part.get("text"):
                                     response_text.append(part["text"])
                                     yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
                                 if part.get("functionCall"): full_parts.append(part)
@@ -815,6 +821,17 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                 contents.append({"role":"model","parts":full_parts}); function_results = []
                 for part in full_parts:
                     call = part["functionCall"]; name = call.get("name"); args = call.get("args", {}); result: dict[str, Any]
+                    tool_desc = ""
+                    if name == "write_file": tool_desc = f"Writing file: {args.get('path', '')}"
+                    elif name == "read_file": tool_desc = f"Reading file: {args.get('path', '')}"
+                    elif name == "delete_file": tool_desc = f"Deleting file: {args.get('path', '')}"
+                    elif name == "search_files": tool_desc = f"Searching files for '{args.get('query', '')}'"
+                    elif name == "list_files": tool_desc = "Scanning project files"
+                    elif name == "request_reload": tool_desc = "Requesting live preview reload"
+                    if tool_desc:
+                        action_msg = f"\n→ [Action] {tool_desc}\n"
+                        thought_text.append(action_msg)
+                        yield "event: thought\ndata: " + json.dumps({"text": action_msg}) + "\n\n"
                     try:
                         if name == "list_files": result = {"files": [f["path"] for f in await file_index(project_id)]}
                         elif name == "read_file": result = {"content": (await project_file_content(project, files_store._relative(args["path"]))).decode("utf-8", "replace")[:20000]}
@@ -846,7 +863,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                     except (HTTPException, KeyError) as exc: result = {"error":exc.detail if isinstance(exc, HTTPException) else "Required file path/content missing"}
                     function_results.append({"functionResponse":{"name":name,"response":result}})
                 contents.append({"role":"user","parts":function_results}); calls += 1
-        await record_conversation_turn_complete(user["id"], project_id, turn_id, "".join(response_text), status="complete")
+        await record_conversation_turn_complete(user["id"], project_id, turn_id, "".join(response_text), thought_text="".join(thought_text), status="complete")
         yield "event: done\ndata: " + json.dumps({"message":"Ready"}) + "\n\n"
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control":"no-cache, no-transform","X-Accel-Buffering":"no"})
 

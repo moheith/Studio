@@ -87,6 +87,7 @@ export default function App() {
   const [projectName, setProjectName] = useState('little-star')
   const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [saveState, setSaveState] = useState('Saved')
+  const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set())
   const [previewKey, setPreviewKey] = useState(0)
   const [newFileName, setNewFileName] = useState('')
   const [mobileNav, setMobileNav] = useState(false)
@@ -141,7 +142,7 @@ export default function App() {
         if (!currentProjectId || !activeFile) { setToast('Open a project file before saving'); return }
         window.clearTimeout(saveTimer.current)
         setSaveState('Saving…')
-        saveFile(currentProjectId, activeFile, code[activeFile] ?? '').then(() => { setSaveState('Saved'); setPreviewKey(value => value + 1); setToast('Project saved') }).catch(error => { setSaveState('Save failed'); setToast(error instanceof Error ? error.message : 'Could not save project') })
+        saveFile(currentProjectId, activeFile, code[activeFile] ?? '').then(() => { setSaveState('Saved'); setDirtyFiles(prev => { const next = new Set(prev); next.delete(activeFile); return next }); setPreviewKey(value => value + 1); setToast('Project saved') }).catch(error => { setSaveState('Save failed'); setToast(error instanceof Error ? error.message : 'Could not save project') })
       }
       if (event.key === 'Escape') { setModal(null); setMobileNav(false) }
     }
@@ -162,12 +163,27 @@ export default function App() {
   const handleEditor = (value?: string) => {
     const content = value ?? ''
     setCode((previous) => ({ ...previous, [activeFile]: content }))
-    setSaveState('Saving…')
+    setDirtyFiles((prev) => new Set(prev).add(activeFile))
+    setSaveState('Unsaved')
     window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => {
-      if (currentProjectId) saveFile(currentProjectId, activeFile, content).then(() => { setSaveState('Saved'); setPreviewKey((v) => v + 1) }).catch((error) => { setSaveState('Save failed'); notify(error.message) })
-      else setSaveState('Local preview')
-    }, 500)
+      if (currentProjectId) {
+        saveFile(currentProjectId, activeFile, content).then(() => {
+          setSaveState('Saved')
+          setDirtyFiles((prev) => {
+            const next = new Set(prev)
+            next.delete(activeFile)
+            return next
+          })
+          setPreviewKey((v) => v + 1)
+        }).catch((error) => {
+          setSaveState('Save failed')
+          notify(error.message)
+        })
+      } else {
+        setSaveState('Local preview')
+      }
+    }, 1500)
   }
   const handleNewProject = async () => {
     if (!user) { setPage('login'); setModal(null); return }
@@ -199,15 +215,15 @@ export default function App() {
     aiAbortController.current = controller
     setIsAiGenerating(true)
 
-    // Cooldown / inactivity timeout: automatically aborts if no output arrives within 60s
+    // Cooldown / inactivity timeout: automatically aborts if no output arrives within 3000s
     let activityTimer: number | undefined
     const resetActivityTimer = () => {
       if (activityTimer) window.clearTimeout(activityTimer)
       activityTimer = window.setTimeout(() => {
         controller.abort()
-        setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: 'Studio AI: Request timed out after 60 seconds with no response from the model.' } : m))
+        setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: 'Studio AI: Request timed out after 3000 seconds with no response from the model.' } : m))
         notify('AI request timed out')
-      }, 60000)
+      }, 3000 * 1000)
     }
     resetActivityTimer()
 
@@ -216,6 +232,13 @@ export default function App() {
       const toolsUsed: string[] = []
       for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel }, controller.signal)) {
         resetActivityTimer()
+        if (event.type === 'thought') {
+          const chunk = event.data.text || ''
+          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            thought: (m.thought || '') + chunk
+          } : m))
+        }
         if (event.type === 'token') {
           answer += event.data.text
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: answer, tools: [...toolsUsed] } : m))
@@ -419,12 +442,12 @@ export default function App() {
 
       // Load persistent AI conversation history
       try {
-        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; model?: string; created_at: number }> }>(`/api/projects/${id}/ai/history`)
+        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; thought?: string; model?: string; created_at: number }> }>(`/api/projects/${id}/ai/history`)
         if (historyData?.conversations) {
           const msgs: ChatMessage[] = []
           for (const conv of historyData.conversations) {
             if (conv.prompt) msgs.push({ id: `${conv.id}-user`, role: 'user', text: conv.prompt, time: conv.created_at })
-            if (conv.response) msgs.push({ id: `${conv.id}-ai`, role: 'ai', text: conv.response, time: conv.created_at, model: conv.model })
+            if (conv.response) msgs.push({ id: `${conv.id}-ai`, role: 'ai', text: conv.response, thought: conv.thought, time: conv.created_at, model: conv.model })
           }
           setChatMessages(msgs)
         }
@@ -525,7 +548,7 @@ export default function App() {
   }
   if (page === 'not-found') return <main className="route-not-found"><span>404</span><h1>This page isn’t available</h1><p>The editor is private to its owner, or this link is incorrect.</p><button className="button button-primary" onClick={() => setPage(user ? 'profile' : 'home')}>Return to Yulya Studio</button></main>
   if (page === 'studio') return <><StudioPage {...{
-    user, currentGame, activeFile, openFiles, setOpenFiles, code, language, tree, sidebarOpen, terminalOpen, chat, chatMessages, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel,
+    user, currentGame, activeFile, openFiles, setOpenFiles, code, language, tree, sidebarOpen, terminalOpen, chat, chatMessages, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel, dirtyFiles, setDirtyFiles,
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
     notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, renameProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
     isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles,

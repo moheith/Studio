@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import Editor from '@monaco-editor/react'
 import {
-  ArrowUpRight, Braces, Check, ChevronDown, ChevronRight, CircleHelp,
+  ArrowUpRight, Braces, Brain, Check, ChevronDown, ChevronRight, CircleHelp,
   Code2, Copy, Download, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
@@ -31,6 +31,8 @@ type StudioProps = {
   modal: 'new-project' | 'api-key' | 'new-file' | 'game' | null
   models: Array<{ id: string; display_name: string }>
   selectedModel: string
+  dirtyFiles?: Set<string>
+  setDirtyFiles?: React.Dispatch<React.SetStateAction<Set<string>>>
   setPage: (p: Page) => void
   setModal: (m: 'new-project' | 'api-key' | 'new-file' | 'game' | null) => void
   setActiveFile: (s: string) => void
@@ -169,6 +171,133 @@ function buildTreeHierarchy(entries: FileEntry[], emptyFolders: Set<string>): Fi
   return toNodes(root, 0)
 }
 
+
+function MarkdownBody({ text }: { text: string }) {
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const handleCopy = (code: string, id: string) => {
+    navigator.clipboard?.writeText(code)
+    setCopiedId(id)
+    window.setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const parts = useMemo(() => {
+    const regex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g
+    const result: Array<{ type: 'code' | 'text'; lang?: string; content: string; id: string }> = []
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+    let blockCount = 0
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        result.push({
+          type: 'text',
+          content: text.slice(lastIndex, match.index),
+          id: `t-${blockCount}`
+        })
+      }
+      result.push({
+        type: 'code',
+        lang: (match[1] || 'code').toUpperCase(),
+        content: match[2].trimEnd(),
+        id: `c-${blockCount++}`
+      })
+      lastIndex = regex.lastIndex
+    }
+
+    if (lastIndex < text.length) {
+      result.push({
+        type: 'text',
+        content: text.slice(lastIndex),
+        id: `t-${blockCount}`
+      })
+    }
+    return result
+  }, [text])
+
+  const renderInline = (str: string) => {
+    const codeParts = str.split(/(`[^`]+`)/g)
+    return codeParts.map((part, i) => {
+      if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+        return <code key={i} className="inline-code">{part.slice(1, -1)}</code>
+      }
+      const boldParts = part.split(/(\*\*[^*]+\*\*)/g)
+      return boldParts.map((bpart, j) => {
+        if (bpart.startsWith('**') && bpart.endsWith('**') && bpart.length > 4) {
+          return <strong key={j}>{bpart.slice(2, -2)}</strong>
+        }
+        return bpart
+      })
+    })
+  }
+
+  return (
+    <div className="copilot-markdown-body">
+      {parts.map(part => {
+        if (part.type === 'code') {
+          const isCopied = copiedId === part.id
+          return (
+            <div key={part.id} className="md-code-block">
+              <div className="md-code-header">
+                <span className="md-code-lang">{part.lang}</span>
+                <button
+                  type="button"
+                  className="md-code-copy-btn"
+                  onClick={() => handleCopy(part.content, part.id)}
+                  title="Copy Code"
+                >
+                  {isCopied ? (
+                    <>
+                      <Check size={11} className="text-success" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={11} />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="md-code-content">
+                <code>{part.content}</code>
+              </pre>
+            </div>
+          )
+        }
+
+        const lines = part.content.split('\n')
+        return (
+          <div key={part.id} className="md-text-block">
+            {lines.map((line, idx) => {
+              const trimmed = line.trim()
+              if (!trimmed) return <div key={idx} className="md-empty-gap" />
+              if (trimmed.startsWith('### ')) {
+                return <h4 key={idx} className="md-h4">{renderInline(trimmed.slice(4))}</h4>
+              }
+              if (trimmed.startsWith('## ')) {
+                return <h3 key={idx} className="md-h3">{renderInline(trimmed.slice(3))}</h3>
+              }
+              if (trimmed.startsWith('# ')) {
+                return <h2 key={idx} className="md-h2">{renderInline(trimmed.slice(2))}</h2>
+              }
+              if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+                return (
+                  <div key={idx} className="md-list-item">
+                    <span className="md-bullet">•</span>
+                    <span>{renderInline(trimmed.slice(2))}</span>
+                  </div>
+                )
+              }
+              return <p key={idx} className="md-p">{renderInline(line)}</p>
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function StudioPage(p: StudioProps) {
   // Activity bar tab: explorer, search, assets
   const [activityTab, setActivityTab] = useState<ActivityTab>('explorer')
@@ -208,6 +337,7 @@ export default function StudioPage(p: StudioProps) {
   const [moveModalItem, setMoveModalItem] = useState<{ path: string; name: string; kind: 'file' | 'folder' } | null>(null)
   const [customMoveTarget, setCustomMoveTarget] = useState('')
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null)
+  const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
 
   const copyMessageText = (id: string, text: string) => {
     navigator.clipboard?.writeText(text)
@@ -1515,24 +1645,37 @@ export default function StudioPage(p: StudioProps) {
               </button>
 
               <div className="vsc-tabs-scroll">
-                {p.openFiles.map(fileName => (
-                  <div
-                    key={fileName}
-                    className={`vsc-tab ${p.activeFile === fileName ? 'active-tab' : ''}`}
-                    onClick={() => p.setActiveFile(fileName)}
-                    title={fileName}
-                  >
-                    <FileIcon name={fileName} />
-                    <span className="tab-label">{fileName}</span>
-                    <button
-                      className="tab-close-btn"
-                      title="Close Tab"
-                      onClick={e => closeFileTab(e, fileName)}
+                {p.openFiles.map(fileName => {
+                  const isDirty = p.dirtyFiles?.has(fileName)
+                  return (
+                    <div
+                      key={fileName}
+                      className={`vsc-tab ${p.activeFile === fileName ? 'active-tab' : ''} ${isDirty ? 'is-dirty' : ''}`}
+                      onClick={() => p.setActiveFile(fileName)}
+                      title={isDirty ? `${fileName} (Unsaved changes - Ctrl+S to save)` : fileName}
                     >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
+                      <FileIcon name={fileName} />
+                      <span className="tab-label">{fileName}</span>
+                      {isDirty ? (
+                        <span
+                          className="tab-dirty-dot"
+                          title="Unsaved changes. Click to close."
+                          onClick={e => closeFileTab(e, fileName)}
+                        >
+                          ●
+                        </span>
+                      ) : (
+                        <button
+                          className="tab-close-btn"
+                          title="Close Tab"
+                          onClick={e => closeFileTab(e, fileName)}
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
                 <button
                   className="vsc-tab-plus"
                   title="Create New File"
@@ -1575,6 +1718,11 @@ export default function StudioPage(p: StudioProps) {
                 <FileIcon name={p.activeFile} />
                 <span>{p.activeFile || 'Select a file'}</span>
               </b>
+              {p.dirtyFiles?.has(p.activeFile) && (
+                <span className="breadcrumb-unsaved-dot" title="Unsaved changes (press Ctrl+S to save)">
+                  ● Unsaved
+                </span>
+              )}
               <span className="vsc-spacer" />
               <span className="lang-tag">{(p.language || 'text').toUpperCase()}</span>
             </div>
@@ -1787,7 +1935,7 @@ export default function StudioPage(p: StudioProps) {
                       title="Isolated game preview"
                       className="vsc-game-iframe"
                       sandbox="allow-scripts"
-                      src={p.previewUrl}
+                      src={`${p.previewUrl}${p.previewUrl.includes('?') ? '&' : '?'}t=${p.previewKey}`}
                       referrerPolicy="no-referrer"
                     />
                   ) : (
@@ -1921,7 +2069,7 @@ export default function StudioPage(p: StudioProps) {
                 </div>
               )}
 
-              {p.chatMessages.map(msg => {
+              {p.chatMessages.map((msg, idx) => {
                 const isUser = msg.role === 'user'
                 const modelDisplay = msg.model
                   ? msg.model.replace('models/', '')
@@ -1971,8 +2119,41 @@ export default function StudioPage(p: StudioProps) {
                       )}
                     </div>
 
+                    {msg.thought && (
+                      <div className="copilot-thought-accordion">
+                        <button
+                          type="button"
+                          className="thought-accordion-toggle"
+                          onClick={() => setExpandedThoughts(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                        >
+                          <Brain size={12} className="thought-icon" />
+                          <span className="thought-toggle-title">
+                            {p.isAiGenerating && idx === p.chatMessages.length - 1 ? 'Thinking & Executing Tools…' : 'Thinking Process & Tool Activity'}
+                          </span>
+                          <ChevronDown
+                            size={12}
+                            className={`thought-chevron ${(expandedThoughts[msg.id] ?? (p.isAiGenerating && idx === p.chatMessages.length - 1)) ? 'is-open' : ''}`}
+                          />
+                        </button>
+                        {(expandedThoughts[msg.id] ?? (p.isAiGenerating && idx === p.chatMessages.length - 1)) && (
+                          <div className="thought-accordion-body">
+                            <pre>{msg.thought}</pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="bubble-body">
-                      <pre>{msg.text}</pre>
+                      {isUser ? (
+                        <pre className="user-plain-text">{msg.text}</pre>
+                      ) : msg.text === 'Thinking…' && !msg.thought ? (
+                        <div className="bubble-thinking-placeholder">
+                          <Loader2 size={12} className="animate-spin text-accent" />
+                          <span>Thinking…</span>
+                        </div>
+                      ) : (
+                        <MarkdownBody text={msg.text} />
+                      )}
                     </div>
 
                     {msg.tools && msg.tools.length > 0 && (

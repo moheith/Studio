@@ -2368,3 +2368,253 @@
 .copilot-send-btn.stop:hover {
   background: #ff7777;
 }
+
+/* ========================================================
+   VS CODE STYLE DIRTY TAB & BREADCRUMB INDICATOR
+   ======================================================== */
+.tab-dirty-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  font-size: 14px;
+  color: #ded9ec;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  flex: none;
+  transition: all 0.12s;
+}
+
+.tab-dirty-dot:hover {
+  color: #ff5577;
+  transform: scale(1.15);
+}
+
+.breadcrumb-unsaved-dot {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  color: #c4a9f4;
+  font-family: var(--mono);
+  background: rgba(196, 169, 244, 0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(196, 169, 244, 0.2);
+  margin-left: 6px;
+}
+
+/* ========================================================
+   THOUGHT PROCESS & TOOL ACTIVITY ACCORDION
+   ======================================================== */
+.copilot-thought-accordion {
+  border-radius: 6px;
+  border: 1px solid #232537;
+  background: #11121b;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.thought-accordion-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #161724;
+  border: 0;
+  color: #9f9ab3;
+  font-size: 10px;
+  font-family: var(--mono);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.thought-accordion-toggle:hover {
+  background: #1d1e2e;
+  color: #ded9ec;
+}
+
+.thought-icon {
+  color: #c4a9f4;
+  flex: none;
+}
+
+.thought-toggle-title {
+  flex: 1;
+  font-weight: 500;
+}
+
+.thought-chevron {
+  transition: transform 0.15s ease;
+  color: #79768a;
+  flex: none;
+}
+
+.thought-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.thought-accordion-body {
+  padding: 8px 10px;
+  background: #0b0c13;
+  border-top: 1px solid #1c1d29;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.thought-accordion-body pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #a8a4b8;
+}
+
+/* ========================================================
+   MARKDOWN & CODE BLOCK RENDERING IN COPILOT CHAT
+   ======================================================== */
+.copilot-markdown-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #ded9ec;
+  word-break: break-word;
+}
+
+.user-plain-text {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.bubble-thinking-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: #9692a4;
+  padding: 4px 0;
+}
+
+.md-text-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.md-p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.md-empty-gap {
+  height: 4px;
+}
+
+.md-h2, .md-h3, .md-h4 {
+  margin: 8px 0 2px 0;
+  font-family: var(--sans);
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.md-h2 { font-size: 13.5px; }
+.md-h3 { font-size: 12.5px; }
+.md-h4 { font-size: 11.5px; color: #ded9ec; }
+
+.md-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-left: 4px;
+  line-height: 1.5;
+}
+
+.md-bullet {
+  color: var(--vsc-accent);
+  font-weight: 700;
+  flex: none;
+}
+
+.inline-code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  background: #1f212f;
+  color: #c4a9f4;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid #2b2e40;
+}
+
+/* Fenced Code Block with Copy Button */
+.md-code-block {
+  margin: 6px 0;
+  border-radius: 6px;
+  border: 1px solid #282a3d;
+  background: #090a10;
+  overflow: hidden;
+}
+
+.md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: #171825;
+  border-bottom: 1px solid #232535;
+}
+
+.md-code-lang {
+  font-size: 9px;
+  font-family: var(--mono);
+  color: #8c889c;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.md-code-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 0;
+  background: transparent;
+  color: #8c889c;
+  font-size: 10px;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.md-code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.md-code-copy-btn .text-success {
+  color: #58d68d;
+}
+
+.md-code-content {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: #ded9ec;
+  background: #0a0b12;
+}
+
+.md-code-content code {
+  font-family: inherit;
+}
