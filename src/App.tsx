@@ -91,7 +91,18 @@ export default function App() {
   const [newFileName, setNewFileName] = useState('')
   const [mobileNav, setMobileNav] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
+  const [isAiGenerating, setIsAiGenerating] = useState(false)
+  const aiAbortController = useRef<AbortController | null>(null)
   const saveTimer = useRef<number | undefined>(undefined)
+
+  const stopAiGeneration = () => {
+    if (aiAbortController.current) {
+      aiAbortController.current.abort()
+      aiAbortController.current = null
+      setIsAiGenerating(false)
+      notify('AI generation cancelled')
+    }
+  }
 
   useEffect(() => {
     const onRouteChange = () => setPageState(pageFromPath())
@@ -184,10 +195,13 @@ export default function App() {
       setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: 'Studio AI: Open a project to start an AI coding session.' } : m))
       return
     }
+    const controller = new AbortController()
+    aiAbortController.current = controller
+    setIsAiGenerating(true)
     try {
       let answer = ''
       const toolsUsed: string[] = []
-      for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel })) {
+      for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel }, controller.signal)) {
         if (event.type === 'token') {
           answer += event.data.text
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: answer, tools: [...toolsUsed] } : m))
@@ -211,9 +225,21 @@ export default function App() {
         }
       }
       setCode(nextCode)
+      setTree(current.files.map(file => ({
+        name: file.path,
+        kind: 'file',
+        language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript'
+      })))
       setPreviewKey(v => v + 1)
-    } catch (error) {
-      setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Studio AI: ${error instanceof Error ? error.message : 'Request failed'}` } : m))
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        notify('AI generation stopped')
+      } else {
+        setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Studio AI: ${error instanceof Error ? error.message : 'Request failed'}` } : m))
+      }
+    } finally {
+      setIsAiGenerating(false)
+      aiAbortController.current = null
     }
   }
   const shareLink = () => {
@@ -487,7 +513,7 @@ export default function App() {
     user, currentGame, activeFile, openFiles, setOpenFiles, code, language, tree, sidebarOpen, terminalOpen, chat, chatMessages, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel,
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
     notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, renameProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
-    onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles,
+    isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles,
   }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={() => addFile()}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
   return <div className="site-shell">

@@ -45,8 +45,8 @@ export async function uploadAsset(projectId: string, file: File) {
 
 const fileEtags = new Map<string, string>()
 
-export async function* streamSse(path: string, body: unknown) {
-  const response = await fetch(`${API_ORIGIN}${path}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken, Accept: 'text/event-stream' }, body: JSON.stringify(body) })
+export async function* streamSse(path: string, body: unknown, signal?: AbortSignal) {
+  const response = await fetch(`${API_ORIGIN}${path}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken, Accept: 'text/event-stream' }, body: JSON.stringify(body), signal })
   if (!response.ok || !response.body) {
     const payload = await response.json().catch(() => ({}))
     throw new Error(payload?.error?.message ?? 'AI request failed')

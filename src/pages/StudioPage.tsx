@@ -6,7 +6,7 @@ import {
   Code2, Copy, Download, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
-  Rocket, Search, Settings2, Smartphone, Sparkles, Tablet, Terminal, Trash2, Upload, X
+  Rocket, Search, Settings2, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
@@ -54,6 +54,8 @@ type StudioProps = {
   uploadProjectAsset: (file: File) => void
   onClearChat: () => void
   onReloadFiles: () => void
+  isAiGenerating?: boolean
+  stopAiGeneration?: () => void
 }
 
 type ActivityTab = 'explorer' | 'search' | 'assets'
@@ -1356,15 +1358,7 @@ export default function StudioPage(p: StudioProps) {
                   )}
                 </div>
 
-                <div className="vsc-sidebar-footer">
-                  <div className="vsc-tip-card">
-                    <Sparkles size={14} />
-                    <div>
-                      <b>VS Code Game Explorer</b>
-                      <p>Right-click any file or folder for quick options. Client-side game runtime.</p>
-                    </div>
-                  </div>
-                </div>
+
               </div>
             )}
 
@@ -1823,6 +1817,19 @@ export default function StudioPage(p: StudioProps) {
               </div>
 
               <div className="copilot-header-actions">
+                <button
+                  className="vsc-tool-btn"
+                  title="New Chat Session"
+                  onClick={() => {
+                    if (p.chatMessages.length === 0) return
+                    if (window.confirm('Start a new chat session? This will clear the current chat history.')) {
+                      p.onClearChat()
+                    }
+                  }}
+                >
+                  <Plus size={14} />
+                </button>
+
                 {/* 3-dots menu */}
                 <div className="vsc-menu-container">
                   <button
@@ -1854,6 +1861,15 @@ export default function StudioPage(p: StudioProps) {
                         <RefreshCw size={13} />
                         <span>Rescan Project Files</span>
                       </button>
+                      <button onClick={() => {
+                        setAiMenuOpen(false)
+                        const transcript = p.chatMessages.map(m => `### ${m.role === 'user' ? 'User' : 'Copilot'}\n${m.text}`).join('\n\n')
+                        navigator.clipboard?.writeText(transcript)
+                        p.notify('Chat transcript copied to clipboard')
+                      }}>
+                        <Copy size={13} />
+                        <span>Copy Transcript</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1870,31 +1886,32 @@ export default function StudioPage(p: StudioProps) {
 
             {/* Chat Message Scroll */}
             <div className="copilot-chat-scroll">
-              <div className="copilot-intro-card">
-                <div className="intro-icon-wrap">
-                  <Sparkles size={16} />
-                </div>
-                <div className="intro-text">
-                  <b>VS Code Game Copilot</b>
-                  <p>
-                    I have full context of this game project's code. Describe changes, gameplay mechanics, controls, or styling.
-                  </p>
-                  <div className="copilot-chips">
-                    <button onClick={() => p.setChat('Add mobile touch joystick and tap controls')}>
-                      ⌁ Touch Controls
+              {p.chatMessages.length === 0 && (
+                <div className="copilot-empty-state">
+                  <div className="empty-sparkle-icon">
+                    <Sparkles size={22} />
+                  </div>
+                  <div className="empty-title">Ask Copilot or use a quick command</div>
+                  <div className="copilot-quick-commands">
+                    <button onClick={() => p.setChat(`/fix Review #${p.activeFile} and fix any syntax or logic bugs`)}>
+                      <code>/fix</code>
+                      <span>Fix {p.activeFile}</span>
                     </button>
-                    <button onClick={() => p.setChat('Add a particle explosion effect when scoring')}>
-                      ✳ Particle Effects
+                    <button onClick={() => p.setChat(`/explain Explain the game architecture and functions in #${p.activeFile}`)}>
+                      <code>/explain</code>
+                      <span>Explain code</span>
                     </button>
-                    <button onClick={() => p.setChat('Add synthesized retro sound effects with Web Audio')}>
-                      ♫ Web Audio SFX
+                    <button onClick={() => p.setChat(`Add synthesized retro sound effects using Web Audio API`)}>
+                      <code>/audio</code>
+                      <span>Web Audio SFX</span>
                     </button>
-                    <button onClick={() => p.setChat('Make the game progressively harder every 20 seconds')}>
-                      ⚡ Difficulty Ramp
+                    <button onClick={() => p.setChat(`Add responsive touch controls for mobile players`)}>
+                      <code>/touch</code>
+                      <span>Mobile controls</span>
                     </button>
                   </div>
                 </div>
-              </div>
+              )}
 
               {p.chatMessages.map(msg => (
                 <div key={msg.id} className={`copilot-bubble ${msg.role === 'user' ? 'user-msg' : 'ai-msg'}`}>
@@ -1908,6 +1925,33 @@ export default function StudioPage(p: StudioProps) {
                         {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
+                    <div className="bubble-actions">
+                      <button
+                        className="bubble-action-btn"
+                        title="Copy message"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(msg.text)
+                          p.notify('Copied to clipboard')
+                        }}
+                      >
+                        <Copy size={11} />
+                      </button>
+                      {msg.role === 'ai' && (
+                        <button
+                          className="bubble-action-btn"
+                          title="Insert into active editor"
+                          onClick={() => {
+                            const codeBlockMatch = msg.text.match(/```(?:[a-z]*\n)?([\s\S]*?)```/)
+                            const toInsert = codeBlockMatch ? codeBlockMatch[1] : msg.text
+                            p.handleEditor(toInsert)
+                            p.notify(`Inserted into ${p.activeFile}`)
+                          }}
+                        >
+                          <Code2 size={11} />
+                          <span>Insert</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="bubble-body">
                     <pre>{msg.text}</pre>
@@ -1921,6 +1965,15 @@ export default function StudioPage(p: StudioProps) {
                   )}
                 </div>
               ))}
+              {p.isAiGenerating && (
+                <div className="copilot-generating-bar">
+                  <Loader2 size={12} className="animate-spin text-accent" />
+                  <span>Copilot is writing code…</span>
+                  {p.stopAiGeneration && (
+                    <button className="stop-link" onClick={p.stopAiGeneration}>Stop</button>
+                  )}
+                </div>
+              )}
               <div ref={chatEndRef} />
             </div>
 
@@ -1957,6 +2010,17 @@ export default function StudioPage(p: StudioProps) {
                 </select>
               </div>
 
+              <div className="composer-context-bar">
+                <span className="composer-pill active-file" title={`Active file context: ${p.activeFile}`}>
+                  <FileCode2 size={10} />
+                  <span>#{p.activeFile}</span>
+                </span>
+                <span className="composer-pill" title="Project Context">
+                  <Folder size={10} />
+                  <span>@{p.currentGame?.id ?? 'project'}</span>
+                </span>
+              </div>
+
               <div className="composer-input-container">
                 <textarea
                   value={p.chat}
@@ -1964,20 +2028,30 @@ export default function StudioPage(p: StudioProps) {
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      p.submitPrompt()
+                      if (!p.isAiGenerating) p.submitPrompt()
                     }
                   }}
-                  placeholder="Ask Copilot or describe changes… (Enter to send, Shift+Enter for newline)"
+                  placeholder={`Ask Copilot about #${p.activeFile}… (Enter to send, Shift+Enter for newline)`}
                   rows={2}
                 />
-                <button
-                  className="copilot-send-btn"
-                  disabled={!p.chat.trim() || !p.selectedModel}
-                  onClick={p.submitPrompt}
-                  title="Send message (Enter)"
-                >
-                  <ArrowUpRight size={15} />
-                </button>
+                {p.isAiGenerating ? (
+                  <button
+                    className="copilot-send-btn stop"
+                    onClick={p.stopAiGeneration}
+                    title="Stop generation"
+                  >
+                    <Square size={12} fill="currentColor" />
+                  </button>
+                ) : (
+                  <button
+                    className="copilot-send-btn"
+                    disabled={!p.chat.trim() || !p.selectedModel}
+                    onClick={p.submitPrompt}
+                    title="Send message (Enter)"
+                  >
+                    <ArrowUpRight size={15} />
+                  </button>
+                )}
               </div>
             </div>
           </aside>

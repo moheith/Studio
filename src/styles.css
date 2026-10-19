@@ -2141,3 +2141,167 @@
 .vsc-move-input:focus {
   border-color: var(--vsc-accent);
 }
+
+/* Copilot Chat Enhancements */
+.copilot-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 16px;
+  text-align: center;
+  gap: 12px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.empty-sparkle-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(196, 169, 244, 0.1);
+  border: 1px solid rgba(196, 169, 244, 0.25);
+  color: #c4a9f4;
+  display: grid;
+  place-items: center;
+}
+
+.empty-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ded9ec;
+  max-width: 240px;
+  line-height: 1.4;
+}
+
+.copilot-quick-commands {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.copilot-quick-commands button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #282a3a;
+  background: #14151f;
+  color: #c4c0d4;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.copilot-quick-commands button code {
+  color: #c4a9f4;
+  font-family: var(--mono);
+  font-size: 10px;
+  background: #202230;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.copilot-quick-commands button:hover {
+  background: #222536;
+  border-color: var(--vsc-accent);
+  color: #fff;
+}
+
+/* Bubble Actions */
+.bubble-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.bubble-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #2d2e40;
+  background: #191b26;
+  color: #a8a4b8;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.bubble-action-btn:hover {
+  background: #282a3b;
+  border-color: #42445e;
+  color: #fff;
+}
+
+/* Copilot Generating Status Bar */
+.copilot-generating-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(196, 169, 244, 0.08);
+  border: 1px solid rgba(196, 169, 244, 0.2);
+  color: #c4a9f4;
+  font-size: 11px;
+  font-family: var(--mono);
+  animation: pulse-live 2s infinite ease-in-out;
+}
+
+.copilot-generating-bar .stop-link {
+  margin-left: auto;
+  border: 1px solid rgba(255, 90, 90, 0.4);
+  background: rgba(255, 70, 70, 0.15);
+  color: #ff8080;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.copilot-generating-bar .stop-link:hover {
+  background: rgba(255, 70, 70, 0.3);
+}
+
+/* Composer Context Bar */
+.composer-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.composer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: #8c889c;
+  background: #181924;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid #2a2c3d;
+}
+
+.composer-pill.active-file {
+  color: #79eec3;
+  border-color: rgba(121, 238, 195, 0.25);
+  background: rgba(121, 238, 195, 0.08);
+}
+
+/* Stop Button */
+.copilot-send-btn.stop {
+  background: #ff5555;
+  color: #fff;
+}
+
+.copilot-send-btn.stop:hover {
+  background: #ff7777;
+}
