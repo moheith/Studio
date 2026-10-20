@@ -272,6 +272,20 @@ export default function App() {
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, tools: [...toolsUsed] } : m))
           notify(label)
         }
+        if (event.type === 'waterfall_transition') {
+          const trans = event.data
+          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            waterfallTransitions: [...(m.waterfallTransitions || []), trans]
+          } : m))
+          notify(`⚡ Cascaded from ${trans.from_alias} to ${trans.to_alias} (${trans.to_model})`)
+        }
+        if (event.type === 'telemetry') {
+          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            telemetry: event.data
+          } : m))
+        }
         if (event.type === 'reload_preview') setPreviewKey(v => v + 1)
         if (event.type === 'error') {
           const errMsg = event.data.message || event.data.text || (typeof event.data === 'string' ? event.data : JSON.stringify(event.data))
@@ -468,12 +482,12 @@ export default function App() {
 
       // Load persistent AI conversation history
       try {
-        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; thought?: string; model?: string; created_at: number }> }>(`/api/projects/${id}/ai/history`)
+        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; thought?: string; model?: string; created_at: number; telemetry?: any }> }>(`/api/projects/${id}/ai/history`)
         if (historyData?.conversations) {
           const msgs: ChatMessage[] = []
           for (const conv of historyData.conversations) {
             if (conv.prompt) msgs.push({ id: `${conv.id}-user`, role: 'user', text: conv.prompt, time: conv.created_at })
-            if (conv.response) msgs.push({ id: `${conv.id}-ai`, role: 'ai', text: conv.response, thought: conv.thought, time: conv.created_at, model: conv.model })
+            if (conv.response) msgs.push({ id: `${conv.id}-ai`, role: 'ai', text: conv.response, thought: conv.thought, time: conv.created_at, model: conv.model, telemetry: conv.telemetry })
           }
           setChatMessages(msgs)
         }
@@ -503,6 +517,20 @@ export default function App() {
     if (!currentProjectId || !currentGame) return
     await loadProject(currentProjectId, currentGame)
     notify('Project files refreshed')
+  }
+
+  const updateWaterfall = async (models: string[]) => {
+    try {
+      const res = await api<{ waterfall: string[] }>('/api/profile/waterfall', {
+        method: 'PUT',
+        body: JSON.stringify({ models })
+      })
+      setUser(curr => curr ? { ...curr, waterfall: res.waterfall } : curr)
+      notify('Waterfall cascade models saved to your profile')
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not save waterfall')
+      throw err
+    }
   }
 
   useEffect(() => {
@@ -578,7 +606,7 @@ export default function App() {
     isAntigravityMode, setIsAntigravityMode,
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
     notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, renameProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
-    isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles,
+    isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles, updateWaterfall,
   }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={() => addFile()}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
   return <div className="site-shell">

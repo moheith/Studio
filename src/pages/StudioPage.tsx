@@ -60,6 +60,7 @@ type StudioProps = {
   stopAiGeneration?: () => void
   isAntigravityMode?: boolean
   setIsAntigravityMode?: (v: boolean) => void
+  updateWaterfall?: (models: string[]) => Promise<void>
 }
 
 type ActivityTab = 'explorer' | 'search' | 'assets'
@@ -341,6 +342,23 @@ export default function StudioPage(p: StudioProps) {
   const [customMoveTarget, setCustomMoveTarget] = useState('')
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null)
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
+
+  // Waterfall Cascade & Telemetry modal state
+  const [waterfallModalOpen, setWaterfallModalOpen] = useState(false)
+  const [openTelemetryId, setOpenTelemetryId] = useState<string | null>(null)
+  const [customWaterfall, setCustomWaterfall] = useState<string[]>(
+    p.user?.waterfall && p.user.waterfall.length > 0
+      ? p.user.waterfall
+      : ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-pro']
+  )
+  const [selectedNewFallback, setSelectedNewFallback] = useState('')
+  const [isSavingWaterfall, setIsSavingWaterfall] = useState(false)
+
+  useEffect(() => {
+    if (p.user?.waterfall && p.user.waterfall.length > 0) {
+      setCustomWaterfall(p.user.waterfall)
+    }
+  }, [p.user?.waterfall])
 
   const copyMessageText = (id: string, text: string) => {
     navigator.clipboard?.writeText(text)
@@ -2029,6 +2047,10 @@ export default function StudioPage(p: StudioProps) {
                   </button>
                   {aiMenuOpen && (
                     <div className="vsc-dropdown-menu right-aligned" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => { setWaterfallModalOpen(true); setAiMenuOpen(false) }}>
+                        <Sparkles size={13} className="text-accent" />
+                        <span>Configure Model Waterfall…</span>
+                      </button>
                       <button onClick={() => { p.setModal('api-key'); setAiMenuOpen(false) }}>
                         <Settings2 size={13} />
                         <span>Configure API Key</span>
@@ -2191,6 +2213,23 @@ export default function StudioPage(p: StudioProps) {
                       )}
                     </div>
 
+                    {msg.waterfallTransitions && msg.waterfallTransitions.length > 0 && (
+                      <div className="waterfall-transition-stream">
+                        {msg.waterfallTransitions.map((tr, tIdx) => (
+                          <div key={tIdx} className="waterfall-transition-line">
+                            <span className="waterfall-pulse-dot" />
+                            <span className="waterfall-from">
+                              <strong>{tr.from_alias}</strong> ({tr.from_model}) error: <em>{tr.reason}</em>
+                            </span>
+                            <span className="waterfall-arrow">➔</span>
+                            <span className="waterfall-to">
+                              Cascaded to <strong>{tr.to_alias}</strong> ({tr.to_model})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {msg.tools && msg.tools.length > 0 && (
                       <div className="bubble-tool-pills">
                         {msg.tools.map((toolPath, idx) => (
@@ -2201,8 +2240,65 @@ export default function StudioPage(p: StudioProps) {
 
                     {!isUser && (
                       <div className="bubble-model-footer">
-                        <Sparkles size={9} className="model-sparkle" />
-                        <span>{isAntigravity ? (modelDisplay.startsWith('✦') ? modelDisplay : `✦ Antigravity (${modelDisplay.replace('antigravity:', '')})`) : modelDisplay}</span>
+                        <div className="bubble-footer-left">
+                          <Sparkles size={9} className="model-sparkle" />
+                          <span>{isAntigravity ? (modelDisplay.startsWith('✦') ? modelDisplay : `✦ Antigravity (${modelDisplay.replace('antigravity:', '')})`) : modelDisplay}</span>
+                        </div>
+                        {msg.telemetry && (
+                          <div className="bubble-telemetry-corner">
+                            <button
+                              type="button"
+                              className={`telemetry-pill-btn ${openTelemetryId === msg.id ? 'is-active' : ''}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setOpenTelemetryId(prev => prev === msg.id ? null : msg.id)
+                              }}
+                              title="Click to view Model Waterfall, Tokens & Timing Breakdown"
+                            >
+                              <span className="telemetry-sparkle">⚡</span>
+                              <span className="telemetry-models-summary">
+                                {msg.telemetry.models?.map(m => m.alias).join(' ➔ ') || 'M1'}
+                              </span>
+                              <span className="telemetry-dot">•</span>
+                              <span className="telemetry-stat">{msg.telemetry.total_tokens?.toLocaleString() ?? 0} tokens</span>
+                              <span className="telemetry-dot">•</span>
+                              <span className="telemetry-stat">{msg.telemetry.total_duration ?? 0}s</span>
+                              <ChevronDown size={10} className={`telemetry-chevron ${openTelemetryId === msg.id ? 'is-open' : ''}`} />
+                            </button>
+                            {openTelemetryId === msg.id && (
+                              <div className="telemetry-dropdown-card" onClick={e => e.stopPropagation()}>
+                                <div className="telemetry-card-header">
+                                  <span className="telemetry-card-title">✦ Execution Telemetry & Waterfall</span>
+                                  <span className="telemetry-card-total">{msg.telemetry.total_tokens?.toLocaleString()} tokens • {msg.telemetry.total_duration}s</span>
+                                </div>
+                                <div className="telemetry-models-list">
+                                  {msg.telemetry.models?.map((mod, mi) => (
+                                    <div key={mi} className={`telemetry-model-row status-${mod.status}`}>
+                                      <div className="model-row-top">
+                                        <span className="model-alias-badge">{mod.alias}</span>
+                                        <span className="model-name-text">{mod.name}</span>
+                                        <span className={`model-status-pill status-${mod.status}`}>
+                                          {mod.status === 'completed' ? '✓ Completed' : mod.status === 'cascaded' ? '⚡ Cascaded' : '✕ Failed'}
+                                        </span>
+                                      </div>
+                                      <div className="model-row-metrics">
+                                        <span>In: <strong>{mod.input_tokens?.toLocaleString() ?? 0}</strong></span>
+                                        <span>Out: <strong>{mod.output_tokens?.toLocaleString() ?? 0}</strong></span>
+                                        <span>Total: <strong>{mod.total_tokens?.toLocaleString() ?? 0}</strong></span>
+                                        <span>Time: <strong>{mod.duration_seconds ?? 0}s</strong></span>
+                                      </div>
+                                      {mod.error && (
+                                        <div className="model-row-error">
+                                          Reason: {mod.error}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2528,6 +2624,144 @@ export default function StudioPage(p: StudioProps) {
                 }}
               >
                 Move
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Configure Model Waterfall Modal */}
+      {waterfallModalOpen && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setWaterfallModalOpen(false)}>
+          <div className="modal-card modal-waterfall">
+            <button className="modal-close" onClick={() => setWaterfallModalOpen(false)} aria-label="Close">
+              <X size={17} />
+            </button>
+            <div className="eyebrow">AI ARCHITECTURE & FAILOVER</div>
+            <h2>Configure Model Waterfall</h2>
+            <p className="modal-subtitle">
+              When your chosen starting model encounters rate limits (429), server load (503), or output token caps, execution automatically cascades down this list from first to last without dropping progress.
+            </p>
+
+            <div className="waterfall-list-container">
+              <div className="waterfall-list-header">
+                <span>Cascade Sequence (First ➔ Last)</span>
+                <span className="waterfall-count">{customWaterfall.length} model{customWaterfall.length === 1 ? '' : 's'}</span>
+              </div>
+              <div className="waterfall-list">
+                {customWaterfall.map((modName, idx) => (
+                  <div key={`${modName}-${idx}`} className="waterfall-item-row">
+                    <span className="waterfall-alias-tag">M{idx + 1}</span>
+                    <span className="waterfall-model-name">{modName}</span>
+                    <div className="waterfall-item-actions">
+                      <button
+                        type="button"
+                        className="wf-action-btn"
+                        title="Move Up"
+                        disabled={idx === 0}
+                        onClick={() => {
+                          if (idx === 0) return
+                          const next = [...customWaterfall]
+                          const temp = next[idx - 1]
+                          next[idx - 1] = next[idx]
+                          next[idx] = temp
+                          setCustomWaterfall(next)
+                        }}
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        className="wf-action-btn"
+                        title="Move Down"
+                        disabled={idx === customWaterfall.length - 1}
+                        onClick={() => {
+                          if (idx === customWaterfall.length - 1) return
+                          const next = [...customWaterfall]
+                          const temp = next[idx + 1]
+                          next[idx + 1] = next[idx]
+                          next[idx] = temp
+                          setCustomWaterfall(next)
+                        }}
+                      >
+                        ▼
+                      </button>
+                      <button
+                        type="button"
+                        className="wf-action-btn delete"
+                        title="Remove from Waterfall"
+                        disabled={customWaterfall.length <= 1}
+                        onClick={() => {
+                          if (customWaterfall.length <= 1) return
+                          setCustomWaterfall(customWaterfall.filter((_, i) => i !== idx))
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="waterfall-add-section">
+              <label className="wf-add-label">Add Fallback Model to Waterfall</label>
+              <div className="wf-add-controls">
+                <select
+                  className="wf-select-model"
+                  value={selectedNewFallback}
+                  onChange={e => setSelectedNewFallback(e.target.value)}
+                >
+                  <option value="">-- Select model to add --</option>
+                  {p.models
+                    .filter(m => !customWaterfall.includes(m.id.replace('models/', '')))
+                    .map(m => (
+                      <option key={m.id} value={m.id.replace('models/', '')}>
+                        {m.display_name} ({m.id.replace('models/', '')})
+                      </option>
+                    ))
+                  }
+                </select>
+                <button
+                  type="button"
+                  className="button button-outline button-small"
+                  disabled={!selectedNewFallback || customWaterfall.includes(selectedNewFallback)}
+                  onClick={() => {
+                    if (!selectedNewFallback || customWaterfall.includes(selectedNewFallback)) return
+                    setCustomWaterfall(prev => [...prev, selectedNewFallback])
+                    setSelectedNewFallback('')
+                  }}
+                >
+                  + Add Model
+                </button>
+              </div>
+            </div>
+
+            <div className="waterfall-modal-footer">
+              <button
+                type="button"
+                className="button button-ghost"
+                onClick={() => setWaterfallModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={isSavingWaterfall || customWaterfall.length === 0}
+                onClick={async () => {
+                  setIsSavingWaterfall(true)
+                  try {
+                    if (p.updateWaterfall) {
+                      await p.updateWaterfall(customWaterfall)
+                    }
+                    setWaterfallModalOpen(false)
+                  } finally {
+                    setIsSavingWaterfall(false)
+                  }
+                }}
+              >
+                {isSavingWaterfall ? 'Saving to Profile…' : 'Save Waterfall to Profile'}
               </button>
             </div>
           </div>

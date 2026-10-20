@@ -2724,3 +2724,415 @@
   font-family: var(--mono);
   font-size: 11.5px;
 }
+
+/* ==========================================================================
+   Waterfall Failover & Execution Telemetry Styles
+   ========================================================================== */
+
+/* Waterfall Transition Notification Stream (In-Chat Notice) */
+.waterfall-transition-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.waterfall-transition-line {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  font: 400 10px var(--mono);
+  color: #fbbf24;
+  line-height: 1.4;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.waterfall-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b;
+  flex: none;
+  animation: wfPulse 1.8s infinite ease-in-out;
+}
+
+@keyframes wfPulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+
+.waterfall-from strong {
+  color: #fde68a;
+  font-weight: 700;
+}
+
+.waterfall-from em {
+  font-style: normal;
+  color: #fca5a5;
+}
+
+.waterfall-arrow {
+  color: #fbbf24;
+  font-weight: 700;
+  margin: 0 2px;
+}
+
+.waterfall-to strong {
+  color: #a7f3d0;
+  font-weight: 700;
+}
+
+/* Bubble Model Footer & Corner Telemetry */
+.bubble-model-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 9.5px;
+  font-family: var(--mono);
+  color: #726e82;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+}
+
+.bubble-footer-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bubble-telemetry-corner {
+  position: relative;
+  margin-left: auto;
+}
+
+.telemetry-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #181926;
+  border: 1px solid #2d2f45;
+  color: #b3aed0;
+  font: 500 9.5px var(--mono);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.telemetry-pill-btn:hover,
+.telemetry-pill-btn.is-active {
+  background: #222436;
+  border-color: #6366f1;
+  color: #f1edfa;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.25);
+}
+
+.telemetry-sparkle {
+  color: #f59e0b;
+}
+
+.telemetry-models-summary {
+  font-weight: 700;
+  color: #c4b5fd;
+}
+
+.telemetry-dot {
+  color: #4b4860;
+}
+
+.telemetry-stat {
+  color: #9d98b0;
+}
+
+.telemetry-chevron {
+  color: #726e82;
+  transition: transform 0.15s ease;
+}
+
+.telemetry-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+/* Telemetry Dropdown Card */
+.telemetry-dropdown-card {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  width: 310px;
+  background: #11121c;
+  border: 1px solid #2f3248;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(99, 102, 241, 0.15);
+  z-index: 100;
+  animation: menuFadeIn 0.15s ease-out;
+}
+
+.telemetry-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font: 600 10.5px var(--sans);
+  color: #ede9fe;
+}
+
+.telemetry-card-total {
+  font: 500 9.5px var(--mono);
+  color: #8b5cf6;
+}
+
+.telemetry-models-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.telemetry-model-row {
+  padding: 7px 8px;
+  border-radius: 5px;
+  background: #181926;
+  border: 1px solid #282a3d;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.telemetry-model-row.status-cascaded {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.telemetry-model-row.status-failed {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.model-row-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-alias-badge {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #312e81;
+  color: #c7d2fe;
+  font: 700 9px var(--mono);
+}
+
+.model-name-text {
+  font: 600 10px var(--mono);
+  color: #f1edfa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.model-status-pill {
+  font: 600 8.5px var(--sans);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.model-status-pill.status-completed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.model-status-pill.status-cascaded {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.model-status-pill.status-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.model-row-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 400 9px var(--mono);
+  color: #8c88a4;
+  padding-top: 2px;
+}
+
+.model-row-metrics strong {
+  color: #e2e8f0;
+}
+
+.model-row-error {
+  font: 400 9px var(--mono);
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.08);
+  padding: 3px 5px;
+  border-radius: 3px;
+  margin-top: 2px;
+}
+
+/* Waterfall Config Modal */
+.modal-waterfall {
+  max-width: 520px;
+  width: 92%;
+}
+
+.modal-subtitle {
+  font-size: 11.5px;
+  color: #9c97b0;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.waterfall-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.waterfall-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 600 11px var(--sans);
+  color: #cfcbde;
+}
+
+.waterfall-count {
+  font: 500 10px var(--mono);
+  color: #8b5cf6;
+}
+
+.waterfall-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  background: #0d0e14;
+  border-radius: 8px;
+  border: 1px solid #232535;
+}
+
+.waterfall-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #171824;
+  border: 1px solid #2b2e40;
+}
+
+.waterfall-alias-tag {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #3730a3;
+  color: #e0e7ff;
+  font: 700 9.5px var(--mono);
+  flex: none;
+}
+
+.waterfall-model-name {
+  font: 500 11px var(--mono);
+  color: #f1edfa;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waterfall-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wf-action-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid #33364c;
+  background: #1e2030;
+  color: #b7b3c8;
+  font-size: 9px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 0.12s;
+}
+
+.wf-action-btn:hover:not(:disabled) {
+  background: #2f3248;
+  color: #fff;
+  border-color: #4b4e6a;
+}
+
+.wf-action-btn.delete:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border-color: #ef4444;
+}
+
+.wf-action-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.waterfall-add-section {
+  padding: 12px;
+  border-radius: 8px;
+  background: #12131c;
+  border: 1px dashed #2d3044;
+  margin-bottom: 20px;
+}
+
+.wf-add-label {
+  display: block;
+  font: 600 10.5px var(--sans);
+  color: #cfcbde;
+  margin-bottom: 8px;
+}
+
+.wf-add-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-select-model {
+  flex: 1;
+  background: #191b26;
+  border: 1px solid #313448;
+  border-radius: 6px;
+  color: #f1edfa;
+  font: 500 11px var(--mono);
+  padding: 6px 10px;
+  outline: none;
+}
+
+.waterfall-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}

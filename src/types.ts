@@ -12,6 +12,31 @@ export type Game = {
 }
 
 export type FileEntry = { name: string; kind: 'file' | 'folder'; language?: string }
+export type ModelUsage = {
+  name: string
+  alias: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  duration_seconds: number
+  status: 'completed' | 'cascaded' | 'failed'
+  error?: string
+}
+
+export type ChatTelemetry = {
+  models: ModelUsage[]
+  total_tokens: number
+  total_duration: number
+}
+
+export type WaterfallTransition = {
+  from_model: string
+  from_alias: string
+  to_model: string
+  to_alias: string
+  reason: string
+}
+
 export type ChatMessage = {
   id: string
   role: 'user' | 'ai'
@@ -20,7 +45,16 @@ export type ChatMessage = {
   time?: number
   tools?: string[]
   model?: string
+  telemetry?: ChatTelemetry
+  waterfallTransitions?: WaterfallTransition[]
 }
 
-export type User = { id?: string; username: string; email: string; avatar?: string; has_api_key?: boolean }
+export type User = {
+  id?: string
+  username: string
+  email: string
+  avatar?: string
+  has_api_key?: boolean
+  waterfall?: string[]
+}
 export type Page = 'home' | 'studio' | 'login' | 'register' | 'verify-email' | 'profile' | 'not-found'
