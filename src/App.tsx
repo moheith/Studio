@@ -83,8 +83,8 @@ export default function App() {
   const [apiKey, setApiKey] = useState('')
   const [hasKey, setHasKey] = useState(false)
   const [models, setModels] = useState<Array<{ id: string; display_name: string }>>([
-    {"id": "antigravity-preview-latest", "display_name": "✦ antigravity-preview-latest"},
-    {"id": "antigravity-preview-09-2026", "display_name": "✦ antigravity-preview-09-2026"},
+    {"id": "antigravity-preview-latest", "display_name": "✦ Antigravity (Gemini 2.5 Pro)"},
+    {"id": "antigravity-preview-09-2026", "display_name": "✦ Antigravity (Gemini 2.5 Flash)"},
     {"id": "gemini-2.5-pro", "display_name": "Gemini 2.5 Pro"},
     {"id": "gemini-2.5-flash", "display_name": "Gemini 2.5 Flash"},
   ])
