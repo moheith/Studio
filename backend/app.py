@@ -849,12 +849,12 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         model = raw_model
         saved_model_name = f"✦ Antigravity ({model})" if is_antigravity else model
     if not re.fullmatch(r"[a-zA-Z0-9._-]{3,100}", model): raise HTTPException(400, "Invalid model identifier")
-    previous_turns = await get_project_conversation_turns(user["id"], project_id, limit=30 if is_antigravity else 12)
+    previous_turns = await get_project_conversation_turns(user["id"], project_id, limit=100 if is_antigravity else 20)
     messages = await file_index(project_id); file_context = {}; baseline_etags = {item["path"]: item.get("etag") for item in messages}
-    max_files = 50 if is_antigravity else 20
-    for item in messages[:max_files]:
-        if item["path"].lower().endswith((".html", ".css", ".js", ".mjs", ".json")):
-            file_context[item["path"]] = (await project_file_content(project, item["path"])).decode("utf-8", "replace")[:35000]
+    # Full project file context: include all code and data files with no arbitrary file count limit
+    for item in messages:
+        if item["path"].lower().endswith((".html", ".css", ".js", ".mjs", ".json", ".txt", ".csv", ".tsv")):
+            file_context[item["path"]] = (await project_file_content(project, item["path"])).decode("utf-8", "replace")[:60000]
     tool_declarations = [{"functionDeclarations": [
         {
             "name": "list_files",
@@ -1013,7 +1013,8 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         calls = 0
         response_text: list[str] = []
         thought_text: list[str] = []
-        max_calls = 15 if is_antigravity else 8
+        # Deep agent execution runway: up to 50 autonomous iterations per turn
+        max_calls = 50 if is_antigravity else 20
         active_model = model
         fallback_model = "gemini-3.6-flash"
         async with httpx.AsyncClient(timeout=httpx.Timeout(3000.0, connect=30.0)) as client:
