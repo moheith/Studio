@@ -24,7 +24,7 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
 }
 
 export async function getFile(projectId: string, path: string) {
-  const response = await fetch(`${API_ORIGIN}/api/projects/${encodeURIComponent(projectId)}/files/${path.split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' })
+  const response = await fetch(`${API_ORIGIN}/api/projects/${encodeURIComponent(projectId)}/files/${path.split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include', cache: 'no-store' })
   if (!response.ok) {
     const payload = await response.json().catch(() => null)
     const errMessage = payload?.detail || payload?.error?.message || payload?.message || `Could not load project file (${response.status}: ${response.statusText})`

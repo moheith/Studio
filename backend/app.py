@@ -945,6 +945,11 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             "   - AUDIO SYNTHESIS: For sound effects (jumps, laser fire, explosions, coin collection, score chimes, game-over tunes), use the browser's native Web Audio API (AudioContext, OscillatorNode, GainNode) to synthesize rich audio procedurally in JavaScript without external mp3/wav files.\n"
             "   - RESPONSIVE CONTROLS: Implement keyboard (Arrow keys, WASD, Space), mouse/click, and touch controls (virtual buttons or swipe/touch events) so games are immediately playable on both desktop and mobile.\n"
             "   - CANVAS RENDERING: Ensure requestAnimationFrame game loops are robust, high-DPI aware (handling window.devicePixelRatio), and properly clear and draw frames cleanly.\n"
+            "   - MULTI-FILE SCRIPTS & ARCHITECTURE:\n"
+            "     When splitting code across multiple files (e.g. 'graphics.js', 'player.js', 'audio.js'):\n"
+            "     1. Expose objects/classes on window (e.g. `window.SpriteManager = ...;`) AND link `<script src=\"graphics.js\"></script>` in 'index.html' BEFORE `<script src=\"app.js\"></script>`.\n"
+            "     2. DO NOT use raw `export` or `import` keywords in scripts unless `<script type=\"module\" src=\"app.js\"></script>` is declared in 'index.html'.\n"
+            "     3. Ensure the start screen button attaches both 'click' and 'touchend'/'pointerdown' listeners to call startGame() reliably.\n"
             "6. `delete_file(path)`: Call this to remove unneeded or obsolete files. Note: 'index.html' cannot be deleted.\n"
             "7. `search_files(query)`: Call this to search across project files for variable names, function declarations, or strings.\n"
             "8. `request_reload()`: ALWAYS call this tool when you have finished writing or modifying files so the live game preview immediately reloads with your latest changes.\n\n"
@@ -1188,6 +1193,50 @@ async def public_game_meta(username: str, slug: str):
     return {k:v for k,v in project.items() if k not in {"_id","owner_id"}}
 
 
+async def prepare_game_html(project: dict[str, Any], raw_html: str, base_href: str) -> str:
+    html = raw_html
+    # Error bridge: reports runtime JS errors and unhandled rejections to the parent Studio window
+    error_bridge = (
+        "<script>\n"
+        "window.addEventListener('error', function(e) {\n"
+        "  try {\n"
+        "    var loc = e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ':' + e.colno + ')' : '';\n"
+        "    window.parent.postMessage({ type: 'yulya:game-error', message: (e.message || 'Script error') + loc, filename: e.filename || '', lineno: e.lineno || 0, colno: e.colno || 0 }, '*');\n"
+        "  } catch(err) {}\n"
+        "});\n"
+        "window.addEventListener('unhandledrejection', function(e) {\n"
+        "  try {\n"
+        "    var reason = e.reason && (e.reason.message || e.reason.stack || e.reason) || 'unknown error';\n"
+        "    window.parent.postMessage({ type: 'yulya:game-error', message: 'Unhandled Promise Rejection: ' + reason, filename: '', lineno: 0 }, '*');\n"
+        "  } catch(err) {}\n"
+        "});\n"
+        "</script>\n"
+    )
+
+    # Auto-link any top-level JavaScript files in the project that were omitted from index.html
+    try:
+        project_files = await file_index(project["id"])
+        js_injections = []
+        for pf in project_files:
+            p_name = pf.get("path", "")
+            if p_name.endswith(".js") and p_name != "app.js" and "/" not in p_name:
+                if p_name not in html:
+                    js_injections.append(f'<script src="{p_name}"></script>')
+        if js_injections:
+            error_bridge += "\n".join(js_injections) + "\n"
+    except Exception:
+        pass
+
+    base_tag = f'<base href="{base_href}">\n{error_bridge}'
+    existing_base = re.search(r"<base\b[^>]*>", html, flags=re.IGNORECASE)
+    if existing_base:
+        html = html[:existing_base.start()] + base_tag + html[existing_base.end():]
+    else:
+        head = re.search(r"<head(?:\s[^>]*)?>", html, flags=re.IGNORECASE)
+        html = html[:head.end()] + "\n" + base_tag + html[head.end():] if head else base_tag + html
+    return html
+
+
 @app.get("/api/games/{username}/{slug}/{file_path:path}")
 @app.get("/api/games/{username}/{slug}")
 @app.get("/api/games/{username}/{slug}/")
@@ -1197,16 +1246,8 @@ async def public_game_file(username: str, slug: str, file_path: str = "index.htm
     rel = files_store._relative(file_path or "index.html")
     content = await project_file_content(project, rel)
     if rel == "index.html":
-        # The clean game URL has no trailing slash. Set a project-relative base
-        # so links to style.css, app.js, and assets/ resolve inside this game.
         base_href = f"/{project['username']}/{project['slug']}/"
-        html = content.decode("utf-8", "replace")
-        base_tag = f'<base href="{base_href}">'
-        existing_base = re.search(r"<base\b[^>]*>", html, flags=re.IGNORECASE)
-        if existing_base: html = html[:existing_base.start()] + base_tag + html[existing_base.end():]
-        else:
-            head = re.search(r"<head(?:\s[^>]*)?>", html, flags=re.IGNORECASE)
-            html = html[:head.end()] + base_tag + html[head.end():] if head else base_tag + html
+        html = await prepare_game_html(project, content.decode("utf-8", "replace"), base_href)
         content = html.encode("utf-8")
     ancestors = f"'self' {APP_ORIGIN}".strip() if APP_ORIGIN else "'self' *"
     return Response(content, media_type=_mime(rel), headers={
@@ -1233,13 +1274,7 @@ async def private_preview_file(user_id: str, project_id: str, token: str, file_p
     content = await project_file_content(project, rel)
     if rel == "index.html":
         base_href = f"/api/worker/private/{user_id}/{project_id}/{token}/"
-        html = content.decode("utf-8", "replace")
-        base_tag = f'<base href="{base_href}">'
-        existing_base = re.search(r"<base\b[^>]*>", html, flags=re.IGNORECASE)
-        if existing_base: html = html[:existing_base.start()] + base_tag + html[existing_base.end():]
-        else:
-            head = re.search(r"<head(?:\s[^>]*)?>", html, flags=re.IGNORECASE)
-            html = html[:head.end()] + base_tag + html[head.end():] if head else base_tag + html
+        html = await prepare_game_html(project, content.decode("utf-8", "replace"), base_href)
         content = html.encode("utf-8")
     ancestors = f"'self' {APP_ORIGIN}".strip() if APP_ORIGIN else "'self' *"
     return Response(content, media_type=_mime(rel), headers={

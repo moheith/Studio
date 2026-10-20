@@ -156,6 +156,15 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [currentProjectId, activeFile, code])
 
+  useEffect(() => {
+    if (!currentProjectId || !activeFile) return
+    if (code[activeFile] === undefined && /\.(html|css|js|mjs|json|txt|csv|tsv)$/i.test(activeFile)) {
+      getFile(currentProjectId, activeFile).then(res => {
+        setCode(prev => ({ ...prev, [activeFile]: res.content }))
+      }).catch(() => {})
+    }
+  }, [currentProjectId, activeFile, code])
+
   const language = useMemo(() => activeFile.endsWith('.html') ? 'html' : activeFile.endsWith('.css') ? 'css' : activeFile.endsWith('.json') ? 'json' : 'javascript', [activeFile])
   const openStudio = async (game?: Game) => {
     if (game) { setCurrentGame(game); setCurrentProjectId('') }
@@ -414,11 +423,9 @@ export default function App() {
       })
       setOpenFiles((tabs) => {
         const next = tabs.filter((t) => t !== filePath)
-        if (activeFile === filePath) {
-          setActiveFile(next[0] || 'index.html')
-        }
-        return next
+        return next.length > 0 ? next : ['index.html']
       })
+      setActiveFile((curr) => (curr === filePath ? 'index.html' : curr))
       setPreviewKey((v) => v + 1)
       notify(`Deleted ${filePath}`)
     } catch (error) {

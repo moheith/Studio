@@ -127,6 +127,7 @@ function buildTreeHierarchy(entries: FileEntry[], emptyFolders: Set<string>): Fi
     if (parts.length === 0) continue
     const fileName = parts.pop()!
     if (parts.length > 0) ensureBranch(parts)
+    if (fileName === '.keep.json') continue
     let curr = root
     for (const part of parts) {
       curr = curr[part].__children
@@ -387,6 +388,28 @@ export default function StudioPage(p: StudioProps) {
       termEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [termHistory, p.terminalOpen])
+
+  // Capture game runtime errors from preview iframe via postMessage bridge
+  useEffect(() => {
+    const handleGameMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'yulya:game-error') {
+        const errorText = `[Game Runtime Error] ${event.data.message || 'Script execution failed'}`
+        setTermHistory(prev => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            type: 'error',
+            text: errorText,
+            time: new Date().toLocaleTimeString()
+          }
+        ])
+        p.setTerminalOpen(true)
+        p.notify(`Game Error: ${event.data.message || 'Script error'}`)
+      }
+    }
+    window.addEventListener('message', handleGameMessage)
+    return () => window.removeEventListener('message', handleGameMessage)
+  }, [])
 
   // List of all folder paths in the project (for Move to Folder dialog)
   const existingFolderPaths = useMemo(() => {
@@ -1733,6 +1756,8 @@ export default function StudioPage(p: StudioProps) {
             <div className="vsc-monaco-wrapper">
               {p.activeFile ? (
                 <Editor
+                  key={p.activeFile}
+                  path={p.activeFile}
                   height="100%"
                   language={p.language}
                   theme="vs-dark"
