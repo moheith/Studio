@@ -586,8 +586,8 @@ async def models(user: dict[str, Any] = Depends(current_user)):
     preferred = {"gemini-2.5-pro": 0, "gemini-2.5-flash": 1, "gemini-3.8-flash": 2, "gemini-3.6-flash": 3, "gemini-3-flash": 4}
     rows.sort(key=lambda model: (preferred.get(model["id"], 100), model["display_name"].lower()))
     antigravity_preview_models = [
-        {"id": "antigravity-preview-latest", "display_name": "✦ Antigravity (Gemini 2.5 Pro)", "input_token_limit": 2000000},
-        {"id": "antigravity-preview-09-2026", "display_name": "✦ Antigravity (Gemini 2.5 Flash)", "input_token_limit": 2000000},
+        {"id": "antigravity-preview-latest", "display_name": "✦ Antigravity (Gemini 3.6 Flash)", "input_token_limit": 2000000},
+        {"id": "antigravity-preview-09-2026", "display_name": "✦ Antigravity (Gemini 3.8 Flash)", "input_token_limit": 2000000},
     ]
     existing_ids = {m["id"] for m in rows}
     prepend = [m for m in antigravity_preview_models if m["id"] not in existing_ids]
@@ -840,11 +840,11 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         raw_model = raw_model.split(":", 1)[1]
     is_antigravity = bool(body.antigravity) or "antigravity" in raw_model.lower()
     if "09-2026" in raw_model:
-        model = "gemini-2.5-flash"
-        saved_model_name = "✦ Antigravity (Gemini 2.5 Flash)"
+        model = "gemini-3.8-flash"
+        saved_model_name = "✦ Antigravity (Gemini 3.8 Flash)"
     elif "antigravity" in raw_model.lower():
-        model = "gemini-2.5-pro"
-        saved_model_name = "✦ Antigravity (Gemini 2.5 Pro)"
+        model = "gemini-3.6-flash"
+        saved_model_name = "✦ Antigravity (Gemini 3.6 Flash)"
     else:
         model = raw_model
         saved_model_name = f"✦ Antigravity ({model})" if is_antigravity else model
@@ -1015,7 +1015,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         thought_text: list[str] = []
         max_calls = 15 if is_antigravity else 8
         active_model = model
-        fallback_model = "gemini-2.5-pro"
+        fallback_model = "gemini-3.6-flash"
         async with httpx.AsyncClient(timeout=httpx.Timeout(3000.0, connect=30.0)) as client:
             while calls < max_calls:
                 request_body = {"systemInstruction":{"parts":[{"text":system}]},"contents":contents,"tools":tool_declarations,"generationConfig":{"temperature":0.2}}

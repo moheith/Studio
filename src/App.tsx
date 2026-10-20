@@ -83,10 +83,10 @@ export default function App() {
   const [apiKey, setApiKey] = useState('')
   const [hasKey, setHasKey] = useState(false)
   const [models, setModels] = useState<Array<{ id: string; display_name: string }>>([
-    {"id": "antigravity-preview-latest", "display_name": "✦ Antigravity (Gemini 2.5 Pro)"},
-    {"id": "antigravity-preview-09-2026", "display_name": "✦ Antigravity (Gemini 2.5 Flash)"},
-    {"id": "gemini-2.5-pro", "display_name": "Gemini 2.5 Pro"},
-    {"id": "gemini-2.5-flash", "display_name": "Gemini 2.5 Flash"},
+    {"id": "antigravity-preview-latest", "display_name": "✦ Antigravity (Gemini 3.6 Flash)"},
+    {"id": "antigravity-preview-09-2026", "display_name": "✦ Antigravity (Gemini 3.8 Flash)"},
+    {"id": "gemini-3.6-flash", "display_name": "Gemini 3.6 Flash"},
+    {"id": "gemini-3.8-flash", "display_name": "Gemini 3.8 Flash"},
   ])
   const [selectedModel, setSelectedModel] = useState('antigravity-preview-latest')
   const [isAntigravityMode, setIsAntigravityMode] = useState<boolean>(true)
