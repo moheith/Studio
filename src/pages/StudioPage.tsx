@@ -1936,7 +1936,7 @@ export default function StudioPage(p: StudioProps) {
                       key={p.previewKey}
                       title="Isolated game preview"
                       className="vsc-game-iframe"
-                      sandbox="allow-scripts"
+                      sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-pointer-lock allow-popups"
                       src={`${p.previewUrl}${p.previewUrl.includes('?') ? '&' : '?'}t=${p.previewKey}`}
                       referrerPolicy="no-referrer"
                     />
@@ -2086,7 +2086,7 @@ export default function StudioPage(p: StudioProps) {
                 const isThoughtOpen = expandedThoughts[msg.id] !== false
 
                 return (
-                  <div key={msg.id} className={`copilot-bubble ${isUser ? 'user-msg' : 'ai-msg'}`}>
+                  <div key={msg.id} className={`copilot-bubble ${isUser ? 'user-msg' : 'ai-msg'} ${!isUser && (msg.text.startsWith('Error:') || msg.text.startsWith('Studio AI: Error')) ? 'is-error-msg' : ''}`}>
                     <div className="bubble-top">
                       {!isUser ? (
                         <>

@@ -265,7 +265,9 @@ export default function App() {
         }
         if (event.type === 'reload_preview') setPreviewKey(v => v + 1)
         if (event.type === 'error') {
-          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Error: ${event.data.message}` } : m))
+          const errMsg = event.data.message || event.data.text || (typeof event.data === 'string' ? event.data : JSON.stringify(event.data))
+          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Error: ${errMsg}` } : m))
+          notify(`AI Error: ${errMsg}`)
           return
         }
       }
@@ -287,7 +289,9 @@ export default function App() {
       if (error?.name === 'AbortError') {
         notify('AI generation stopped')
       } else {
-        setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Studio AI: ${error instanceof Error ? error.message : 'Request failed'}` } : m))
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Error: ${errorMsg}` } : m))
+        notify(`Error: ${errorMsg}`)
       }
     } finally {
       if (activityTimer) window.clearTimeout(activityTimer)

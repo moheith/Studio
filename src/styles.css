@@ -2707,3 +2707,20 @@
 .md-code-content code {
   font-family: inherit;
 }
+
+
+/* Real Error Message Styling */
+.copilot-bubble.is-error-msg {
+  border-color: rgba(255, 90, 90, 0.5) !important;
+  background: rgba(40, 15, 18, 0.75) !important;
+}
+
+.copilot-bubble.is-error-msg .bubble-name {
+  color: #ff7788 !important;
+}
+
+.copilot-bubble.is-error-msg .md-text-block p {
+  color: #ff99aa !important;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}

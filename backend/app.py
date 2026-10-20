@@ -52,7 +52,13 @@ if APP_ENV != "production":
 MONGODB_URI = os.getenv("MONGODB_URI", "")
 DATABASE_NAME = os.getenv("MONGODB_DATABASE", "yulya_studio")
 GEMINI_API_BASE = os.getenv("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
-ALLOWED_EXTENSIONS = {".html", ".css", ".js", ".mjs", ".json", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp3", ".wav", ".ogg", ".mp4", ".webm", ".woff", ".woff2"}
+ALLOWED_EXTENSIONS = {
+    ".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json",
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico",
+    ".mp3", ".wav", ".ogg", ".m4a", ".mp4", ".webm",
+    ".woff", ".woff2", ".ttf", ".otf",
+    ".txt", ".csv", ".tsv", ".atlas", ".fnt", ".glb", ".gltf", ".obj", ".mtl"
+}
 RESERVED_NAMES = {"api", "auth", "studio", "profile", "settings", "assets", "static", "play", "admin", "health"}
 USERNAME_RE = re.compile(r"^[a-z0-9_]{3,24}$")
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$")
@@ -167,12 +173,31 @@ class ProjectStorage:
 
     @staticmethod
     def _relative(path: str) -> str:
-        if not path or len(path) > 240 or "\0" in path: raise HTTPException(400, "Invalid file path")
-        normalized = path.replace("\\", "/").strip("/")
-        parts = normalized.split("/")
-        if any(not p or p in {".", ".."} or p.startswith(".") for p in parts): raise HTTPException(400, "Invalid project-relative path")
-        if Path(parts[-1]).suffix.lower() not in ALLOWED_EXTENSIONS: raise HTTPException(415, "Unsupported browser asset type")
-        return "/".join(parts)
+        if not path or len(path) > 240 or "\0" in path:
+            raise HTTPException(400, "Invalid file path")
+        raw = path.replace("\\", "/").strip("/")
+        if not raw:
+            raw = "index.html"
+        segments = []
+        for p in raw.split("/"):
+            if not p or p == ".":
+                continue
+            if p == "..":
+                if segments:
+                    segments.pop()
+                else:
+                    raise HTTPException(400, "Invalid project-relative path")
+            else:
+                segments.append(p)
+        if not segments:
+            segments = ["index.html"]
+        for p in segments:
+            if p.startswith(".") and p != ".keep.json":
+                raise HTTPException(400, "Invalid project-relative path")
+        ext = Path(segments[-1]).suffix.lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(415, f"Unsupported browser asset type: '{ext}'")
+        return "/".join(segments)
 
     def _key(self, project: dict[str, Any], path: str) -> str:
         if project["visibility"] == "public": return f"{project['username']}/{project['slug']}/{path}"
@@ -271,7 +296,41 @@ async def remove_project_file(project: dict[str, Any], path: str, expected_etag:
 
 def _mime(path: str) -> str:
     ext = Path(path).suffix.lower()
-    return {".html":"text/html; charset=utf-8", ".css":"text/css; charset=utf-8", ".js":"text/javascript; charset=utf-8", ".mjs":"text/javascript; charset=utf-8", ".json":"application/json", ".png":"image/png", ".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".webp":"image/webp", ".gif":"image/gif", ".mp3":"audio/mpeg", ".wav":"audio/wav", ".ogg":"audio/ogg", ".mp4":"video/mp4", ".webm":"video/webm", ".woff":"font/woff", ".woff2":"font/woff2"}.get(ext, "application/octet-stream")
+    return {
+        ".html": "text/html; charset=utf-8",
+        ".htm": "text/html; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".js": "text/javascript; charset=utf-8",
+        ".mjs": "text/javascript; charset=utf-8",
+        ".cjs": "text/javascript; charset=utf-8",
+        ".json": "application/json",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+        ".ico": "image/x-icon",
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".ogg": "audio/ogg",
+        ".m4a": "audio/mp4",
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+        ".ttf": "font/ttf",
+        ".otf": "font/otf",
+        ".txt": "text/plain; charset=utf-8",
+        ".csv": "text/csv; charset=utf-8",
+        ".tsv": "text/tab-separated-values; charset=utf-8",
+        ".atlas": "text/plain; charset=utf-8",
+        ".fnt": "text/plain; charset=utf-8",
+        ".glb": "model/gltf-binary",
+        ".gltf": "model/gltf+json",
+        ".obj": "text/plain; charset=utf-8",
+        ".mtl": "text/plain; charset=utf-8",
+    }.get(ext, "application/octet-stream")
 
 
 def _encryptor() -> Fernet:
@@ -465,8 +524,13 @@ async def set_gemini_key(body: KeyBody, user: dict[str, Any] = Depends(mutating_
     key = body.api_key.strip()
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(f"{GEMINI_API_BASE}/models", headers={"x-goog-api-key": key})
-        if resp.status_code == 429: raise HTTPException(429, "Gemini rate limit reached while checking this key")
-        if resp.status_code != 200: raise HTTPException(400, "Google could not verify this Gemini API key")
+        if resp.status_code == 429:
+            raise HTTPException(429, "Gemini rate limit reached while checking this key")
+        if resp.status_code != 200:
+            err_msg = ""
+            try: err_msg = resp.json().get("error", {}).get("message", "")
+            except Exception: pass
+            raise HTTPException(400, f"Google Gemini API error ({resp.status_code}): {err_msg}" if err_msg else f"Google could not verify this Gemini API key (HTTP {resp.status_code})")
         available = [m for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", []) and "-tts" not in m.get("name", "")]
         # The API can still list retired models; verify with a current stable
         # Gemini text model first, then use one Gemma text model as requested.
@@ -486,8 +550,12 @@ async def set_gemini_key(body: KeyBody, user: dict[str, Any] = Depends(mutating_
             else:
                 test = fallback_test
     if test.status_code != 200:
-        if test.status_code == 429: raise HTTPException(429, "Google accepted the key, but the verification model is out of quota. Try again later or check AI Studio quota.")
-        raise HTTPException(400, f"Google accepted the key, but the {test_model['name'].removeprefix('models/')} verification request failed (HTTP {test.status_code}). Check model availability and quota.")
+        err_msg = ""
+        try: err_msg = test.json().get("error", {}).get("message", "")
+        except Exception: pass
+        if test.status_code == 429:
+            raise HTTPException(429, f"Google accepted the key, but rate limit / quota exceeded (429): {err_msg}" if err_msg else "Google accepted the key, but the verification model is out of quota. Try again later or check AI Studio quota.")
+        raise HTTPException(400, f"Google accepted the key, but {test_model['name'].removeprefix('models/')} verification failed (HTTP {test.status_code}): {err_msg}" if err_msg else f"Google accepted the key, but the {test_model['name'].removeprefix('models/')} verification request failed (HTTP {test.status_code}). Check model availability and quota.")
     fingerprint = _fingerprint(key); existing = await store.collection("users").find_one({"api_key_fingerprint": fingerprint})
     if existing and existing["id"] != user["id"]: raise HTTPException(409, "This API key is already connected to another account")
     ciphertext = _encryptor().encrypt(key.encode()).decode()
@@ -509,7 +577,11 @@ async def models(user: dict[str, Any] = Depends(current_user)):
     except InvalidToken: raise HTTPException(503, "Stored key could not be decrypted")
     async with httpx.AsyncClient(timeout=10) as client: resp = await client.get(f"{GEMINI_API_BASE}/models", headers={"x-goog-api-key": key})
     if resp.status_code == 429: raise HTTPException(429, "Gemini API rate limit reached")
-    if resp.status_code != 200: raise HTTPException(502, "Could not load available Gemini models")
+    if resp.status_code != 200:
+        err_msg = ""
+        try: err_msg = resp.json().get("error", {}).get("message", "")
+        except Exception: pass
+        raise HTTPException(502, f"Could not load Gemini models ({resp.status_code}): {err_msg}" if err_msg else f"Could not load available Gemini models (HTTP {resp.status_code})")
     rows = [{"id": m["name"].removeprefix("models/"), "display_name": m.get("displayName", m["name"]), "input_token_limit": m.get("inputTokenLimit")} for m in resp.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", []) and "-tts" not in m["name"]]
     preferred = {"gemini-2.5-pro": 0, "gemini-2.5-flash": 1, "gemini-3.8-flash": 2, "gemini-3.6-flash": 3, "gemini-3-flash": 4}
     rows.sort(key=lambda model: (preferred.get(model["id"], 100), model["display_name"].lower()))
@@ -661,7 +733,7 @@ async def remix_project(project_id: str, user: dict[str, Any] = Depends(mutating
     return {"project": {k: v for k, v in clone.items() if k != "_id"}}
 
 
-def preview_token(project: dict[str, Any], ttl: int = 600) -> str:
+def preview_token(project: dict[str, Any], ttl: int = 86400) -> str:
     if not PREVIEW_TOKEN_SECRET: raise HTTPException(503, "Preview token signing is not configured")
     payload = base64.urlsafe_b64encode(json.dumps({"uid": project["owner_id"], "pid": project["id"], "exp": _now() + ttl}, separators=(",", ":")).encode()).decode().rstrip("=")
     signature = hmac.new(PREVIEW_TOKEN_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
@@ -671,9 +743,9 @@ def preview_token(project: dict[str, Any], ttl: int = 600) -> str:
 @app.post("/api/projects/{project_id}/preview-token")
 async def issue_preview_token(project_id: str, user: dict[str, Any] = Depends(mutating_user)):
     project = await owned_project(user, project_id)
-    token = preview_token(project)
+    token = preview_token(project, ttl=86400)
     url = f"{API_ORIGIN}/api/worker/private/{project['owner_id']}/{project['id']}/{token}/index.html"
-    return {"url": url, "expires_in": 600}
+    return {"url": url, "expires_in": 86400}
 
 
 async def get_project_conversation_turns(owner_id: str, project_id: str, limit: int = 100) -> list[dict[str, Any]]:
@@ -912,62 +984,130 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             while calls < max_calls:
                 request_body = {"systemInstruction":{"parts":[{"text":system}]},"contents":contents,"tools":tool_declarations,"generationConfig":{"temperature":0.2}}
                 need_fallback = False
-                async with client.stream("POST", f"{GEMINI_API_BASE}/models/{active_model}:streamGenerateContent?alt=sse", headers={"x-goog-api-key": api_key, "Content-Type":"application/json"}, json=request_body) as resp:
-                    if resp.status_code == 404 and "antigravity" in active_model:
-                        active_model = fallback_model
-                        need_fallback = True
-                    elif resp.status_code == 429:
-                        message = "Gemini rate limit reached. Select another model or try again later."
-                        await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
-                        yield "event: error\ndata: " + json.dumps({"message":message}) + "\n\n"; return
-                    elif resp.status_code != 200:
-                        message = "Gemini could not complete this request."
-                        await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
-                        yield "event: error\ndata: " + json.dumps({"message":message}) + "\n\n"; return
-                    else:
-                        full_parts = []
-                        async for line in resp.aiter_lines():
-                            if not line.startswith("data: "): continue
-                            try: payload = json.loads(line[6:])
-                            except json.JSONDecodeError: continue
-                            for candidate in payload.get("candidates", []):
-                                for part in candidate.get("content", {}).get("parts", []):
-                                    if part.get("thought"):
-                                        t = part.get("text", "")
-                                        if t:
-                                            thought_text.append(t)
-                                            yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
-                                    elif part.get("text"):
-                                        response_text.append(part["text"])
-                                        yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
-                                    if part.get("functionCall"): full_parts.append(part)
+                try:
+                    async with client.stream("POST", f"{GEMINI_API_BASE}/models/{active_model}:streamGenerateContent?alt=sse", headers={"x-goog-api-key": api_key, "Content-Type":"application/json"}, json=request_body) as resp:
+                        if resp.status_code == 404 and "antigravity" in active_model:
+                            active_model = fallback_model
+                            need_fallback = True
+                        elif resp.status_code == 429:
+                            raw_body = await resp.aread()
+                            err_text = ""
+                            try:
+                                err_data = json.loads(raw_body.decode())
+                                err_text = err_data.get("error", {}).get("message") or err_data.get("message") or ""
+                            except Exception: pass
+                            message = f"Gemini API rate limit reached (429): {err_text}" if err_text else "Gemini API rate limit reached (429). Please select another model or try again later."
+                            await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                            yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"; return
+                        elif resp.status_code != 200:
+                            raw_body = await resp.aread()
+                            err_text = ""
+                            try:
+                                err_data = json.loads(raw_body.decode())
+                                err_text = err_data.get("error", {}).get("message") or err_data.get("message") or ""
+                            except Exception:
+                                err_text = raw_body.decode("utf-8", "replace")[:500]
+                            message = f"Gemini API error ({resp.status_code}): {err_text}" if err_text else f"Gemini API error ({resp.status_code})."
+                            await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                            yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"; return
+                        else:
+                            full_parts = []
+                            async for line in resp.aiter_lines():
+                                if not line.startswith("data: "): continue
+                                try: payload = json.loads(line[6:])
+                                except json.JSONDecodeError: continue
+                                if payload.get("error"):
+                                    err_msg = payload["error"].get("message") or json.dumps(payload["error"])
+                                    message = f"Gemini stream error: {err_msg}"
+                                    await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                                    yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"
+                                    return
+                                if payload.get("promptFeedback", {}).get("blockReason"):
+                                    reason = payload["promptFeedback"]["blockReason"]
+                                    message = f"Gemini safety block: {reason}"
+                                    await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                                    yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"
+                                    return
+                                for candidate in payload.get("candidates", []):
+                                    for part in candidate.get("content", {}).get("parts", []):
+                                        if part.get("thought"):
+                                            t = part.get("text", "")
+                                            if t:
+                                                thought_text.append(t)
+                                                yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
+                                        elif part.get("text"):
+                                            response_text.append(part["text"])
+                                            yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
+                                        if part.get("functionCall"): full_parts.append(part)
+                except httpx.TimeoutException:
+                    message = "Gemini request timed out after 3000 seconds with no response."
+                    await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                    yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"; return
+                except Exception as exc:
+                    message = f"Gemini connection error: {str(exc)}"
+                    await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                    yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"; return
 
                 if need_fallback:
-                    async with client.stream("POST", f"{GEMINI_API_BASE}/models/{active_model}:streamGenerateContent?alt=sse", headers={"x-goog-api-key": api_key, "Content-Type":"application/json"}, json=request_body) as resp:
-                        if resp.status_code == 429:
-                            message = "Gemini rate limit reached. Select another model or try again later."
-                            await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
-                            yield "event: error\ndata: " + json.dumps({"message":message}) + "\n\n"; return
-                        if resp.status_code != 200:
-                            message = "Gemini could not complete this request."
-                            await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
-                            yield "event: error\ndata: " + json.dumps({"message":message}) + "\n\n"; return
-                        full_parts = []
-                        async for line in resp.aiter_lines():
-                            if not line.startswith("data: "): continue
-                            try: payload = json.loads(line[6:])
-                            except json.JSONDecodeError: continue
-                            for candidate in payload.get("candidates", []):
-                                for part in candidate.get("content", {}).get("parts", []):
-                                    if part.get("thought"):
-                                        t = part.get("text", "")
-                                        if t:
-                                            thought_text.append(t)
-                                            yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
-                                    elif part.get("text"):
-                                        response_text.append(part["text"])
-                                        yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
-                                    if part.get("functionCall"): full_parts.append(part)
+                    try:
+                        async with client.stream("POST", f"{GEMINI_API_BASE}/models/{active_model}:streamGenerateContent?alt=sse", headers={"x-goog-api-key": api_key, "Content-Type":"application/json"}, json=request_body) as resp:
+                            if resp.status_code == 429:
+                                raw_body = await resp.aread()
+                                err_text = ""
+                                try:
+                                    err_data = json.loads(raw_body.decode())
+                                    err_text = err_data.get("error", {}).get("message") or err_data.get("message") or ""
+                                except Exception: pass
+                                message = f"Gemini API rate limit reached (429): {err_text}" if err_text else "Gemini API rate limit reached (429)."
+                                await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                                yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"; return
+                            if resp.status_code != 200:
+                                raw_body = await resp.aread()
+                                err_text = ""
+                                try:
+                                    err_data = json.loads(raw_body.decode())
+                                    err_text = err_data.get("error", {}).get("message") or err_data.get("message") or ""
+                                except Exception:
+                                    err_text = raw_body.decode("utf-8", "replace")[:500]
+                                message = f"Gemini API error ({resp.status_code}): {err_text}" if err_text else f"Gemini API error ({resp.status_code})."
+                                await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                                yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"; return
+                            full_parts = []
+                            async for line in resp.aiter_lines():
+                                if not line.startswith("data: "): continue
+                                try: payload = json.loads(line[6:])
+                                except json.JSONDecodeError: continue
+                                if payload.get("error"):
+                                    err_msg = payload["error"].get("message") or json.dumps(payload["error"])
+                                    message = f"Gemini stream error: {err_msg}"
+                                    await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                                    yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"
+                                    return
+                                if payload.get("promptFeedback", {}).get("blockReason"):
+                                    reason = payload["promptFeedback"]["blockReason"]
+                                    message = f"Gemini safety block: {reason}"
+                                    await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                                    yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"
+                                    return
+                                for candidate in payload.get("candidates", []):
+                                    for part in candidate.get("content", {}).get("parts", []):
+                                        if part.get("thought"):
+                                            t = part.get("text", "")
+                                            if t:
+                                                thought_text.append(t)
+                                                yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
+                                        elif part.get("text"):
+                                            response_text.append(part["text"])
+                                            yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
+                                        if part.get("functionCall"): full_parts.append(part)
+                    except httpx.TimeoutException:
+                        message = "Gemini request timed out after 3000 seconds with no response."
+                        await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                        yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"; return
+                    except Exception as exc:
+                        message = f"Gemini connection error: {str(exc)}"
+                        await record_conversation_turn_complete(user["id"], project_id, turn_id, message, status="error")
+                        yield "event: error\ndata: " + json.dumps({"message": message}) + "\n\n"; return
 
                 if not full_parts: break
                 contents.append({"role":"model","parts":full_parts}); function_results = []
@@ -1049,7 +1189,9 @@ async def public_game_meta(username: str, slug: str):
 
 
 @app.get("/api/games/{username}/{slug}/{file_path:path}")
-async def public_game_file(username: str, slug: str, file_path: str):
+@app.get("/api/games/{username}/{slug}")
+@app.get("/api/games/{username}/{slug}/")
+async def public_game_file(username: str, slug: str, file_path: str = "index.html"):
     project = await store.collection("projects").find_one({"username": username.lower(), "slug": slug.lower(), "visibility": "public"})
     if not project: raise HTTPException(404, "Game not found")
     rel = files_store._relative(file_path or "index.html")
@@ -1066,24 +1208,45 @@ async def public_game_file(username: str, slug: str, file_path: str):
             head = re.search(r"<head(?:\s[^>]*)?>", html, flags=re.IGNORECASE)
             html = html[:head.end()] + base_tag + html[head.end():] if head else base_tag + html
         content = html.encode("utf-8")
+    ancestors = f"'self' {APP_ORIGIN}".strip() if APP_ORIGIN else "'self' *"
     return Response(content, media_type=_mime(rel), headers={
-        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": f"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'self'; frame-ancestors {APP_ORIGIN}; sandbox allow-scripts",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": f"default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob:; worker-src 'self' blob:; frame-ancestors {ancestors};",
     })
 
 
 @app.get("/api/worker/private/{user_id}/{project_id}/{token}/{file_path:path}")
-async def private_preview_file(user_id: str, project_id: str, token: str, file_path: str):
+@app.get("/api/worker/private/{user_id}/{project_id}/{token}")
+@app.get("/api/worker/private/{user_id}/{project_id}/{token}/")
+async def private_preview_file(user_id: str, project_id: str, token: str, file_path: str = "index.html"):
     try:
-        payload, signature = token.split(".", 1); expected = hmac.new(PREVIEW_TOKEN_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        payload, signature = token.split(".", 1)
+        expected = hmac.new(PREVIEW_TOKEN_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected): raise ValueError
         data = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
         if data["uid"] != user_id or data["pid"] != project_id or data["exp"] < _now(): raise ValueError
-    except Exception: raise HTTPException(403,"Preview token invalid or expired")
-    project = await store.collection("projects").find_one({"id":project_id,"owner_id":user_id})
-    if not project or project["visibility"] != "private": raise HTTPException(404,"Preview not found")
-    rel = files_store._relative(file_path); data = await project_file_content(project, rel)
-    return Response(data, media_type=_mime(rel), headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Content-Security-Policy":f"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'self'; frame-ancestors {APP_ORIGIN}; sandbox allow-scripts"})
+    except Exception: raise HTTPException(403, "Preview token invalid or expired")
+    project = await store.collection("projects").find_one({"id": project_id, "owner_id": user_id})
+    if not project: raise HTTPException(404, "Preview not found")
+    rel = files_store._relative(file_path or "index.html")
+    content = await project_file_content(project, rel)
+    if rel == "index.html":
+        base_href = f"/api/worker/private/{user_id}/{project_id}/{token}/"
+        html = content.decode("utf-8", "replace")
+        base_tag = f'<base href="{base_href}">'
+        existing_base = re.search(r"<base\b[^>]*>", html, flags=re.IGNORECASE)
+        if existing_base: html = html[:existing_base.start()] + base_tag + html[existing_base.end():]
+        else:
+            head = re.search(r"<head(?:\s[^>]*)?>", html, flags=re.IGNORECASE)
+            html = html[:head.end()] + base_tag + html[head.end():] if head else base_tag + html
+        content = html.encode("utf-8")
+    ancestors = f"'self' {APP_ORIGIN}".strip() if APP_ORIGIN else "'self' *"
+    return Response(content, media_type=_mime(rel), headers={
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": f"default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob:; worker-src 'self' blob:; frame-ancestors {ancestors};",
+    })
 
 
 FRONTEND_DIST = (Path(__file__).resolve().parent.parent / "dist").resolve()
