@@ -2729,6 +2729,119 @@
    Waterfall Failover & Execution Telemetry Styles
    ========================================================================== */
 
+/* Google Search Grounding Section (Citations & Live Web Chips) */
+.bubble-grounding-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 6px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: rgba(56, 189, 248, 0.05);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+}
+
+.grounding-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 10.5px var(--sans);
+  color: #38bdf8;
+  letter-spacing: 0.01em;
+}
+
+.grounding-globe-icon {
+  color: #38bdf8;
+  animation: globeSpinSlow 20s linear infinite;
+}
+
+@keyframes globeSpinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.grounding-title {
+  font-weight: 600;
+}
+
+.grounding-queries-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 1px;
+}
+
+.grounding-query-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #7dd3fc;
+  font: 400 9.5px var(--mono);
+}
+
+.grounding-sources-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.grounding-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #131726;
+  border: 1px solid #1e2640;
+  color: #bae6fd;
+  font: 500 10px var(--sans);
+  text-decoration: none;
+  max-width: 280px;
+  transition: all 0.15s ease;
+}
+
+.grounding-source-link:hover {
+  background: #1a2238;
+  border-color: #38bdf8;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(56, 189, 248, 0.2);
+}
+
+.grounding-source-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  font: 700 8.5px var(--mono);
+  flex-shrink: 0;
+}
+
+.grounding-source-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grounding-ext-icon {
+  color: #7dd3fc;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.grounding-source-link:hover .grounding-ext-icon {
+  opacity: 1;
+}
+
 /* Waterfall Transition Notification Stream (In-Chat Notice) */
 .waterfall-transition-stream {
   display: flex;

@@ -3,8 +3,8 @@ import type * as React from 'react'
 import Editor from '@monaco-editor/react'
 import {
   ArrowUpRight, Braces, Brain, Check, ChevronDown, ChevronRight, CircleHelp,
-  Code2, Copy, Download, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
-  FolderMinus, FolderInput, FolderOpen, FolderPlus, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
+  Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
+  FolderMinus, FolderInput, FolderOpen, FolderPlus, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
   Rocket, Search, Settings2, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X, Zap
 } from 'lucide-react'
@@ -2273,6 +2273,43 @@ export default function StudioPage(p: StudioProps) {
                             </span>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {msg.grounding && ((msg.grounding.queries && msg.grounding.queries.length > 0) || (msg.grounding.sources && msg.grounding.sources.length > 0)) && (
+                      <div className="bubble-grounding-section">
+                        <div className="grounding-header">
+                          <Globe size={11} className="grounding-globe-icon" />
+                          <span className="grounding-title">Grounded with Google Search</span>
+                        </div>
+                        {msg.grounding.queries && msg.grounding.queries.length > 0 && (
+                          <div className="grounding-queries-list">
+                            {msg.grounding.queries.map((q, qIdx) => (
+                              <span key={qIdx} className="grounding-query-chip">
+                                <Search size={9} />
+                                <span>{q}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {msg.grounding.sources && msg.grounding.sources.length > 0 && (
+                          <div className="grounding-sources-list">
+                            {msg.grounding.sources.map((src, sIdx) => (
+                              <a
+                                key={sIdx}
+                                href={src.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="grounding-source-link"
+                                title={src.title || src.url}
+                              >
+                                <span className="grounding-source-num">{sIdx + 1}</span>
+                                <span className="grounding-source-title">{src.title || src.url.replace(/^https?:\/\//, '')}</span>
+                                <ExternalLink size={9} className="grounding-ext-icon" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
 

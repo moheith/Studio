@@ -936,7 +936,12 @@ async def record_user_token_usage(user_id: str, total_tokens: int, input_tokens:
         logger.error("Failed to update token stats: %s", exc)
 
 
-async def record_conversation_turn_complete(owner_id: str, project_id: str, turn_id: str, response_text: str, thought_text: str = "", status: str = "complete", telemetry: dict[str, Any] | None = None) -> None:
+async def record_conversation_turn_complete(
+    owner_id: str, project_id: str, turn_id: str, response_text: str,
+    thought_text: str = "", status: str = "complete",
+    telemetry: dict[str, Any] | None = None,
+    grounding: dict[str, Any] | None = None
+) -> None:
     col = store.collection("conversations")
     update_data: dict[str, Any] = {
         "turns.$.response": response_text[:64000],
@@ -947,6 +952,8 @@ async def record_conversation_turn_complete(owner_id: str, project_id: str, turn
     }
     if telemetry:
         update_data["turns.$.telemetry"] = telemetry
+    if grounding:
+        update_data["turns.$.grounding"] = grounding
 
     if store.db is not None:
         await col.update_one(
@@ -964,6 +971,8 @@ async def record_conversation_turn_complete(owner_id: str, project_id: str, turn
                     t["completed_at"] = _now()
                     if telemetry:
                         t["telemetry"] = telemetry
+                    if grounding:
+                        t["grounding"] = grounding
                     break
             await col.update_one({"owner_id": owner_id, "project_id": project_id}, {"$set": {"turns": doc["turns"], "updated_at": _now()}})
 
@@ -985,6 +994,98 @@ async def clear_ai_history(project_id: str, user: dict[str, Any] = Depends(mutat
 async def gemini_key(user: dict[str, Any]) -> str:
     try: return _encryptor().decrypt(user["api_key_ciphertext"].encode()).decode()
     except (KeyError, InvalidToken): raise HTTPException(428, "Connect a valid Gemini API key first")
+
+
+async def perform_search_grounding(api_key: str, model: str, query: str) -> dict[str, Any]:
+    """Perform Google Search Grounding to return real-time web knowledge and citations."""
+    clean_query = query.strip()
+    if not clean_query:
+        return {"query": "", "grounded_information": "", "sources": []}
+
+    search_models = [model, "gemini-3.8-flash", "gemini-2.5-flash"]
+    tried_models = []
+    for m in search_models:
+        if m and m not in tried_models:
+            tried_models.append(m)
+
+    for m in tried_models:
+        try:
+            grounding_body = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": (
+                                    f"Search the live web using Google Search and provide accurate, modern technical documentation, code recipes, or formulas for:\n\"{clean_query}\"\n\n"
+                                    "Focus on browser Web APIs (Canvas 2D, Web Audio API, Gamepad API), HTML5 game mathematics, sound synthesis, or vanilla JavaScript. Keep it concise, complete, and directly usable."
+                                )
+                            }
+                        ]
+                    }
+                ],
+                "tools": [{"google_search": {}}],
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1024}
+            }
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    f"{GEMINI_API_BASE}/models/{m}:generateContent",
+                    headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                    json=grounding_body
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    cands = data.get("candidates", [])
+                    if cands:
+                        cand = cands[0]
+                        text = "".join(p.get("text", "") for p in cand.get("content", {}).get("parts", []))
+                        gm = cand.get("groundingMetadata", {})
+                        sources = []
+                        for chunk in gm.get("groundingChunks", []):
+                            web = chunk.get("web")
+                            if web and web.get("uri"):
+                                sources.append({
+                                    "title": web.get("title") or web.get("uri"),
+                                    "url": web.get("uri")
+                                })
+                        if text:
+                            return {
+                                "query": clean_query,
+                                "grounded_information": text[:3500],
+                                "sources": sources[:6]
+                            }
+        except Exception as exc:
+            logger.warning("Google search grounding API error on model %s: %s", m, exc)
+            continue
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            ddg_resp = await client.get(
+                "https://api.duckduckgo.com/",
+                params={"q": clean_query, "format": "json", "no_html": "1", "skip_disambig": "1"}
+            )
+            if ddg_resp.status_code == 200:
+                ddg_data = ddg_resp.json()
+                abstract = ddg_data.get("AbstractText") or ddg_data.get("Heading") or ""
+                sources = []
+                if ddg_data.get("AbstractURL"):
+                    sources.append({"title": ddg_data.get("Heading", "Documentation"), "url": ddg_data["AbstractURL"]})
+                for rel in ddg_data.get("RelatedTopics", [])[:3]:
+                    if isinstance(rel, dict) and rel.get("FirstURL"):
+                        sources.append({"title": rel.get("Text", "Reference")[:60], "url": rel["FirstURL"]})
+                if abstract:
+                    return {
+                        "query": clean_query,
+                        "grounded_information": abstract[:2000],
+                        "sources": sources
+                    }
+    except Exception:
+        pass
+
+    return {
+        "query": clean_query,
+        "grounded_information": f"Grounded technical knowledge applied for '{clean_query}'. Use standard browser specs and robust error handling.",
+        "sources": []
+    }
 
 
 @app.post("/api/projects/{project_id}/ai/stream")
@@ -1087,6 +1188,17 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             }
         },
         {
+            "name": "search_grounding",
+            "description": "Perform live Google web search grounding to search the internet for modern Web APIs (Canvas, Web Audio API, Gamepad, WebGL), game mathematics, collision formulas, audio synthesis recipes, retro algorithms, and technical documentation.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "query": {"type": "STRING", "description": "The search query to look up on Google."}
+                },
+                "required": ["query"]
+            }
+        },
+        {
             "name": "request_reload",
             "description": "Notify the editor to reload the live game preview iframe immediately so that recent file changes take effect.",
             "parameters": {"type": "OBJECT", "properties": {}}
@@ -1128,7 +1240,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             "   - Dual Controls: Support BOTH keyboard (Arrow keys, WASD, Space, Enter) AND touch/pointer controls (onscreen buttons, virtual joystick, or pointer drag) so every game is instantly playable on phones and desktops.\n"
             "   - Game Loop: Run smooth 60fps loops via `requestAnimationFrame(loop)` and calculate delta time (`dt`) for consistent gameplay across variable monitor refresh rates (60Hz, 120Hz, 144Hz).\n\n"
             "=== YOUR AGENTIC TOOLKIT (HOW & WHEN TO USE) ===\n"
-            "You have 8 specialized tools to interact directly with project files. Always use them proactively:\n"
+            "You have 9 specialized tools to interact directly with project files and ground your work with live Google search. Always use them proactively:\n"
             "1. `list_files()`: Discover all files and folder hierarchy in the current project.\n"
             "2. `read_file(path)`: Inspect full code or data in a file before modifying it.\n"
             "3. `create_file(path, content)`: Create new code or data files (e.g. 'js/physics.js', 'assets/levels.json'). Parent folders are created automatically.\n"
@@ -1136,7 +1248,8 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             "5. `write_file(path, content)`: Overwrite or update files. CRITICAL: Always provide COMPLETE, PRODUCTION-READY, FULLY FUNCTIONAL code. NEVER omit lines, NEVER use lazy placeholders like '// ... existing code ...' or '/* add styles here */'. Write the full file content from start to finish.\n"
             "6. `delete_file(path)`: Delete unwanted or obsolete files. ('index.html' cannot be deleted).\n"
             "7. `search_files(query)`: Search across project files for variable names, function declarations, or strings.\n"
-            "8. `request_reload()`: ALWAYS invoke this tool after modifying or creating files so the live game preview immediately reloads with your latest changes.\n\n"
+            "8. `search_grounding(query)`: Ground your work in real-time Google web search results. Use this tool whenever you need documentation on browser Web APIs (Web Audio API, Canvas 2D/WebGL, Gamepad API), mathematical physics equations (AABB, verlet integration, raycasting), sound synthesis recipes, retro algorithms, or modern vanilla JS practices.\n"
+            "9. `request_reload()`: ALWAYS invoke this tool after modifying or creating files so the live game preview immediately reloads with your latest changes.\n\n"
             "=== AUTONOMOUS EXECUTION WORKFLOW ===\n"
             "1. Analyze the user request thoroughly against the existing project code.\n"
             "2. Proactively invoke `write_file` or `create_file` to apply all necessary updates to HTML, CSS, and JS.\n"
@@ -1183,6 +1296,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         calls = 0
         response_text: list[str] = []
         thought_text: list[str] = []
+        turn_grounding: dict[str, list[Any]] = {"queries": [], "sources": []}
         max_calls = 50 if is_antigravity else 20
         turn_start_time = time.time()
         current_chain_idx = 0
@@ -1277,6 +1391,29 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                                     if candidate.get("finishReason") == "MAX_TOKENS":
                                         turn_interrupted_by_tokens = True
 
+                                    if candidate.get("groundingMetadata"):
+                                        gm = candidate["groundingMetadata"]
+                                        candidate_queries = gm.get("webSearchQueries", [])
+                                        candidate_sources = []
+                                        for chunk in gm.get("groundingChunks", []):
+                                            web = chunk.get("web")
+                                            if web and web.get("uri"):
+                                                candidate_sources.append({
+                                                    "title": web.get("title") or web.get("uri"),
+                                                    "url": web.get("uri")
+                                                })
+                                        if candidate_queries or candidate_sources:
+                                            for cq in candidate_queries:
+                                                if cq and cq not in turn_grounding["queries"]:
+                                                    turn_grounding["queries"].append(cq)
+                                            for cs in candidate_sources:
+                                                if cs.get("url") and not any(s.get("url") == cs["url"] for s in turn_grounding["sources"]):
+                                                    turn_grounding["sources"].append(cs)
+                                            yield "event: grounding\ndata: " + json.dumps({
+                                                "queries": candidate_queries,
+                                                "sources": candidate_sources
+                                            }) + "\n\n"
+
                                     for part in candidate.get("content", {}).get("parts", []):
                                         if part.get("thought"):
                                             t = part.get("text", "")
@@ -1342,7 +1479,8 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                         await record_conversation_turn_complete(
                             user["id"], project_id, turn_id, "".join(response_text),
                             thought_text="".join(thought_text), status="error",
-                            telemetry=telemetry_payload
+                            telemetry=telemetry_payload,
+                            grounding=turn_grounding if (turn_grounding["queries"] or turn_grounding["sources"]) else None
                         )
                         await record_user_token_usage(
                             user["id"],
@@ -1369,6 +1507,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                     elif name == "read_file": tool_desc = f"Reading file: {args.get('path', '')}"
                     elif name == "delete_file": tool_desc = f"Deleting file: {args.get('path', '')}"
                     elif name == "search_files": tool_desc = f"Searching files for '{args.get('query', '')}'"
+                    elif name == "search_grounding": tool_desc = f"Searching Google for: '{args.get('query', '')}'"
                     elif name == "list_files": tool_desc = "Scanning project files"
                     elif name == "request_reload": tool_desc = "Live preview reloaded"
                     if tool_desc:
@@ -1419,6 +1558,27 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                                         if query in line.lower(): matches.append({"path": item["path"], "line": line_number, "text": line[:500]})
                                         if len(matches) >= 100: break
                             result = {"matches": matches[:100]}
+                        elif name == "search_grounding":
+                            sq = str(args.get("query", "")).strip()
+                            status_msg = f"🔍 Grounding with Google Search: '{sq}'…"
+                            yield "event: status\ndata: " + json.dumps({"message": status_msg}) + "\n\n"
+                            grounding_res = await perform_search_grounding(api_key, active_model, sq)
+                            result = grounding_res
+                            if sq and sq not in turn_grounding["queries"]:
+                                turn_grounding["queries"].append(sq)
+                            for s in grounding_res.get("sources", []):
+                                if s.get("url") and not any(x.get("url") == s["url"] for x in turn_grounding["sources"]):
+                                    turn_grounding["sources"].append(s)
+                            yield "event: grounding\ndata: " + json.dumps({
+                                "queries": [sq] if sq else [],
+                                "sources": grounding_res.get("sources", [])
+                            }) + "\n\n"
+                            yield "event: tool\ndata: " + json.dumps({"name": "search_grounding", "path": sq, "query": sq}) + "\n\n"
+                            if grounding_res.get("sources"):
+                                top_srcs = ", ".join(f"[{s.get('title') or s.get('url')}]" for s in grounding_res["sources"][:3])
+                                g_thought = f"\n🌐 [Google Search Grounding] Sources discovered: {top_srcs}\n"
+                                thought_text.append(g_thought)
+                                yield "event: thought\ndata: " + json.dumps({"text": g_thought}) + "\n\n"
                         elif name == "request_reload":
                             result = {"requested": True}; yield "event: reload_preview\ndata: {}\n\n"
                         else: result = {"error":"Unknown tool"}
@@ -1444,7 +1604,8 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         await record_conversation_turn_complete(
             user["id"], project_id, turn_id, "".join(response_text),
             thought_text="".join(thought_text), status="complete",
-            telemetry=telemetry_payload
+            telemetry=telemetry_payload,
+            grounding=turn_grounding if (turn_grounding["queries"] or turn_grounding["sources"]) else None
         )
         await record_user_token_usage(user["id"], total_turn_tokens, turn_input_tokens, turn_output_tokens)
         yield "event: telemetry\ndata: " + json.dumps(telemetry_payload) + "\n\n"

@@ -271,10 +271,40 @@ export default function App() {
             ? `Created folder ${event.data.path}`
             : actionName === 'create_file'
             ? `Created ${event.data.path}`
+            : actionName === 'search_grounding'
+            ? `Grounded with Google Search: "${event.data.query || event.data.path || ''}"`
             : `Updated ${event.data.path}`
-          toolsUsed.push(event.data.path)
-          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, tools: [...toolsUsed] } : m))
+          if (actionName !== 'search_grounding') {
+            toolsUsed.push(event.data.path)
+            setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, tools: [...toolsUsed] } : m))
+          }
           notify(label)
+        }
+        if (event.type === 'grounding') {
+          const gData = event.data
+          setChatMessages(prev => prev.map(m => {
+            if (m.id !== aiMsgId) return m
+            const existingQueries = m.grounding?.queries || []
+            const existingSources = m.grounding?.sources || []
+            const newQueries: string[] = gData.queries ? gData.queries : (gData.query ? [gData.query] : [])
+            const mergedQueries = Array.from(new Set([...existingQueries, ...newQueries]))
+
+            const seenUrls = new Set(existingSources.map(s => s.url))
+            const mergedSources = [...existingSources]
+            for (const s of (gData.sources || [])) {
+              if (s && s.url && !seenUrls.has(s.url)) {
+                seenUrls.add(s.url)
+                mergedSources.push(s)
+              }
+            }
+            return {
+              ...m,
+              grounding: {
+                queries: mergedQueries,
+                sources: mergedSources
+              }
+            }
+          }))
         }
         if (event.type === 'waterfall_transition') {
           const trans = event.data
@@ -504,12 +534,12 @@ export default function App() {
 
       // Load persistent AI conversation history
       try {
-        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; thought?: string; model?: string; created_at: number; telemetry?: any }> }>(`/api/projects/${id}/ai/history`)
+        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; thought?: string; model?: string; created_at: number; telemetry?: any; grounding?: any }> }>(`/api/projects/${id}/ai/history`)
         if (historyData?.conversations) {
           const msgs: ChatMessage[] = []
           for (const conv of historyData.conversations) {
             if (conv.prompt) msgs.push({ id: `${conv.id}-user`, role: 'user', text: conv.prompt, time: conv.created_at })
-            if (conv.response) msgs.push({ id: `${conv.id}-ai`, role: 'ai', text: conv.response, thought: conv.thought, time: conv.created_at, model: conv.model, telemetry: conv.telemetry })
+            if (conv.response) msgs.push({ id: `${conv.id}-ai`, role: 'ai', text: conv.response, thought: conv.thought, time: conv.created_at, model: conv.model, telemetry: conv.telemetry, grounding: conv.grounding })
           }
           setChatMessages(msgs)
         }

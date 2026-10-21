@@ -37,6 +37,16 @@ export type WaterfallTransition = {
   reason: string
 }
 
+export type GroundingSource = {
+  title?: string
+  url: string
+}
+
+export type GroundingData = {
+  queries: string[]
+  sources: GroundingSource[]
+}
+
 export type ChatMessage = {
   id: string
   role: 'user' | 'ai'
@@ -47,6 +57,7 @@ export type ChatMessage = {
   model?: string
   telemetry?: ChatTelemetry
   waterfallTransitions?: WaterfallTransition[]
+  grounding?: GroundingData
 }
 
 export type UserTokens = {
