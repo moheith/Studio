@@ -349,7 +349,7 @@ export default function StudioPage(p: StudioProps) {
   const [customWaterfall, setCustomWaterfall] = useState<string[]>(
     p.user?.waterfall && p.user.waterfall.length > 0
       ? p.user.waterfall
-      : ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-pro']
+      : ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite']
   )
   const [selectedNewFallback, setSelectedNewFallback] = useState('')
   const [isSavingWaterfall, setIsSavingWaterfall] = useState(false)

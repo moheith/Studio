@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, Check, Gamepad2, KeyRound, LogOut, Plus } from 'lucide-react'
+import { Activity, ArrowRight, Check, Flame, Gamepad2, KeyRound, LogOut, Plus, Sparkles, Zap } from 'lucide-react'
 import type * as React from 'react'
 import type { Game, User } from '../types'
 
@@ -63,6 +63,67 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
           <div><strong>{projects.length}</strong><span>Projects</span></div>
           <div><strong>{projects.filter(project => project.visibility === 'public').length}</strong><span>Public games</span></div>
           <div className="creator-ai-stat"><span className={`creator-ai-dot ${hasKey ? 'is-connected' : ''}`}/><span>AI key {hasKey ? 'connected' : 'not connected'}</span><button onClick={onKey}>{hasKey ? 'Manage' : 'Set up'} <ArrowRight size={12}/></button></div>
+        </div>
+
+        {/* Token Usage & Telemetry Stats */}
+        <div className="creator-token-analytics-card">
+          <div className="token-card-header">
+            <div className="token-header-title">
+              <Zap size={15} className="token-bolt-icon" />
+              <span>AI Token Usage & Performance</span>
+            </div>
+            <span className="token-header-badge">{user?.tokens?.turns_count ?? 0} AI turns executed</span>
+          </div>
+
+          <div className="creator-token-grid">
+            <div className="token-stat-box highlight-purple">
+              <div className="token-stat-top">
+                <span className="token-stat-label">Peak Tokens (Single Turn)</span>
+                <Sparkles size={12} className="stat-box-icon text-accent" />
+              </div>
+              <div className="token-stat-value text-accent">
+                {(user?.tokens?.max_single_turn_tokens ?? 0).toLocaleString()}
+                <span className="token-stat-unit">tokens</span>
+              </div>
+              <small className="token-stat-desc">Highest tokens burnt in 1 response</small>
+            </div>
+
+            <div className="token-stat-box highlight-amber">
+              <div className="token-stat-top">
+                <span className="token-stat-label">Lifetime Tokens Burnt</span>
+                <Flame size={12} className="stat-box-icon text-gold" />
+              </div>
+              <div className="token-stat-value text-gold">
+                {(user?.tokens?.total_tokens ?? 0).toLocaleString()}
+                <span className="token-stat-unit">tokens</span>
+              </div>
+              <small className="token-stat-desc">Cumulative total across all projects</small>
+            </div>
+
+            <div className="token-stat-box">
+              <div className="token-stat-top">
+                <span className="token-stat-label">Total Input (Reading)</span>
+                <Activity size={12} className="stat-box-icon" />
+              </div>
+              <div className="token-stat-value">
+                {(user?.tokens?.input_tokens ?? 0).toLocaleString()}
+                <span className="token-stat-unit">tokens</span>
+              </div>
+              <small className="token-stat-desc">Context & project files read</small>
+            </div>
+
+            <div className="token-stat-box">
+              <div className="token-stat-top">
+                <span className="token-stat-label">Total Output (Writing)</span>
+                <Check size={12} className="stat-box-icon" />
+              </div>
+              <div className="token-stat-value">
+                {(user?.tokens?.output_tokens ?? 0).toLocaleString()}
+                <span className="token-stat-unit">tokens</span>
+              </div>
+              <small className="token-stat-desc">Code & reasoning generated</small>
+            </div>
+          </div>
         </div>
       </section>
 

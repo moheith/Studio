@@ -281,10 +281,28 @@ export default function App() {
           notify(`⚡ Cascaded from ${trans.from_alias} to ${trans.to_alias} (${trans.to_model})`)
         }
         if (event.type === 'telemetry') {
+          const telem = event.data
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            telemetry: event.data
+            telemetry: telem
           } : m))
+          setUser(curr => {
+            if (!curr) return curr
+            const prevTok = curr.tokens || { total_tokens: 0, input_tokens: 0, output_tokens: 0, max_single_turn_tokens: 0, turns_count: 0 }
+            const inTok = telem.models?.reduce((acc: number, m: any) => acc + (m.input_tokens || 0), 0) || 0
+            const outTok = telem.models?.reduce((acc: number, m: any) => acc + (m.output_tokens || 0), 0) || 0
+            const totTok = telem.total_tokens || (inTok + outTok)
+            return {
+              ...curr,
+              tokens: {
+                total_tokens: prevTok.total_tokens + totTok,
+                input_tokens: prevTok.input_tokens + inTok,
+                output_tokens: prevTok.output_tokens + outTok,
+                max_single_turn_tokens: Math.max(prevTok.max_single_turn_tokens || 0, totTok),
+                turns_count: (prevTok.turns_count || 0) + 1
+              }
+            }
+          })
         }
         if (event.type === 'reload_preview') setPreviewKey(v => v + 1)
         if (event.type === 'error') {
@@ -639,7 +657,7 @@ function GameCard({ game, index, onClick }: { game: Game; index: number; onClick
 }
 
 function NewProjectModal({ name, setName, visibility, setVisibility, close, create }: { name: string; setName: (s: string) => void; visibility: 'private' | 'public'; setVisibility: (v: 'private' | 'public') => void; close: () => void; create: () => void }) {
-  return <Modal close={close}><div className="modal-icon"><Sparkles size={18}/></div><div className="eyebrow">NEW LITTLE UNIVERSE</div><h2>Give your game a name.</h2><p>We’ll set up a blank canvas with a live preview.</p><label>Project name<input autoFocus value={name} onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, '-'))} placeholder="little-star"/></label><div className="visibility-choice"><button className={visibility === 'private' ? 'visibility-selected' : ''} onClick={() => setVisibility('private')}><LockKeyhole size={15}/><span><b>Private</b><small>Only you can see it</small></span>{visibility === 'private' && <Check size={14}/>}</button><button className={visibility === 'public' ? 'visibility-selected' : ''} onClick={() => setVisibility('public')}><Globe2 size={15}/><span><b>Public</b><small>Show it in the arcade</small></span>{visibility === 'public' && <Check size={14}/>}</button></div><button className="button button-primary modal-submit" onClick={create}>Create project <ArrowRight size={15}/></button></Modal>
+  return <Modal close={close}><div className="modal-icon"><Sparkles size={18}/></div><div className="eyebrow">NEW PROJECT</div><h2>Give your game a name.</h2><p>We’ll set up a clean, blank canvas with a live preview.</p><label>Project name<input autoFocus value={name} onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, '-'))}/></label><div className="visibility-choice"><button className={visibility === 'private' ? 'visibility-selected' : ''} onClick={() => setVisibility('private')}><LockKeyhole size={15}/><span><b>Private</b><small>Only you can see it</small></span>{visibility === 'private' && <Check size={14}/>}</button><button className={visibility === 'public' ? 'visibility-selected' : ''} onClick={() => setVisibility('public')}><Globe2 size={15}/><span><b>Public</b><small>Show it in the arcade</small></span>{visibility === 'public' && <Check size={14}/>}</button></div><button className="button button-primary modal-submit" onClick={create}>Create project <ArrowRight size={15}/></button></Modal>
 }
 function KeyModal({ value, setValue, close, save, remove, hasKey }: { value: string; setValue: (s: string) => void; close: () => void; save: () => Promise<void>; remove: () => void; hasKey: boolean }) {
   const [checking, setChecking] = useState(false)

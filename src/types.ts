@@ -49,6 +49,14 @@ export type ChatMessage = {
   waterfallTransitions?: WaterfallTransition[]
 }
 
+export type UserTokens = {
+  total_tokens: number
+  input_tokens: number
+  output_tokens: number
+  max_single_turn_tokens: number
+  turns_count: number
+}
+
 export type User = {
   id?: string
   username: string
@@ -56,5 +64,6 @@ export type User = {
   avatar?: string
   has_api_key?: boolean
   waterfall?: string[]
+  tokens?: UserTokens
 }
 export type Page = 'home' | 'studio' | 'login' | 'register' | 'verify-email' | 'profile' | 'not-found'

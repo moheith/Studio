@@ -356,7 +356,14 @@ def _public_user(doc: dict[str, Any]) -> dict[str, Any]:
         "email": doc.get("email"),
         "avatar": doc.get("avatar"),
         "has_api_key": bool(doc.get("api_key_ciphertext")),
-        "waterfall": doc.get("waterfall") or ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-pro"],
+        "waterfall": doc.get("waterfall") or ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"],
+        "tokens": doc.get("tokens") or {
+            "total_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "max_single_turn_tokens": 0,
+            "turns_count": 0,
+        },
     }
 
 
@@ -530,7 +537,7 @@ async def set_username(body: UsernameBody, user: dict[str, Any] = Depends(mutati
 @app.get("/api/profile/waterfall")
 async def get_user_waterfall(user: dict[str, Any] = Depends(current_user)):
     user_doc = await store.collection("users").find_one({"id": user["id"]})
-    wf = (user_doc or {}).get("waterfall") or ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-pro"]
+    wf = (user_doc or {}).get("waterfall") or ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
     return {"waterfall": wf}
 
 
@@ -646,7 +653,9 @@ async def project_file_content(project: dict[str, Any], path: str) -> bytes:
 
 def starter_files(title: str) -> dict[str, str]:
     safe_title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    return {"index.html": f'<!doctype html>\n<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe_title}</title><link rel="stylesheet" href="style.css"></head><body><main class="game"><span class="spark">✦</span><p>A LITTLE GAME BY YOU</p><h1>{safe_title}</h1><button id="play">Start playing →</button></main><script src="app.js"></script></body></html>', "style.css": "*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#111214;color:#f4f1eb;font:16px system-ui}.game{text-align:center;padding:50px;border:1px solid #38343e;border-radius:20px;background:radial-gradient(ellipse at top,#292137,#151518 70%)}.spark{color:#cbb3ff;font-size:32px}p{font:10px monospace;letter-spacing:.17em;color:#bba6d8}h1{font-size:48px;letter-spacing:-.06em}button{border:0;border-radius:9px;padding:12px 18px;background:#cbb3ff;color:#21182e;font-weight:700;cursor:pointer}", "app.js": "document.querySelector('#play').addEventListener('click',()=>{document.querySelector('h1').textContent='Let’s go!';document.querySelector('#play').textContent='You are the star ✦'})"}
+    return {
+        "index.html": f'<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>{safe_title}</title>\n</head>\n<body>\n</body>\n</html>'
+    }
 
 
 @app.get("/api/projects")
@@ -1046,7 +1055,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
     await record_conversation_turn_start(user["id"], project_id, turn)
 
     user_doc = await store.collection("users").find_one({"id": user["id"]})
-    user_waterfall = (user_doc or {}).get("waterfall") or ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-pro"]
+    user_waterfall = (user_doc or {}).get("waterfall") or ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
     chain_models = [model]
     for wm in user_waterfall:
         clean_m = wm.strip().removeprefix("models/")
@@ -1219,6 +1228,24 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                             thought_text="".join(thought_text), status="error",
                             telemetry=telemetry_payload
                         )
+                        if total_turn_tokens > 0:
+                            try:
+                                await store.collection("users").update_one(
+                                    {"id": user["id"]},
+                                    {
+                                        "$inc": {
+                                            "tokens.total_tokens": total_turn_tokens,
+                                            "tokens.input_tokens": sum(m.get("input_tokens", 0) for m in telemetry_models),
+                                            "tokens.output_tokens": sum(m.get("output_tokens", 0) for m in telemetry_models),
+                                            "tokens.turns_count": 1,
+                                        },
+                                        "$max": {
+                                            "tokens.max_single_turn_tokens": total_turn_tokens,
+                                        },
+                                    }
+                                )
+                            except Exception:
+                                pass
                         yield "event: telemetry\ndata: " + json.dumps(telemetry_payload) + "\n\n"
                         yield "event: error\ndata: " + json.dumps({"message": final_err}) + "\n\n"
                         return
@@ -1313,6 +1340,8 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                 "status": "completed"
             })
         total_turn_tokens = sum(m.get("total_tokens", 0) for m in telemetry_models)
+        turn_input_tokens = sum(m.get("input_tokens", 0) for m in telemetry_models)
+        turn_output_tokens = sum(m.get("output_tokens", 0) for m in telemetry_models)
         total_turn_duration = round(time.time() - turn_start_time, 2)
         telemetry_payload = {
             "models": telemetry_models,
@@ -1324,6 +1353,24 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             thought_text="".join(thought_text), status="complete",
             telemetry=telemetry_payload
         )
+        if total_turn_tokens > 0:
+            try:
+                await store.collection("users").update_one(
+                    {"id": user["id"]},
+                    {
+                        "$inc": {
+                            "tokens.total_tokens": total_turn_tokens,
+                            "tokens.input_tokens": turn_input_tokens,
+                            "tokens.output_tokens": turn_output_tokens,
+                            "tokens.turns_count": 1,
+                        },
+                        "$max": {
+                            "tokens.max_single_turn_tokens": total_turn_tokens,
+                        },
+                    }
+                )
+            except Exception:
+                pass
         yield "event: telemetry\ndata: " + json.dumps(telemetry_payload) + "\n\n"
         yield "event: done\ndata: " + json.dumps({"message":"Ready"}) + "\n\n"
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control":"no-cache, no-transform","X-Accel-Buffering":"no"})
