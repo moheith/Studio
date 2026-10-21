@@ -6,7 +6,7 @@ import {
   Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
-  Rocket, Search, Settings2, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X, Zap
+  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X, Zap
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
@@ -344,6 +344,15 @@ export default function StudioPage(p: StudioProps) {
   const [customMoveTarget, setCustomMoveTarget] = useState('')
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null)
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
+  const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({})
+
+  const formatDuration = (sec: number | null | undefined): string => {
+    if (sec === null || sec === undefined) return '0s'
+    if (sec < 60) return `${sec.toFixed(1)}s`
+    const mins = Math.floor(sec / 60)
+    const rem = Math.round(sec % 60)
+    return `${mins}m ${rem}s`
+  }
 
   // Waterfall Cascade & Telemetry modal state
   const [waterfallModalOpen, setWaterfallModalOpen] = useState(false)
@@ -2186,29 +2195,15 @@ export default function StudioPage(p: StudioProps) {
                           <span className={`bubble-avatar-tag ${isAntigravity ? 'antigravity-tag' : ''}`}>
                             <Sparkles size={11} />
                           </span>
-                          <span className="bubble-name">{isAntigravity ? '✦ Antigravity Agent' : 'Copilot'}</span>
+                          <span className="bubble-name">{isAntigravity ? 'Antigravity Agent' : 'Copilot'}</span>
                           {msg.time && (
                             <span className="bubble-timestamp">
                               {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
-                          <button
-                            className="vsc-copy-btn"
-                            title="Copy response"
-                            onClick={() => copyMessageText(msg.id, msg.text)}
-                          >
-                            {copiedMsgId === msg.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}
-                          </button>
                         </>
                       ) : (
                         <>
-                          <button
-                            className="vsc-copy-btn"
-                            title="Copy message"
-                            onClick={() => copyMessageText(msg.id, msg.text)}
-                          >
-                            {copiedMsgId === msg.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}
-                          </button>
                           {msg.time && (
                             <span className="bubble-timestamp">
                               {new Date(msg.time * 1000 > 1e12 ? msg.time : msg.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -2231,7 +2226,7 @@ export default function StudioPage(p: StudioProps) {
                         >
                           <Brain size={12} className="thought-icon" />
                           <span className="thought-toggle-title">
-                            {p.isAiGenerating && idx === p.chatMessages.length - 1 ? '✦ Thinking & Executing Tools…' : '✦ Antigravity Reasoning & Tool Activity'}
+                            {p.isAiGenerating && idx === p.chatMessages.length - 1 ? 'Thinking & Executing Tools…' : 'Antigravity Reasoning & Tool Activity'}
                           </span>
                           <ChevronDown
                             size={12}
@@ -2246,6 +2241,51 @@ export default function StudioPage(p: StudioProps) {
                       </div>
                     )}
 
+                    {/* Model Errors Shown Above AI Output (Collapsible Accordion) */}
+                    {msg.waterfallTransitions && msg.waterfallTransitions.length > 0 && (
+                      <div className="bubble-error-cascade-list">
+                        {msg.waterfallTransitions.map((tr, tIdx) => {
+                          const errKey = `${msg.id}-tr-${tIdx}`
+                          const isExpanded = expandedErrors[errKey] ?? false
+                          return (
+                            <div key={tIdx} className={`bubble-error-accordion ${isExpanded ? 'is-open' : ''}`}>
+                              <button
+                                type="button"
+                                className="bubble-error-header"
+                                onClick={() => setExpandedErrors(prev => ({ ...prev, [errKey]: !prev[errKey] }))}
+                                title="Click to view error details"
+                              >
+                                <div className="error-header-left">
+                                  <span className="error-model-badge">{tr.from_alias}: {tr.from_model}</span>
+                                  <span className="error-summary-text">{tr.reason}</span>
+                                </div>
+                                <ChevronDown size={12} className={`error-chevron ${isExpanded ? 'is-open' : ''}`} />
+                              </button>
+                              {isExpanded && (
+                                <div className="bubble-error-drawer">
+                                  <div className="error-drawer-row">
+                                    <span className="error-drawer-label">Exhausted Model:</span>
+                                    <span className="error-drawer-val">{tr.from_alias} ({tr.from_model})</span>
+                                  </div>
+                                  <div className="error-drawer-row">
+                                    <span className="error-drawer-label">Error Reason:</span>
+                                    <span className="error-drawer-val error-val-danger">{tr.reason}</span>
+                                  </div>
+                                  <div className="error-drawer-row">
+                                    <span className="error-drawer-label">Waterfall Cascade:</span>
+                                    <span className="error-drawer-val cascade-val">
+                                      Moved to <strong>{tr.to_alias}</strong> ({tr.to_model})
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* AI Output Displayed Below Errors */}
                     <div className="bubble-body">
                       {isUser ? (
                         <pre className="user-plain-text">{msg.text}</pre>
@@ -2258,23 +2298,6 @@ export default function StudioPage(p: StudioProps) {
                         <MarkdownBody text={msg.text} />
                       )}
                     </div>
-
-                    {msg.waterfallTransitions && msg.waterfallTransitions.length > 0 && (
-                      <div className="waterfall-transition-stream">
-                        {msg.waterfallTransitions.map((tr, tIdx) => (
-                          <div key={tIdx} className="waterfall-transition-line">
-                            <span className="waterfall-pulse-dot" />
-                            <span className="waterfall-from">
-                              <strong>{tr.from_alias}</strong> ({tr.from_model}) error: <em>{tr.reason}</em>
-                            </span>
-                            <span className="waterfall-arrow">➔</span>
-                            <span className="waterfall-to">
-                              Cascaded to <strong>{tr.to_alias}</strong> ({tr.to_model})
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
 
                     {msg.grounding && ((msg.grounding.queries && msg.grounding.queries.length > 0) || (msg.grounding.sources && msg.grounding.sources.length > 0)) && (
                       <div className="bubble-grounding-section">
@@ -2321,63 +2344,113 @@ export default function StudioPage(p: StudioProps) {
                       </div>
                     )}
 
+                    {/* Bottom row for User message: Copy button at bottom */}
+                    {isUser && (
+                      <div className="bubble-user-footer">
+                        <button
+                          className="vsc-copy-btn"
+                          title="Copy prompt"
+                          onClick={() => copyMessageText(msg.id, msg.text)}
+                        >
+                          {copiedMsgId === msg.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Bottom row for AI message: Model name, clickable duration/telemetry, and Copy button at bottom */}
                     {!isUser && (
                       <div className="bubble-model-footer">
                         <div className="bubble-footer-left">
-                          <Sparkles size={9} className="model-sparkle" />
-                          <span>{isAntigravity ? (modelDisplay.startsWith('✦') ? modelDisplay : `✦ Antigravity (${modelDisplay.replace('antigravity:', '')})`) : modelDisplay}</span>
+                          <span className="bubble-model-name">
+                            {isAntigravity
+                              ? (modelDisplay.startsWith('Antigravity') ? modelDisplay : `Antigravity (${modelDisplay.replace('antigravity:', '')})`)
+                              : modelDisplay}
+                          </span>
                         </div>
-                        {msg.telemetry && (
-                          <div className="bubble-telemetry-corner">
-                            <button
-                              type="button"
-                              className={`telemetry-pill-btn ${openTelemetryId === msg.id ? 'is-active' : ''}`}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setOpenTelemetryId(prev => prev === msg.id ? null : msg.id)
-                              }}
-                              title="Click to view Model Waterfall, Tokens & Timing Breakdown"
-                            >
-                              <span className="telemetry-sparkle">⚡</span>
-                              <span className="telemetry-models-summary">
-                                {msg.telemetry.models?.map(m => m.alias).join(' ➔ ') || 'M1'}
-                              </span>
-                              <span className="telemetry-dot">•</span>
-                              <span className="telemetry-stat">{msg.telemetry.total_tokens?.toLocaleString() ?? 0} tokens</span>
-                              <span className="telemetry-dot">•</span>
-                              <span className="telemetry-stat">{msg.telemetry.total_duration ?? 0}s</span>
-                              <ChevronDown size={10} className={`telemetry-chevron ${openTelemetryId === msg.id ? 'is-open' : ''}`} />
-                            </button>
-                            {openTelemetryId === msg.id && (
-                              <div className="telemetry-dropdown-card" onClick={e => e.stopPropagation()}>
-                                <div className="telemetry-card-header">
-                                  <span className="telemetry-card-title">Model Telemetry</span>
-                                  <span className="telemetry-card-total">{msg.telemetry.total_tokens?.toLocaleString()} tokens • {msg.telemetry.total_duration}s</span>
-                                </div>
-                                <div className="telemetry-models-list">
-                                  {msg.telemetry.models?.map((mod, mi) => (
-                                    <div key={mi} className="telemetry-model-row clean-view">
-                                      <div className="model-row-name">
-                                        <span className="model-alias-badge">{mod.alias}</span>
-                                        <span className="model-name-text">{mod.name}</span>
+
+                        <div className="bubble-footer-right">
+                          {msg.telemetry && (
+                            <div className="bubble-telemetry-corner">
+                              <button
+                                type="button"
+                                className={`telemetry-pill-btn ${openTelemetryId === msg.id ? 'is-active' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setOpenTelemetryId(prev => prev === msg.id ? null : msg.id)
+                                }}
+                                title="Click to view Model Waterfall, Tokens & Timing Breakdown"
+                              >
+                                <span className="telemetry-models-summary">
+                                  {msg.telemetry.models?.map(m => m.alias).join(' ➔ ') || 'M1'}
+                                </span>
+                                <span className="telemetry-dot">•</span>
+                                <span className="telemetry-stat">
+                                  {formatDuration(msg.telemetry.total_duration ?? 0)}
+                                </span>
+                                <span className="telemetry-dot">•</span>
+                                <span className="telemetry-stat">
+                                  {(msg.telemetry.total_tokens ?? 0).toLocaleString()} tok
+                                </span>
+                                <ChevronDown size={10} className={`telemetry-chevron ${openTelemetryId === msg.id ? 'is-open' : ''}`} />
+                              </button>
+
+                              {openTelemetryId === msg.id && (
+                                <div className="telemetry-dropdown-card" onClick={e => e.stopPropagation()}>
+                                  <div className="telemetry-card-header">
+                                    <span className="telemetry-card-title">Execution Telemetry</span>
+                                    <span className="telemetry-card-total">
+                                      {formatDuration(msg.telemetry.total_duration ?? 0)} • {(msg.telemetry.total_tokens ?? 0).toLocaleString()} tokens
+                                    </span>
+                                  </div>
+                                  <div className="telemetry-models-list">
+                                    {msg.telemetry.models?.map((mod, mi) => (
+                                      <div key={mi} className="telemetry-model-row clean-view">
+                                        <div className="model-row-name">
+                                          <span className="model-alias-badge">{mod.alias}</span>
+                                          <span className="model-name-text">{mod.name}</span>
+                                          <span className={`model-status-tag status-${mod.status}`}>
+                                            {mod.status === 'completed' ? 'Completed' : mod.status === 'cascaded' ? 'Cascaded' : 'Failed'}
+                                          </span>
+                                        </div>
+                                        <div className="model-row-metrics-clean">
+                                          <span className="clean-metric">
+                                            <span className="clean-label">Time:</span>
+                                            <strong>{formatDuration(mod.duration_seconds ?? 0)}</strong>
+                                          </span>
+                                          <span className="clean-metric">
+                                            <span className="clean-label">In:</span>
+                                            <strong>{(mod.input_tokens ?? 0).toLocaleString()}</strong>
+                                          </span>
+                                          <span className="clean-metric">
+                                            <span className="clean-label">Out:</span>
+                                            <strong>{(mod.output_tokens ?? 0).toLocaleString()}</strong>
+                                          </span>
+                                          <span className="clean-metric">
+                                            <span className="clean-label">Total:</span>
+                                            <strong>{(mod.total_tokens ?? 0).toLocaleString()}</strong>
+                                          </span>
+                                        </div>
+                                        {mod.error && (
+                                          <div className="model-row-error-hint">
+                                            <span>Error: {mod.error}</span>
+                                          </div>
+                                        )}
                                       </div>
-                                      <div className="model-row-metrics-clean">
-                                        <span className="clean-metric">
-                                          <span className="clean-label">Tokens:</span>
-                                          <strong>{mod.total_tokens?.toLocaleString() ?? 0}</strong>
-                                        </span>
-                                        <span className="clean-metric">
-                                          <span className="clean-label">Time taken:</span>
-                                          <strong>{mod.duration_seconds ?? 0}s</strong>
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                              )}
+                            </div>
+                          )}
+
+                          <button
+                            className="vsc-copy-btn"
+                            title="Copy response"
+                            onClick={() => copyMessageText(msg.id, msg.text)}
+                          >
+                            {copiedMsgId === msg.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2399,50 +2472,10 @@ export default function StudioPage(p: StudioProps) {
             {/* Copilot Chat Composer */}
             <div className="copilot-composer">
               <div className="composer-toolbar">
-                <span className="composer-context">
-                  <LockKeyhole size={10} /> {p.currentGame?.id ?? 'project'}
-                </span>
-
-                <div className="composer-toolbar-controls">
-                  {/* Antigravity Agent Checkbox Toggle */}
-                  <label
-                    className={`antigravity-checkbox-toggle ${p.isAntigravityMode ? 'is-active' : ''}`}
-                    title="Enable Antigravity Autonomous Agent (multi-file tools, folder creation, 15 iterations)"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={Boolean(p.isAntigravityMode)}
-                      onChange={e => p.setIsAntigravityMode?.(e.target.checked)}
-                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
-                    />
-                    <span className="antigravity-toggle-box">
-                      {p.isAntigravityMode ? <Check size={10} className="check-icon" /> : null}
-                    </span>
-                    <Sparkles size={11} className="antigravity-sparkle" />
-                    <span className="antigravity-label-text">Antigravity</span>
-                  </label>
-
-                  {/* Waterfall Failover Checkbox Toggle */}
-                  <label
-                    className={`antigravity-checkbox-toggle waterfall-checkbox-toggle ${p.useWaterfall ? 'is-active' : ''}`}
-                    title="Enable Model Waterfall failover (if unchecked, only the current model selected will be used)"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={Boolean(p.useWaterfall)}
-                      onChange={e => p.setUseWaterfall?.(e.target.checked)}
-                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
-                    />
-                    <span className="antigravity-toggle-box">
-                      {p.useWaterfall ? <Check size={10} className="check-icon" /> : null}
-                    </span>
-                    <Zap size={11} className="waterfall-toggle-bolt" />
-                    <span className="antigravity-label-text">Waterfall</span>
-                  </label>
-
-                  {/* Model Selector Dropdown */}
+                {/* Left: Model Selector & Direct Waterfall Settings Button */}
+                <div className="composer-model-group">
                   <select
-                    className={`composer-model-dropdown ${p.isAntigravityMode ? 'antigravity-active' : ''}`}
+                    className="composer-model-dropdown"
                     value={p.selectedModel}
                     onChange={e => {
                       if (e.target.value === 'connect-key') {
@@ -2460,12 +2493,53 @@ export default function StudioPage(p: StudioProps) {
                   >
                     {p.models.length ? (
                       p.models.map(m => (
-                        <option key={m.id} value={m.id}>{m.display_name}</option>
+                        <option key={m.id} value={m.id}>{m.display_name.replace('✦ ', '')}</option>
                       ))
                     ) : (
-                      <option value="connect-key">⚙ Connect Gemini Key</option>
+                      <option value="connect-key">Connect Gemini Key</option>
                     )}
                   </select>
+
+                  <button
+                    type="button"
+                    className="composer-waterfall-btn"
+                    onClick={() => setWaterfallModalOpen(true)}
+                    title="Configure Model Waterfall Cascade"
+                  >
+                    <SlidersHorizontal size={11} />
+                    <span>Waterfall Setup</span>
+                  </button>
+                </div>
+
+                {/* Right: Sleek Toggles (No Emojis) */}
+                <div className="composer-toggles-group">
+                  <label
+                    className={`vsc-chat-pill-toggle ${p.isAntigravityMode ? 'is-active' : ''}`}
+                    title="Enable Antigravity Agent (autonomous tools, live Google search grounding)"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(p.isAntigravityMode)}
+                      onChange={e => p.setIsAntigravityMode?.(e.target.checked)}
+                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                    />
+                    <span className="pill-dot pill-dot-antigravity" />
+                    <span className="pill-text">Antigravity</span>
+                  </label>
+
+                  <label
+                    className={`vsc-chat-pill-toggle ${p.useWaterfall ? 'is-active' : ''}`}
+                    title="Enable Model Waterfall (cascades to fallback models on rate limits or errors)"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(p.useWaterfall)}
+                      onChange={e => p.setUseWaterfall?.(e.target.checked)}
+                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                    />
+                    <span className="pill-dot pill-dot-waterfall" />
+                    <span className="pill-text">Waterfall</span>
+                  </label>
                 </div>
               </div>
 
@@ -2504,19 +2578,12 @@ export default function StudioPage(p: StudioProps) {
                 )}
               </div>
 
-              {/* Copilot Composer Footer / Bottom Timer Bar */}
+              {/* Copilot Composer Footer */}
               <div className="copilot-composer-footer">
                 {p.isAiGenerating ? (
                   <div className="composer-timer-status running">
                     <span className="timer-pulse-dot" />
-                    <span className="timer-label">Generating…</span>
-                    <span className="timer-digits">⏱️ {elapsedSeconds.toFixed(1)}s</span>
-                  </div>
-                ) : displayFinishedDuration !== null ? (
-                  <div className="composer-timer-status finished" title="Time taken for the last AI response">
-                    <span className="timer-check-dot">✓</span>
-                    <span className="timer-label">Finished in</span>
-                    <span className="timer-digits">⏱️ {displayFinishedDuration.toFixed(1)}s</span>
+                    <span className="timer-label">Generating… {elapsedSeconds.toFixed(1)}s</span>
                   </div>
                 ) : (
                   <div className="composer-hint-status">

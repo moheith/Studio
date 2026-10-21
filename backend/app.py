@@ -692,8 +692,8 @@ async def models(user: dict[str, Any] = Depends(current_user)):
     preferred = {"gemini-2.5-pro": 0, "gemini-2.5-flash": 1, "gemini-3.8-flash": 2, "gemini-3.6-flash": 3, "gemini-3-flash": 4}
     rows.sort(key=lambda model: (preferred.get(model["id"], 100), model["display_name"].lower()))
     antigravity_preview_models = [
-        {"id": "antigravity-preview-latest", "display_name": "✦ Antigravity (Gemini 3.6 Flash)", "input_token_limit": 2000000},
-        {"id": "antigravity-preview-09-2026", "display_name": "✦ Antigravity (Gemini 3.8 Flash)", "input_token_limit": 2000000},
+        {"id": "antigravity-preview-latest", "display_name": "Antigravity (Gemini 3.6 Flash)", "input_token_limit": 2000000},
+        {"id": "antigravity-preview-09-2026", "display_name": "Antigravity (Gemini 3.8 Flash)", "input_token_limit": 2000000},
     ]
     existing_ids = {m["id"] for m in rows}
     prepend = [m for m in antigravity_preview_models if m["id"] not in existing_ids]
@@ -824,23 +824,6 @@ async def profile(username: str):
     return {"profile": {"username": user["username"], "avatar": user.get("avatar")}, "projects": [{k: v for k, v in p.items() if k not in {"_id", "owner_id"}} for p in rows]}
 
 
-@app.post("/api/projects/{project_id}/remix")
-async def remix_project(project_id: str, user: dict[str, Any] = Depends(mutating_user)):
-    source = await store.collection("projects").find_one({"id": project_id, "visibility": "public"})
-    if not source: raise HTTPException(404, "Public game not found")
-    if not user.get("username"): raise HTTPException(409, "Choose a username first")
-    if not user.get("api_key_ciphertext"): raise HTTPException(428, "Connect a Gemini key before creating projects")
-    title = (source["title"] + " remix")[:60]; slug_base = re.sub(r"[^a-z0-9-]+", "-", title.lower()).strip("-")[:44]; slug = slug_base
-    suffix = 2
-    while await store.collection("projects").find_one({"username": user["username"], "slug": slug}): slug = f"{slug_base[:44]}-{suffix}"; suffix += 1
-    clone = {"id": uuid.uuid4().hex, "owner_id": user["id"], "username": user["username"], "slug": slug, "title": title, "description": f"Remix of @{source['username']}/{source['slug']}", "visibility": "private", "created_at": _now(), "updated_at": _now(), "forked_from": source["id"], "plays": 0}
-    await store.collection("projects").insert_one(clone)
-    for f in await file_index(project_id):
-        data = await project_file_content(source, f["path"])
-        await store.collection("files").insert_one({"owner_id": clone["owner_id"], "project_id": clone["id"], "path": f["path"], "content": data, "size": len(data), "etag": hashlib.sha256(data).hexdigest(), "updated_at": _now()})
-    return {"project": {k: v for k, v in clone.items() if k != "_id"}}
-
-
 def preview_token(project: dict[str, Any], ttl: int = 86400) -> str:
     if not PREVIEW_TOKEN_SECRET: raise HTTPException(503, "Preview token signing is not configured")
     payload = base64.urlsafe_b64encode(json.dumps({"uid": project["owner_id"], "pid": project["id"], "exp": _now() + ttl}, separators=(",", ":")).encode()).decode().rstrip("=")
@@ -940,7 +923,8 @@ async def record_conversation_turn_complete(
     owner_id: str, project_id: str, turn_id: str, response_text: str,
     thought_text: str = "", status: str = "complete",
     telemetry: dict[str, Any] | None = None,
-    grounding: dict[str, Any] | None = None
+    grounding: dict[str, Any] | None = None,
+    error: str | None = None
 ) -> None:
     col = store.collection("conversations")
     update_data: dict[str, Any] = {
@@ -954,6 +938,8 @@ async def record_conversation_turn_complete(
         update_data["turns.$.telemetry"] = telemetry
     if grounding:
         update_data["turns.$.grounding"] = grounding
+    if error:
+        update_data["turns.$.error"] = error
 
     if store.db is not None:
         await col.update_one(
@@ -973,6 +959,8 @@ async def record_conversation_turn_complete(
                         t["telemetry"] = telemetry
                     if grounding:
                         t["grounding"] = grounding
+                    if error:
+                        t["error"] = error
                     break
             await col.update_one({"owner_id": owner_id, "project_id": project_id}, {"$set": {"turns": doc["turns"], "updated_at": _now()}})
 
@@ -1099,13 +1087,13 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
     is_antigravity = bool(body.antigravity) or "antigravity" in raw_model.lower()
     if "09-2026" in raw_model:
         model = "gemini-3.8-flash"
-        saved_model_name = "✦ Antigravity (Gemini 3.8 Flash)"
+        saved_model_name = "Antigravity (Gemini 3.8 Flash)"
     elif "antigravity" in raw_model.lower():
         model = "gemini-3.6-flash"
-        saved_model_name = "✦ Antigravity (Gemini 3.6 Flash)"
+        saved_model_name = "Antigravity (Gemini 3.6 Flash)"
     else:
         model = raw_model
-        saved_model_name = f"✦ Antigravity ({model})" if is_antigravity else model
+        saved_model_name = f"Antigravity ({model})" if is_antigravity else model
     if not re.fullmatch(r"[a-zA-Z0-9._-]{3,100}", model): raise HTTPException(400, "Invalid model identifier")
     previous_turns = await get_project_conversation_turns(user["id"], project_id, limit=100 if is_antigravity else 20)
     messages = await file_index(project_id); file_context = {}; baseline_etags = {item["path"]: item.get("etag") for item in messages}
@@ -1113,7 +1101,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
     for item in messages:
         if item["path"].lower().endswith((".html", ".css", ".js", ".mjs", ".json", ".txt", ".csv", ".tsv")):
             file_context[item["path"]] = (await project_file_content(project, item["path"])).decode("utf-8", "replace")[:60000]
-    tool_declarations = [{"functionDeclarations": [
+    func_tools = [
         {
             "name": "list_files",
             "description": "List all file paths present in the current browser game project.",
@@ -1188,6 +1176,15 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             }
         },
         {
+            "name": "request_reload",
+            "description": "Notify the editor to reload the live game preview iframe immediately so that recent file changes take effect.",
+            "parameters": {"type": "OBJECT", "properties": {}}
+        },
+    ]
+
+    # Search Grounding is an exclusive agentic capability for Antigravity only
+    if is_antigravity:
+        func_tools.append({
             "name": "search_grounding",
             "description": "Perform live Google web search grounding to search the internet for modern Web APIs (Canvas, Web Audio API, Gamepad, WebGL), game mathematics, collision formulas, audio synthesis recipes, retro algorithms, and technical documentation.",
             "parameters": {
@@ -1197,13 +1194,9 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                 },
                 "required": ["query"]
             }
-        },
-        {
-            "name": "request_reload",
-            "description": "Notify the editor to reload the live game preview iframe immediately so that recent file changes take effect.",
-            "parameters": {"type": "OBJECT", "properties": {}}
-        },
-    ]}]
+        })
+
+    tool_declarations = [{"functionDeclarations": func_tools}]
 
     if is_antigravity:
         system = (
@@ -1297,6 +1290,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         response_text: list[str] = []
         thought_text: list[str] = []
         turn_grounding: dict[str, list[Any]] = {"queries": [], "sources": []}
+        waterfall_transitions: list[dict[str, Any]] = []
         max_calls = 50 if is_antigravity else 20
         turn_start_time = time.time()
         current_chain_idx = 0
@@ -1458,6 +1452,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                             "to_alias": next_info["alias"],
                             "reason": effective_reason
                         }
+                        waterfall_transitions.append(trans_event)
                         yield "event: waterfall_transition\ndata: " + json.dumps(trans_event) + "\n\n"
                         trans_thought = f"\n⚡ [{active_alias}: {active_model} error: {effective_reason}] ➔ Cascaded to {next_info['alias']}: {next_info['model']}\n"
                         thought_text.append(trans_thought)
@@ -1474,13 +1469,16 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                         telemetry_payload = {
                             "models": telemetry_models,
                             "total_tokens": total_turn_tokens,
-                            "total_duration": total_turn_duration
+                            "total_duration": total_turn_duration,
+                            "waterfallTransitions": waterfall_transitions
                         }
+                        saved_resp = "".join(response_text) or f"Error: {final_err}"
                         await record_conversation_turn_complete(
-                            user["id"], project_id, turn_id, "".join(response_text),
+                            user["id"], project_id, turn_id, saved_resp,
                             thought_text="".join(thought_text), status="error",
                             telemetry=telemetry_payload,
-                            grounding=turn_grounding if (turn_grounding["queries"] or turn_grounding["sources"]) else None
+                            grounding=turn_grounding if (turn_grounding["queries"] or turn_grounding["sources"]) else None,
+                            error=final_err
                         )
                         await record_user_token_usage(
                             user["id"],
@@ -1559,26 +1557,29 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                                         if len(matches) >= 100: break
                             result = {"matches": matches[:100]}
                         elif name == "search_grounding":
-                            sq = str(args.get("query", "")).strip()
-                            status_msg = f"🔍 Grounding with Google Search: '{sq}'…"
-                            yield "event: status\ndata: " + json.dumps({"message": status_msg}) + "\n\n"
-                            grounding_res = await perform_search_grounding(api_key, active_model, sq)
-                            result = grounding_res
-                            if sq and sq not in turn_grounding["queries"]:
-                                turn_grounding["queries"].append(sq)
-                            for s in grounding_res.get("sources", []):
-                                if s.get("url") and not any(x.get("url") == s["url"] for x in turn_grounding["sources"]):
-                                    turn_grounding["sources"].append(s)
-                            yield "event: grounding\ndata: " + json.dumps({
-                                "queries": [sq] if sq else [],
-                                "sources": grounding_res.get("sources", [])
-                            }) + "\n\n"
-                            yield "event: tool\ndata: " + json.dumps({"name": "search_grounding", "path": sq, "query": sq}) + "\n\n"
-                            if grounding_res.get("sources"):
-                                top_srcs = ", ".join(f"[{s.get('title') or s.get('url')}]" for s in grounding_res["sources"][:3])
-                                g_thought = f"\n🌐 [Google Search Grounding] Sources discovered: {top_srcs}\n"
-                                thought_text.append(g_thought)
-                                yield "event: thought\ndata: " + json.dumps({"text": g_thought}) + "\n\n"
+                            if not is_antigravity:
+                                result = {"error": "search_grounding tool is only available when Antigravity mode is active"}
+                            else:
+                                sq = str(args.get("query", "")).strip()
+                                status_msg = f"🔍 Grounding with Google Search: '{sq}'…"
+                                yield "event: status\ndata: " + json.dumps({"message": status_msg}) + "\n\n"
+                                grounding_res = await perform_search_grounding(api_key, active_model, sq)
+                                result = grounding_res
+                                if sq and sq not in turn_grounding["queries"]:
+                                    turn_grounding["queries"].append(sq)
+                                for s in grounding_res.get("sources", []):
+                                    if s.get("url") and not any(x.get("url") == s["url"] for x in turn_grounding["sources"]):
+                                        turn_grounding["sources"].append(s)
+                                yield "event: grounding\ndata: " + json.dumps({
+                                    "queries": [sq] if sq else [],
+                                    "sources": grounding_res.get("sources", [])
+                                }) + "\n\n"
+                                yield "event: tool\ndata: " + json.dumps({"name": "search_grounding", "path": sq, "query": sq}) + "\n\n"
+                                if grounding_res.get("sources"):
+                                    top_srcs = ", ".join(f"[{s.get('title') or s.get('url')}]" for s in grounding_res["sources"][:3])
+                                    g_thought = f"\n🌐 [Google Search Grounding] Sources discovered: {top_srcs}\n"
+                                    thought_text.append(g_thought)
+                                    yield "event: thought\ndata: " + json.dumps({"text": g_thought}) + "\n\n"
                         elif name == "request_reload":
                             result = {"requested": True}; yield "event: reload_preview\ndata: {}\n\n"
                         else: result = {"error":"Unknown tool"}
@@ -1599,7 +1600,8 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         telemetry_payload = {
             "models": telemetry_models,
             "total_tokens": total_turn_tokens,
-            "total_duration": total_turn_duration
+            "total_duration": total_turn_duration,
+            "waterfallTransitions": waterfall_transitions
         }
         await record_conversation_turn_complete(
             user["id"], project_id, turn_id, "".join(response_text),
