@@ -354,6 +354,20 @@ export default function StudioPage(p: StudioProps) {
     return `${mins}m ${rem}s`
   }
 
+  const shortModelName = (id?: string | null, displayName?: string): string => {
+    if (!id && !displayName) return 'Auto'
+    const clean = (displayName || id || '').replace(/^✦\s*/, '').replace(/^models\//, '')
+    if (clean.includes('3.8-flash')) return '3.8 Flash'
+    if (clean.includes('3.7-flash')) return '3.7 Flash'
+    if (clean.includes('3.6-flash')) return '3.6 Flash'
+    if (clean.includes('3.5-flash-lite')) return '3.5 Lite'
+    if (clean.includes('3.5-flash')) return '3.5 Flash'
+    if (clean.includes('2.5-flash')) return '2.5 Flash'
+    if (clean.includes('2.5-pro')) return '2.5 Pro'
+    if (clean.includes('gemma-4-31b')) return 'Gemma 31B'
+    return clean.replace(/^gemini-/, '').slice(0, 10) || 'Auto'
+  }
+
   // Waterfall Cascade & Telemetry modal state
   const [waterfallModalOpen, setWaterfallModalOpen] = useState(false)
   const [openTelemetryId, setOpenTelemetryId] = useState<string | null>(null)
@@ -2446,7 +2460,7 @@ export default function StudioPage(p: StudioProps) {
               })}
               {p.isAiGenerating && (
                 <div className="copilot-generating-bar">
-                  <Loader2 size={12} className="animate-spin text-accent" />
+                  <Loader2 size={12} className="animate-spin" />
                   <span>Copilot is writing code…</span>
                   <span className="copilot-live-timer">⏱️ {elapsedSeconds.toFixed(1)}s</span>
                   {p.stopAiGeneration && (
@@ -2508,7 +2522,7 @@ export default function StudioPage(p: StudioProps) {
 
                     {/* AI Model Selector (Matches Model button in screenshot) */}
                     <div className="vsc-chat-model-wrapper" title="Select AI Model">
-                      <Sparkles size={11} className="vsc-model-icon text-accent" />
+                      <Sparkles size={11} className="vsc-model-icon" />
                       <select
                         className="vsc-chat-model-select"
                         value={p.selectedModel}
@@ -2528,7 +2542,7 @@ export default function StudioPage(p: StudioProps) {
                       >
                         {p.models.length ? (
                           p.models.map(m => (
-                            <option key={m.id} value={m.id}>{m.display_name.replace('✦ ', '')}</option>
+                            <option key={m.id} value={m.id}>{shortModelName(m.id, m.display_name)}</option>
                           ))
                         ) : (
                           <option value="connect-key">Connect Gemini Key</option>
@@ -2545,7 +2559,7 @@ export default function StudioPage(p: StudioProps) {
                         onClick={() => p.setUseWaterfall?.(!p.useWaterfall)}
                         title={p.useWaterfall ? "Waterfall is ON (cascades on failure). Click to turn OFF" : "Waterfall is OFF. Click to turn ON"}
                       >
-                        <Zap size={11} className={p.useWaterfall ? "text-amber" : "text-muted"} />
+                        <Zap size={11} className="vsc-pill-icon" />
                         <span>Waterfall</span>
                       </button>
                       <span className="vsc-composite-divider">|</span>
@@ -2591,7 +2605,7 @@ export default function StudioPage(p: StudioProps) {
               <div className="vsc-composer-statusbar">
                 <div className="vsc-statusbar-left">
                   <span className="vsc-status-pill">
-                    <Sparkles size={11} className={p.isAntigravityMode ? "text-accent" : "text-muted"} />
+                    <Sparkles size={11} className="vsc-status-icon" />
                     <span>{p.isAntigravityMode ? "Antigravity Agent" : "Copilot"}</span>
                   </span>
                   <span className="vsc-status-dot">•</span>
@@ -2602,7 +2616,7 @@ export default function StudioPage(p: StudioProps) {
                     <>
                       <span className="vsc-status-dot">•</span>
                       <span className="vsc-status-timer">
-                        <Loader2 size={10} className="animate-spin text-accent" />
+                        <Loader2 size={10} className="animate-spin" />
                         <span>{elapsedSeconds.toFixed(1)}s</span>
                       </span>
                     </>

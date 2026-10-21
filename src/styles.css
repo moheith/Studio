@@ -1345,50 +1345,50 @@
 /* Dedicated Vertical Copilot Chat Panel (VS Code Style) */
 .vsc-copilot-vertical-panel {
   flex: none;
-  min-width: 280px;
+  min-width: 250px;
   max-width: 650px;
   display: flex;
   flex-direction: column;
-  background: #101116;
-  border-left: 1px solid var(--vsc-border);
+  background: #181818;
+  border-left: 1px solid #282828;
   overflow: hidden;
   z-index: 3;
 }
 
 .copilot-panel-header {
-  height: 38px;
+  height: 35px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
-  background: #14151c;
-  border-bottom: 1px solid var(--vsc-border);
+  padding: 0 10px;
+  background: #181818;
+  border-bottom: 1px solid #282828;
   flex: none;
 }
 
 .copilot-title-group {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
 }
 
 .copilot-icon {
-  color: var(--vsc-accent);
+  color: #8c8c8c;
 }
 
 .copilot-title {
-  font: 700 11px var(--mono);
-  letter-spacing: 0.08em;
-  color: #ded9ec;
+  font: 600 11px var(--sans);
+  letter-spacing: 0.04em;
+  color: #cccccc;
 }
 
 .copilot-model-badge {
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(196, 169, 244, 0.12);
-  border: 1px solid rgba(196, 169, 244, 0.25);
-  color: #c4a9f4;
-  font: 600 9px var(--mono);
+  background: #2a2b2c;
+  border: 1px solid #38393a;
+  color: #cccccc;
+  font: 500 9px var(--mono);
 }
 
 .copilot-header-actions {
@@ -1458,27 +1458,28 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  background: #181818;
 }
 
 .copilot-intro-card {
   display: flex;
   gap: 10px;
   padding: 12px;
-  border-radius: 8px;
-  background: #151620;
-  border: 1px solid #262738;
+  border-radius: 6px;
+  background: #1e1f20;
+  border: 1px solid #2d2e30;
 }
 
 .intro-icon-wrap {
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: rgba(196, 169, 244, 0.15);
-  color: #c4a9f4;
+  background: #2a2b2c;
+  color: #cccccc;
   display: grid;
   place-items: center;
   flex: none;
@@ -1487,14 +1488,14 @@
 .intro-text b {
   display: block;
   font: 600 12px var(--sans);
-  color: #ffffff;
+  color: #cccccc;
   margin-bottom: 4px;
 }
 
 .intro-text p {
   margin: 0 0 10px;
   font-size: 11px;
-  color: #9c97a8;
+  color: #8c8c8c;
   line-height: 1.45;
 }
 
@@ -1505,27 +1506,27 @@
 }
 
 .copilot-chips button {
-  padding: 4px 9px;
-  border-radius: 5px;
-  border: 1px solid #303244;
-  background: #1a1c26;
-  color: #b7b3c6;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #333536;
+  background: #252627;
+  color: #cccccc;
   font-size: 10px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.12s;
 }
 
 .copilot-chips button:hover {
-  border-color: var(--vsc-accent);
+  border-color: #444547;
   color: #ffffff;
-  background: #242636;
+  background: #2a2b2c;
 }
 
 .copilot-bubble {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 13px;
+  padding: 8px 11px;
   word-break: break-word;
   transition: background 0.12s ease, border-color 0.12s ease;
   position: relative;
@@ -1534,21 +1535,21 @@
 /* User Message: Aligned to Right */
 .copilot-bubble.user-msg {
   align-self: flex-end;
-  max-width: 82%;
-  background: #232635;
-  border: 1px solid #32364a;
-  border-radius: 12px 12px 3px 12px;
-  color: #f1edfa;
+  max-width: 85%;
+  background: #252627;
+  border: 1px solid #333536;
+  border-radius: 8px 8px 2px 8px;
+  color: #e5e5e5;
 }
 
 /* AI Message: Aligned to Left */
 .copilot-bubble.ai-msg {
   align-self: flex-start;
-  max-width: 92%;
-  background: #14151f;
-  border: 1px solid #242635;
-  border-radius: 12px 12px 12px 3px;
-  color: #ded9ec;
+  max-width: 95%;
+  background: #1e1f20;
+  border: 1px solid #2b2c2d;
+  border-radius: 8px 8px 8px 2px;
+  color: #cccccc;
 }
 
 .bubble-top {
@@ -1562,28 +1563,28 @@
 }
 
 .bubble-avatar-tag {
-  width: 19px;
-  height: 19px;
-  border-radius: 4px;
-  font: 700 10px var(--sans);
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  font: 600 10px var(--sans);
   display: grid;
   place-items: center;
   flex: none;
 }
 
 .user-msg .bubble-avatar-tag {
-  background: #34384d;
-  color: #e5e0f2;
+  background: #333536;
+  color: #cccccc;
 }
 
 .ai-msg .bubble-avatar-tag {
-  background: #242235;
-  color: #c4a9f4;
+  background: #2a2b2c;
+  color: #cccccc;
 }
 
 .bubble-name {
   font: 600 11px var(--sans);
-  color: #cfcbde;
+  color: #cccccc;
 }
 
 .bubble-timestamp {
@@ -1670,17 +1671,17 @@
 }
 
 /* ==========================================================================
-   VS Code Native-Style Copilot Composer (Single Unified Card)
+   VS Code Native-Style Copilot Composer (Full Grey Theme)
    ========================================================================== */
 
 .vsc-composer-wrapper {
-  padding: 10px 12px 8px;
-  background: #14151b;
-  border-top: 1px solid var(--vsc-border);
+  padding: 8px 10px 6px;
+  background: #181818;
+  border-top: 1px solid #282828;
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
   box-sizing: border-box;
 }
@@ -1688,20 +1689,20 @@
 .vsc-composer-card {
   display: flex;
   flex-direction: column;
-  background: #1e1f29;
-  border: 1px solid #2d3040;
-  border-radius: 8px;
-  padding: 8px 10px 7px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  background: #1e1f20;
+  border: 1px solid #2d2e30;
+  border-radius: 6px;
+  padding: 6px 8px 4px;
+  transition: border-color 0.12s ease;
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
 }
 
 .vsc-composer-card:focus-within {
-  border-color: #6366f1;
-  background: #202230;
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
+  border-color: #3e4042;
+  background: #1e1f20;
+  box-shadow: none;
 }
 
 .vsc-composer-textarea {
@@ -1709,11 +1710,11 @@
   background: transparent;
   border: 0;
   outline: none;
-  color: #f3f4f6;
+  color: #cccccc;
   font-family: var(--sans);
-  font-size: 12.5px;
+  font-size: 12px;
   resize: none;
-  min-height: 40px;
+  min-height: 36px;
   max-height: 140px;
   line-height: 1.45;
   box-sizing: border-box;
@@ -1721,25 +1722,25 @@
 }
 
 .vsc-composer-textarea::placeholder {
-  color: #6b7280;
+  color: #6e6e6e;
 }
 
 .vsc-composer-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
-  margin-top: 6px;
-  padding-top: 5px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: none;
   min-width: 0;
 }
 
 .vsc-toolbar-left {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   flex-wrap: wrap;
   min-width: 0;
   flex: 1 1 auto;
@@ -1748,7 +1749,7 @@
 .vsc-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -1757,38 +1758,37 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
   background: transparent;
   border: 1px solid transparent;
-  color: #9ca3af;
+  color: #8c8c8c;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
   flex-shrink: 0;
   padding: 0;
 }
 
 .vsc-composer-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f3f4f6;
-  border-color: rgba(255, 255, 255, 0.12);
+  background: #2a2b2c;
+  color: #cccccc;
 }
 
 /* Antigravity Pill (Matches `{/} Agent` in VS Code) */
 .vsc-chat-pill-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 8px;
-  height: 24px;
-  border-radius: 5px;
+  gap: 4px;
+  padding: 0 6px;
+  height: 22px;
+  border-radius: 4px;
   font: 500 11px var(--sans);
-  color: #9ca3af;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #8c8c8c;
+  background: transparent;
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
   white-space: nowrap;
   user-select: none;
   flex-shrink: 0;
@@ -1796,41 +1796,44 @@
 }
 
 .vsc-chat-pill-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e5e7eb;
-  border-color: rgba(255, 255, 255, 0.16);
+  background: #2a2b2c;
+  color: #cccccc;
 }
 
 .vsc-chat-pill-btn.is-active {
-  background: rgba(99, 102, 241, 0.18);
-  border-color: rgba(99, 102, 241, 0.45);
-  color: #c7d2fe;
-  font-weight: 600;
+  background: #2a2b2c;
+  border: 1px solid #38393a;
+  color: #ffffff;
+  font-weight: 500;
 }
 
 .vsc-chat-pill-btn .pill-agent-icon {
-  color: #818cf8;
+  color: inherit;
 }
 
 /* AI Model Selector Wrapper (Matches Model Picker in VS Code) */
 .vsc-chat-model-wrapper {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 6px 0 7px;
-  height: 24px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: all 0.15s ease;
+  gap: 3px;
+  padding: 0 4px;
+  height: 22px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.12s ease;
   flex-shrink: 0;
   box-sizing: border-box;
   position: relative;
 }
 
 .vsc-chat-model-wrapper:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.16);
+  background: #2a2b2c;
+}
+
+.vsc-model-icon {
+  color: #8c8c8c;
+  flex-shrink: 0;
 }
 
 .vsc-chat-model-select {
@@ -1840,78 +1843,86 @@
   border: none;
   outline: none;
   font: 500 11px var(--sans);
-  color: #c4b5fd;
+  color: #cccccc;
   cursor: pointer;
-  max-width: 115px;
+  max-width: 85px;
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
   padding-right: 12px;
+  padding-left: 2px;
 }
 
 .vsc-chat-model-select option {
-  background: #1e1f29;
-  color: #f3f4f6;
-  padding: 6px;
+  background: #1e1f20;
+  color: #cccccc;
+  padding: 4px 6px;
+}
+
+.vsc-chat-model-select:hover {
+  color: #ffffff;
 }
 
 .vsc-model-chevron {
   position: absolute;
-  right: 5px;
+  right: 4px;
   pointer-events: none;
-  color: #9ca3af;
+  color: #8c8c8c;
 }
 
 /* Waterfall Composite Pill (Matches `Auto | Balance` in VS Code) */
 .vsc-composite-pill {
   display: inline-flex;
   align-items: center;
-  height: 24px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: all 0.15s ease;
+  height: 22px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.12s ease;
   flex-shrink: 0;
   box-sizing: border-box;
   overflow: hidden;
 }
 
 .vsc-composite-pill:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.16);
+  background: #2a2b2c;
 }
 
 .vsc-composite-pill.is-active {
-  background: rgba(245, 158, 11, 0.14);
-  border-color: rgba(245, 158, 11, 0.4);
+  background: #2a2b2c;
+  border: 1px solid #38393a;
 }
 
 .vsc-composite-left {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   background: transparent;
   border: none;
   outline: none;
-  padding: 0 6px 0 7px;
+  padding: 0 5px;
   height: 100%;
   font: 500 11px var(--sans);
-  color: #9ca3af;
+  color: #8c8c8c;
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color 0.12s ease;
+}
+
+.vsc-composite-pill .vsc-pill-icon {
+  color: inherit;
 }
 
 .vsc-composite-pill.is-active .vsc-composite-left {
-  color: #fbbf24;
-  font-weight: 600;
+  color: #ffffff;
+  font-weight: 500;
 }
 
 .vsc-composite-left:hover {
-  color: #f3f4f6;
+  color: #ffffff;
 }
 
 .vsc-composite-divider {
-  color: rgba(255, 255, 255, 0.15);
+  color: #38393a;
   font-size: 10px;
   user-select: none;
   line-height: 1;
@@ -1924,55 +1935,54 @@
   background: transparent;
   border: none;
   outline: none;
-  padding: 0 6px;
+  padding: 0 5px;
   height: 100%;
   font: 500 10.5px var(--sans);
-  color: #9ca3af;
+  color: #8c8c8c;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color 0.12s ease, background 0.12s ease;
 }
 
 .vsc-composite-right:hover {
-  color: #f3f4f6;
-  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
 /* VS Code Send Button (↑ Arrow / Stop Square) */
 .vsc-chat-send-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #6366f1;
+  background: transparent;
   color: #ffffff;
   border: none;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
   flex-shrink: 0;
   padding: 0;
 }
 
 .vsc-chat-send-btn:hover:not(:disabled) {
-  background: #4f46e5;
-  transform: scale(1.04);
+  background: #2a2b2c;
+  color: #ffffff;
 }
 
 .vsc-chat-send-btn:disabled {
-  background: rgba(255, 255, 255, 0.06);
-  color: #6b7280;
-  cursor: not-allowed;
-  opacity: 0.5;
+  background: transparent;
+  color: #555555;
+  cursor: default;
+  opacity: 0.6;
 }
 
 .vsc-chat-send-btn.stop {
-  background: #ef4444;
+  background: #2a2b2c;
   color: #ffffff;
 }
 
 .vsc-chat-send-btn.stop:hover {
-  background: #dc2626;
+  background: #38393a;
 }
 
 /* VS Code Composer Footer Statusbar */
@@ -1980,10 +1990,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 2px 4px 0;
+  gap: 6px;
+  padding: 2px 2px 0;
   font: 400 10.5px var(--sans);
-  color: #6b7280;
+  color: #7a7a7a;
   user-select: none;
   min-width: 0;
 }
@@ -1991,7 +2001,7 @@
 .vsc-statusbar-left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2002,24 +2012,28 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #9ca3af;
-  font-weight: 500;
+  color: #7a7a7a;
+  font-weight: 400;
+}
+
+.vsc-status-icon {
+  color: #7a7a7a;
 }
 
 .vsc-status-dot {
-  color: #4b5563;
+  color: #444444;
 }
 
 .vsc-status-text {
-  color: #9ca3af;
+  color: #7a7a7a;
 }
 
 .vsc-status-timer {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #c4b5fd;
-  font-weight: 600;
+  color: #cccccc;
+  font-weight: 500;
   font-family: var(--mono);
 }
 
@@ -2029,7 +2043,7 @@
 }
 
 .vsc-status-shortcut {
-  color: #4b5563;
+  color: #555555;
   font-size: 10px;
 }
 
@@ -2575,20 +2589,25 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background: #161723;
-  border: 1px solid #282a3d;
-  color: #c4a9f4;
+  padding: 6px 10px;
+  border-radius: 5px;
+  background: #1e1f20;
+  border: 1px solid #2d2e30;
+  color: #cccccc;
   font-size: 11px;
   font-family: var(--mono);
 }
 
+.copilot-live-timer {
+  color: #8c8c8c;
+  font-size: 10.5px;
+}
+
 .copilot-generating-bar .stop-link {
   margin-left: auto;
-  border: 1px solid rgba(255, 90, 90, 0.4);
-  background: rgba(255, 70, 70, 0.15);
-  color: #ff8080;
+  border: 1px solid #38393a;
+  background: #2a2b2c;
+  color: #cccccc;
   font-size: 10px;
   padding: 2px 8px;
   border-radius: 4px;
@@ -2596,7 +2615,8 @@
 }
 
 .copilot-generating-bar .stop-link:hover {
-  background: rgba(255, 70, 70, 0.3);
+  background: #333536;
+  color: #ffffff;
 }
 
 /* Composer Context Bar */
@@ -3194,39 +3214,39 @@
   gap: 5px;
   padding: 2px 7px;
   border-radius: 4px;
-  background: #181926;
-  border: 1px solid #2d2f45;
-  color: #b3aed0;
+  background: #1e1f20;
+  border: 1px solid #2d2e30;
+  color: #8c8c8c;
   font: 500 9.5px var(--mono);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
   user-select: none;
 }
 
 .telemetry-pill-btn:hover,
 .telemetry-pill-btn.is-active {
-  background: #222436;
-  border-color: #6366f1;
-  color: #f1edfa;
-  box-shadow: 0 0 8px rgba(99, 102, 241, 0.25);
+  background: #2a2b2c;
+  border-color: #38393a;
+  color: #ffffff;
+  box-shadow: none;
 }
 
 .telemetry-models-summary {
-  font-weight: 700;
-  color: #c4b5fd;
+  font-weight: 600;
+  color: #cccccc;
 }
 
 .telemetry-dot {
-  color: #4b4860;
+  color: #4a4a4a;
 }
 
 .telemetry-stat {
-  color: #9d98b0;
+  color: #8c8c8c;
 }
 
 .telemetry-chevron {
-  color: #726e82;
-  transition: transform 0.15s ease;
+  color: #8c8c8c;
+  transition: transform 0.12s ease;
 }
 
 .telemetry-chevron.is-open {
@@ -3239,13 +3259,13 @@
   bottom: calc(100% + 6px);
   right: 0;
   width: 320px;
-  background: #11121c;
-  border: 1px solid #2f3248;
-  border-radius: 8px;
+  background: #1e1f20;
+  border: 1px solid #2d2e30;
+  border-radius: 6px;
   padding: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
   z-index: 100;
-  animation: menuFadeIn 0.15s ease-out;
+  animation: menuFadeIn 0.12s ease-out;
 }
 
 .telemetry-card-header {
@@ -3254,14 +3274,14 @@
   justify-content: space-between;
   padding-bottom: 6px;
   margin-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid #2d2e30;
   font: 600 10.5px var(--sans);
-  color: #ede9fe;
+  color: #cccccc;
 }
 
 .telemetry-card-total {
   font: 500 9.5px var(--mono);
-  color: #8b5cf6;
+  color: #8c8c8c;
 }
 
 .telemetry-models-list {
@@ -3272,9 +3292,9 @@
 
 .telemetry-model-row.clean-view {
   padding: 8px 10px;
-  border-radius: 6px;
-  background: #151624;
-  border: 1px solid #282a3d;
+  border-radius: 5px;
+  background: #191a1b;
+  border: 1px solid #2d2e30;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -3287,9 +3307,9 @@
 }
 
 .model-alias-badge {
-  background: #24273d;
-  border: 1px solid #3c4060;
-  color: #c4b5fd;
+  background: #2a2b2c;
+  border: 1px solid #38393a;
+  color: #cccccc;
   font: 700 9px var(--mono);
   padding: 1px 5px;
   border-radius: 3px;
@@ -3297,7 +3317,7 @@
 
 .model-name-text {
   font: 500 10px var(--mono);
-  color: #e2e8f0;
+  color: #cccccc;
 }
 
 .model-status-tag {
