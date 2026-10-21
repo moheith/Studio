@@ -90,6 +90,10 @@ export default function App() {
   ])
   const [selectedModel, setSelectedModel] = useState('antigravity-preview-latest')
   const [isAntigravityMode, setIsAntigravityMode] = useState<boolean>(true)
+  const [useWaterfall, setUseWaterfall] = useState<boolean>(() => {
+    const saved = localStorage.getItem('yulya:use-waterfall')
+    return saved !== null ? saved === 'true' : true
+  })
   const [projectName, setProjectName] = useState('little-star')
   const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [saveState, setSaveState] = useState('Saved')
@@ -248,7 +252,7 @@ export default function App() {
     try {
       let answer = ''
       const toolsUsed: string[] = []
-      for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel, antigravity: isAntigravityMode }, controller.signal)) {
+      for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel, antigravity: isAntigravityMode, waterfall: useWaterfall }, controller.signal)) {
         resetActivityTimer()
         if (event.type === 'thought') {
           const chunk = event.data.text || ''
@@ -622,6 +626,10 @@ export default function App() {
   if (page === 'studio') return <><StudioPage {...{
     user, currentGame, activeFile, openFiles, setOpenFiles, code, language, tree, sidebarOpen, terminalOpen, chat, chatMessages, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel, dirtyFiles, setDirtyFiles,
     isAntigravityMode, setIsAntigravityMode,
+    useWaterfall, setUseWaterfall: (v: boolean) => {
+      setUseWaterfall(v)
+      localStorage.setItem('yulya:use-waterfall', String(v))
+    },
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
     notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, renameProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
     isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles, updateWaterfall,

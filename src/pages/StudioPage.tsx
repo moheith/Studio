@@ -6,7 +6,7 @@ import {
   Code2, Copy, Download, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
-  Rocket, Search, Settings2, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X
+  Rocket, Search, Settings2, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X, Zap
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
@@ -60,6 +60,8 @@ type StudioProps = {
   stopAiGeneration?: () => void
   isAntigravityMode?: boolean
   setIsAntigravityMode?: (v: boolean) => void
+  useWaterfall?: boolean
+  setUseWaterfall?: (v: boolean) => void
   updateWaterfall?: (models: string[]) => Promise<void>
 }
 
@@ -2312,30 +2314,26 @@ export default function StudioPage(p: StudioProps) {
                             {openTelemetryId === msg.id && (
                               <div className="telemetry-dropdown-card" onClick={e => e.stopPropagation()}>
                                 <div className="telemetry-card-header">
-                                  <span className="telemetry-card-title">✦ Execution Telemetry & Waterfall</span>
+                                  <span className="telemetry-card-title">Model Telemetry</span>
                                   <span className="telemetry-card-total">{msg.telemetry.total_tokens?.toLocaleString()} tokens • {msg.telemetry.total_duration}s</span>
                                 </div>
                                 <div className="telemetry-models-list">
                                   {msg.telemetry.models?.map((mod, mi) => (
-                                    <div key={mi} className={`telemetry-model-row status-${mod.status}`}>
-                                      <div className="model-row-top">
+                                    <div key={mi} className="telemetry-model-row clean-view">
+                                      <div className="model-row-name">
                                         <span className="model-alias-badge">{mod.alias}</span>
                                         <span className="model-name-text">{mod.name}</span>
-                                        <span className={`model-status-pill status-${mod.status}`}>
-                                          {mod.status === 'completed' ? '✓ Completed' : mod.status === 'cascaded' ? '⚡ Cascaded' : '✕ Failed'}
+                                      </div>
+                                      <div className="model-row-metrics-clean">
+                                        <span className="clean-metric">
+                                          <span className="clean-label">Tokens:</span>
+                                          <strong>{mod.total_tokens?.toLocaleString() ?? 0}</strong>
+                                        </span>
+                                        <span className="clean-metric">
+                                          <span className="clean-label">Time taken:</span>
+                                          <strong>{mod.duration_seconds ?? 0}s</strong>
                                         </span>
                                       </div>
-                                      <div className="model-row-metrics">
-                                        <span>In: <strong>{mod.input_tokens?.toLocaleString() ?? 0}</strong></span>
-                                        <span>Out: <strong>{mod.output_tokens?.toLocaleString() ?? 0}</strong></span>
-                                        <span>Total: <strong>{mod.total_tokens?.toLocaleString() ?? 0}</strong></span>
-                                        <span>Time: <strong>{mod.duration_seconds ?? 0}s</strong></span>
-                                      </div>
-                                      {mod.error && (
-                                        <div className="model-row-error">
-                                          Reason: {mod.error}
-                                        </div>
-                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -2385,6 +2383,24 @@ export default function StudioPage(p: StudioProps) {
                     </span>
                     <Sparkles size={11} className="antigravity-sparkle" />
                     <span className="antigravity-label-text">Antigravity</span>
+                  </label>
+
+                  {/* Waterfall Failover Checkbox Toggle */}
+                  <label
+                    className={`antigravity-checkbox-toggle waterfall-checkbox-toggle ${p.useWaterfall ? 'is-active' : ''}`}
+                    title="Enable Model Waterfall failover (if unchecked, only the current model selected will be used)"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(p.useWaterfall)}
+                      onChange={e => p.setUseWaterfall?.(e.target.checked)}
+                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                    />
+                    <span className="antigravity-toggle-box">
+                      {p.useWaterfall ? <Check size={10} className="check-icon" /> : null}
+                    </span>
+                    <Zap size={11} className="waterfall-toggle-bolt" />
+                    <span className="antigravity-label-text">Waterfall</span>
                   </label>
 
                   {/* Model Selector Dropdown */}

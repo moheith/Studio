@@ -2910,6 +2910,56 @@
   gap: 4px;
 }
 
+.telemetry-model-row.clean-view {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #151624;
+  border: 1px solid #282a3d;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.model-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-row-metrics-clean {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-left: 2px;
+}
+
+.clean-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font: 400 9.5px var(--mono);
+  color: #9c97b0;
+}
+
+.clean-metric strong {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.clean-label {
+  color: #71717a;
+}
+
+.waterfall-checkbox-toggle.is-active {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+}
+
+.waterfall-toggle-bolt {
+  color: #fbbf24;
+}
+
 .telemetry-model-row.status-cascaded {
   border-color: rgba(245, 158, 11, 0.35);
   background: rgba(245, 158, 11, 0.04);

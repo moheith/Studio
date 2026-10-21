@@ -126,7 +126,36 @@ class MemoryCollection:
             for field in ("email_norm", "username", "api_key_fingerprint"):
                 value = updates.get(field)
                 if value is not None and any(other is not doc and other.get(field) == value for other in self.data.values()): raise DuplicateKeyError("duplicate value")
-            doc.update(updates); doc.update({k: doc.get(k, 0) + v for k, v in update.get("$inc", {}).items()})
+            for k, v in updates.items():
+                if "." in k:
+                    parts = k.split(".")
+                    target = doc
+                    for p in parts[:-1]:
+                        if not isinstance(target.get(p), dict): target[p] = {}
+                        target = target[p]
+                    target[parts[-1]] = v
+                else:
+                    doc[k] = v
+            for k, v in update.get("$inc", {}).items():
+                if "." in k:
+                    parts = k.split(".")
+                    target = doc
+                    for p in parts[:-1]:
+                        if not isinstance(target.get(p), dict): target[p] = {}
+                        target = target[p]
+                    target[parts[-1]] = target.get(parts[-1], 0) + v
+                else:
+                    doc[k] = doc.get(k, 0) + v
+            for k, v in update.get("$max", {}).items():
+                if "." in k:
+                    parts = k.split(".")
+                    target = doc
+                    for p in parts[:-1]:
+                        if not isinstance(target.get(p), dict): target[p] = {}
+                        target = target[p]
+                    target[parts[-1]] = max(target.get(parts[-1], 0), v)
+                else:
+                    doc[k] = max(doc.get(k, 0), v)
     async def find_one_and_update(self, query: dict[str, Any], update: dict[str, Any], upsert: bool = False, return_document: Any = None):
         await self.update_one(query, update, upsert=upsert); return await self.find_one(query)
     async def delete_one(self, query: dict[str, Any]) -> None:
@@ -406,7 +435,7 @@ class KeyBody(BaseModel): api_key: str = Field(min_length=12, max_length=256)
 class ProjectBody(BaseModel): title: str = Field(min_length=1, max_length=60); visibility: str = "private"
 class VisibilityBody(BaseModel): visibility: str
 class FileBody(BaseModel): content: str = Field(max_length=5 * 1024 * 1024)
-class ChatBody(BaseModel): prompt: str = Field(min_length=1, max_length=12000); model: str | None = None; antigravity: bool | None = False
+class ChatBody(BaseModel): prompt: str = Field(min_length=1, max_length=12000); model: str | None = None; antigravity: bool | None = False; waterfall: bool | None = True
 class WaterfallBody(BaseModel): models: list[str]
 
 
@@ -505,7 +534,44 @@ async def login(body: LoginBody, response: Response, request: Request):
 
 @app.get("/api/auth/me")
 async def me(request: Request, user: dict[str, Any] = Depends(current_user)):
-    return {"user": _public_user(user), "csrf_token": request.state.csrf, "needs_username": not bool(user.get("username"))}
+    user_doc = await store.collection("users").find_one({"id": user["id"]}) or user
+    tokens = user_doc.get("tokens")
+    if not isinstance(tokens, dict) or tokens.get("total_tokens", 0) == 0:
+        try:
+            total_tokens = 0
+            input_tokens = 0
+            output_tokens = 0
+            max_single = 0
+            turns_count = 0
+            conv_docs = await store.collection("conversations").find({"owner_id": user["id"]}).to_list(1000)
+            for c in conv_docs:
+                for t in c.get("turns", []):
+                    telem = t.get("telemetry")
+                    if telem and isinstance(telem, dict):
+                        tot = telem.get("total_tokens", 0)
+                        if tot > 0:
+                            total_tokens += tot
+                            turns_count += 1
+                            max_single = max(max_single, tot)
+                            for m in telem.get("models", []):
+                                input_tokens += m.get("input_tokens", 0)
+                                output_tokens += m.get("output_tokens", 0)
+            if total_tokens > 0:
+                tokens = {
+                    "total_tokens": total_tokens,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "max_single_turn_tokens": max_single,
+                    "turns_count": turns_count,
+                }
+                await store.collection("users").update_one(
+                    {"id": user["id"]},
+                    {"$set": {"tokens": tokens}}
+                )
+                user_doc["tokens"] = tokens
+        except Exception:
+            pass
+    return {"user": _public_user(user_doc), "csrf_token": request.state.csrf, "needs_username": not bool(user_doc.get("username"))}
 
 
 @app.post("/api/auth/logout")
@@ -833,6 +899,43 @@ async def record_conversation_turn_start(owner_id: str, project_id: str, turn: d
             await col.update_one({"owner_id": owner_id, "project_id": project_id}, {"$set": {"turns": turns, "updated_at": _now()}})
 
 
+async def record_user_token_usage(user_id: str, total_tokens: int, input_tokens: int, output_tokens: int) -> None:
+    if total_tokens <= 0:
+        return
+    try:
+        user_doc = await store.collection("users").find_one({"id": user_id})
+        if not user_doc:
+            return
+        curr = user_doc.get("tokens")
+        if not isinstance(curr, dict):
+            curr = {
+                "total_tokens": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "max_single_turn_tokens": 0,
+                "turns_count": 0,
+            }
+        new_total = int(curr.get("total_tokens") or 0) + int(total_tokens)
+        new_input = int(curr.get("input_tokens") or 0) + int(input_tokens)
+        new_output = int(curr.get("output_tokens") or 0) + int(output_tokens)
+        new_turns = int(curr.get("turns_count") or 0) + 1
+        new_max = max(int(curr.get("max_single_turn_tokens") or 0), int(total_tokens))
+
+        new_tokens = {
+            "total_tokens": new_total,
+            "input_tokens": new_input,
+            "output_tokens": new_output,
+            "max_single_turn_tokens": new_max,
+            "turns_count": new_turns,
+        }
+        await store.collection("users").update_one(
+            {"id": user_id},
+            {"$set": {"tokens": new_tokens}}
+        )
+    except Exception as exc:
+        logger.error("Failed to update token stats: %s", exc)
+
+
 async def record_conversation_turn_complete(owner_id: str, project_id: str, turn_id: str, response_text: str, thought_text: str = "", status: str = "complete", telemetry: dict[str, Any] | None = None) -> None:
     col = store.collection("conversations")
     update_data: dict[str, Any] = {
@@ -1054,13 +1157,17 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
     turn = {"id": turn_id, "prompt": body.prompt, "response": "", "model": saved_model_name, "status": "running", "created_at": _now()}
     await record_conversation_turn_start(user["id"], project_id, turn)
 
-    user_doc = await store.collection("users").find_one({"id": user["id"]})
-    user_waterfall = (user_doc or {}).get("waterfall") or ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
-    chain_models = [model]
-    for wm in user_waterfall:
-        clean_m = wm.strip().removeprefix("models/")
-        if clean_m and clean_m not in chain_models:
-            chain_models.append(clean_m)
+    use_waterfall = body.waterfall is not False
+    if use_waterfall:
+        user_doc = await store.collection("users").find_one({"id": user["id"]})
+        user_waterfall = (user_doc or {}).get("waterfall") or ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+        chain_models = [model]
+        for wm in user_waterfall:
+            clean_m = wm.strip().removeprefix("models/")
+            if clean_m and clean_m not in chain_models:
+                chain_models.append(clean_m)
+    else:
+        chain_models = [model]
     chain_info = [{"model": cm, "alias": f"M{i+1}"} for i, cm in enumerate(chain_models)]
 
     async def stream():
@@ -1223,7 +1330,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                         continue
                     else:
                         current_stat["status"] = "failed"
-                        final_err = f"All waterfall models exhausted. Last model ({active_alias}: {active_model}) error: {effective_reason}"
+                        final_err = f"All waterfall models exhausted. Last model ({active_alias}: {active_model}) error: {effective_reason}" if use_waterfall else f"Model ({active_model}) error: {effective_reason}"
                         telemetry_models = [s for s in model_stats.values() if s["start_time"] is not None]
                         total_turn_tokens = sum(m.get("total_tokens", 0) for m in telemetry_models)
                         total_turn_duration = round(time.time() - turn_start_time, 2)
@@ -1237,24 +1344,12 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                             thought_text="".join(thought_text), status="error",
                             telemetry=telemetry_payload
                         )
-                        if total_turn_tokens > 0:
-                            try:
-                                await store.collection("users").update_one(
-                                    {"id": user["id"]},
-                                    {
-                                        "$inc": {
-                                            "tokens.total_tokens": total_turn_tokens,
-                                            "tokens.input_tokens": sum(m.get("input_tokens", 0) for m in telemetry_models),
-                                            "tokens.output_tokens": sum(m.get("output_tokens", 0) for m in telemetry_models),
-                                            "tokens.turns_count": 1,
-                                        },
-                                        "$max": {
-                                            "tokens.max_single_turn_tokens": total_turn_tokens,
-                                        },
-                                    }
-                                )
-                            except Exception:
-                                pass
+                        await record_user_token_usage(
+                            user["id"],
+                            total_turn_tokens,
+                            sum(m.get("input_tokens", 0) for m in telemetry_models),
+                            sum(m.get("output_tokens", 0) for m in telemetry_models)
+                        )
                         yield "event: telemetry\ndata: " + json.dumps(telemetry_payload) + "\n\n"
                         yield "event: error\ndata: " + json.dumps({"message": final_err}) + "\n\n"
                         return
@@ -1351,24 +1446,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             thought_text="".join(thought_text), status="complete",
             telemetry=telemetry_payload
         )
-        if total_turn_tokens > 0:
-            try:
-                await store.collection("users").update_one(
-                    {"id": user["id"]},
-                    {
-                        "$inc": {
-                            "tokens.total_tokens": total_turn_tokens,
-                            "tokens.input_tokens": turn_input_tokens,
-                            "tokens.output_tokens": turn_output_tokens,
-                            "tokens.turns_count": 1,
-                        },
-                        "$max": {
-                            "tokens.max_single_turn_tokens": total_turn_tokens,
-                        },
-                    }
-                )
-            except Exception:
-                pass
+        await record_user_token_usage(user["id"], total_turn_tokens, turn_input_tokens, turn_output_tokens)
         yield "event: telemetry\ndata: " + json.dumps(telemetry_payload) + "\n\n"
         yield "event: done\ndata: " + json.dumps({"message":"Ready"}) + "\n\n"
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control":"no-cache, no-transform","X-Accel-Buffering":"no"})
