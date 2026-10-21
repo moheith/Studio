@@ -3,7 +3,7 @@ import type * as React from 'react'
 import {
   ArrowDown, ArrowRight, ArrowUpRight, Check, Code2, Gamepad2,
   Globe2, LockKeyhole, Menu, MessageSquare,
-  Play, Rocket, Sparkles, WandSparkles,
+  Play, Rocket, Sparkles,
   X, Zap,
 } from 'lucide-react'
 import { api, deleteFile, getFile, saveFile, setCsrfToken, streamSse, uploadAsset } from './api'

@@ -848,7 +848,7 @@ async def get_project_conversation_turns(owner_id: str, project_id: str, limit: 
     # 2. Check legacy per-turn documents
     rows = await store.collection("conversations").find({"owner_id": owner_id, "project_id": project_id, "turns": {"$exists": False}}).sort("created_at", -1).limit(limit).to_list(limit)
     rows.reverse()
-    return [{"id": row.get("id", str(row.get("_id", ""))), "prompt": row.get("prompt", ""), "response": row.get("response", ""), "thought": row.get("thought", ""), "model": row.get("model", ""), "created_at": row.get("created_at", 0), "status": row.get("status", "complete"), "telemetry": row.get("telemetry")} for row in rows]
+    return [{"id": row.get("id", str(row.get("_id", ""))), "prompt": row.get("prompt", ""), "response": row.get("response", ""), "thought": row.get("thought", ""), "model": row.get("model", ""), "created_at": row.get("created_at", 0), "status": row.get("status", "complete"), "telemetry": row.get("telemetry"), "error": row.get("error"), "grounding": row.get("grounding")} for row in rows]
 
 
 async def record_conversation_turn_start(owner_id: str, project_id: str, turn: dict[str, Any]) -> None:
@@ -1309,309 +1309,321 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                 "error": None
             }
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(3000.0, connect=30.0)) as client:
-            while calls < max_calls:
-                active_info = chain_info[current_chain_idx]
-                active_model = active_info["model"]
-                active_alias = active_info["alias"]
-                current_stat = model_stats[active_alias]
-                if current_stat["start_time"] is None:
-                    current_stat["start_time"] = time.time()
-                    current_stat["status"] = "running"
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(3000.0, connect=30.0)) as client:
+                while calls < max_calls:
+                    active_info = chain_info[current_chain_idx]
+                    active_model = active_info["model"]
+                    active_alias = active_info["alias"]
+                    current_stat = model_stats[active_alias]
+                    if current_stat["start_time"] is None:
+                        current_stat["start_time"] = time.time()
+                        current_stat["status"] = "running"
 
-                call_input_tokens = 0
-                call_output_tokens = 0
-                call_total_tokens = 0
-                call_text_generated: list[str] = []
+                    call_input_tokens = 0
+                    call_output_tokens = 0
+                    call_total_tokens = 0
+                    call_text_generated: list[str] = []
 
-                request_body = {
-                    "systemInstruction": {"parts": [{"text": system}]},
-                    "contents": contents,
-                    "tools": tool_declarations,
-                    "generationConfig": {"temperature": 0.2}
-                }
+                    request_body = {
+                        "systemInstruction": {"parts": [{"text": system}]},
+                        "contents": contents,
+                        "tools": tool_declarations,
+                        "generationConfig": {"temperature": 0.2}
+                    }
 
-                failed_reason: str | None = None
-                full_parts: list[dict[str, Any]] = []
-                turn_interrupted_by_tokens = False
+                    failed_reason: str | None = None
+                    full_parts: list[dict[str, Any]] = []
+                    turn_interrupted_by_tokens = False
 
-                try:
-                    async with client.stream(
-                        "POST",
-                        f"{GEMINI_API_BASE}/models/{active_model}:streamGenerateContent?alt=sse",
-                        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-                        json=request_body
-                    ) as resp:
-                        if resp.status_code == 429:
-                            raw_body = await resp.aread()
-                            err_text = ""
-                            try:
-                                err_data = json.loads(raw_body.decode())
-                                err_text = err_data.get("error", {}).get("message") or err_data.get("message") or ""
-                            except Exception: pass
-                            failed_reason = f"Rate limit reached (429): {err_text}" if err_text else "Rate limit reached (429)"
-                        elif resp.status_code != 200:
-                            raw_body = await resp.aread()
-                            err_text = ""
-                            try:
-                                err_data = json.loads(raw_body.decode())
-                                err_text = err_data.get("error", {}).get("message") or err_data.get("message") or ""
-                            except Exception:
-                                err_text = raw_body.decode("utf-8", "replace")[:500]
-                            failed_reason = f"API error ({resp.status_code}): {err_text}" if err_text else f"API error ({resp.status_code})"
-                        else:
-                            async for line in resp.aiter_lines():
-                                if not line.startswith("data: "): continue
-                                try: payload = json.loads(line[6:])
-                                except json.JSONDecodeError: continue
-
-                                if payload.get("error"):
-                                    err_msg = payload["error"].get("message") or json.dumps(payload["error"])
-                                    failed_reason = f"Stream error: {err_msg}"
-                                    break
-
-                                if payload.get("promptFeedback", {}).get("blockReason"):
-                                    reason = payload["promptFeedback"]["blockReason"]
-                                    failed_reason = f"Safety block: {reason}"
-                                    break
-
-                                if "usageMetadata" in payload:
-                                    u = payload["usageMetadata"]
-                                    call_input_tokens = u.get("promptTokenCount", call_input_tokens)
-                                    call_output_tokens = u.get("candidatesTokenCount", call_output_tokens)
-                                    call_total_tokens = u.get("totalTokenCount", call_total_tokens)
-
-                                for candidate in payload.get("candidates", []):
-                                    if candidate.get("finishReason") == "MAX_TOKENS":
-                                        turn_interrupted_by_tokens = True
-
-                                    if candidate.get("groundingMetadata"):
-                                        gm = candidate["groundingMetadata"]
-                                        candidate_queries = gm.get("webSearchQueries", [])
-                                        candidate_sources = []
-                                        for chunk in gm.get("groundingChunks", []):
-                                            web = chunk.get("web")
-                                            if web and web.get("uri"):
-                                                candidate_sources.append({
-                                                    "title": web.get("title") or web.get("uri"),
-                                                    "url": web.get("uri")
-                                                })
-                                        if candidate_queries or candidate_sources:
-                                            for cq in candidate_queries:
-                                                if cq and cq not in turn_grounding["queries"]:
-                                                    turn_grounding["queries"].append(cq)
-                                            for cs in candidate_sources:
-                                                if cs.get("url") and not any(s.get("url") == cs["url"] for s in turn_grounding["sources"]):
-                                                    turn_grounding["sources"].append(cs)
-                                            yield "event: grounding\ndata: " + json.dumps({
-                                                "queries": candidate_queries,
-                                                "sources": candidate_sources
-                                            }) + "\n\n"
-
-                                    for part in candidate.get("content", {}).get("parts", []):
-                                        if part.get("thought"):
-                                            t = part.get("text", "")
-                                            if t:
-                                                thought_text.append(t)
-                                                yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
-                                        elif part.get("text"):
-                                            call_text_generated.append(part["text"])
-                                            response_text.append(part["text"])
-                                            yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
-                                        if part.get("functionCall"):
-                                            full_parts.append(part)
-                except httpx.TimeoutException:
-                    failed_reason = "Request timed out after 3000 seconds with no response"
-                except Exception as exc:
-                    failed_reason = f"Connection error: {str(exc)}"
-
-                # Accumulate tokens recorded from this API call
-                if call_total_tokens > 0:
-                    current_stat["input_tokens"] += call_input_tokens
-                    current_stat["output_tokens"] += call_output_tokens
-                    current_stat["total_tokens"] += call_total_tokens
-                elif call_text_generated and not failed_reason:
-                    fallback_out = len("".join(call_text_generated)) // 4
-                    fallback_in = len(json.dumps(contents)) // 4
-                    current_stat["input_tokens"] += fallback_in
-                    current_stat["output_tokens"] += fallback_out
-                    current_stat["total_tokens"] += (fallback_in + fallback_out)
-
-                if failed_reason or turn_interrupted_by_tokens:
-                    effective_reason = failed_reason or "Output token limit reached (MAX_TOKENS)"
-                    current_stat["duration_seconds"] = round(time.time() - (current_stat["start_time"] or time.time()), 2)
-                    current_stat["error"] = effective_reason
-                    if current_chain_idx + 1 < len(chain_info):
-                        current_stat["status"] = "cascaded"
-                        current_chain_idx += 1
-                        next_info = chain_info[current_chain_idx]
-                        trans_event = {
-                            "from_model": active_model,
-                            "from_alias": active_alias,
-                            "to_model": next_info["model"],
-                            "to_alias": next_info["alias"],
-                            "reason": effective_reason
-                        }
-                        waterfall_transitions.append(trans_event)
-                        yield "event: waterfall_transition\ndata: " + json.dumps(trans_event) + "\n\n"
-                        trans_thought = f"\n⚡ [{active_alias}: {active_model} error: {effective_reason}] ➔ Cascaded to {next_info['alias']}: {next_info['model']}\n"
-                        thought_text.append(trans_thought)
-                        yield "event: thought\ndata: " + json.dumps({"text": trans_thought}) + "\n\n"
-                        if turn_interrupted_by_tokens:
-                            contents.append({"role": "user", "parts": [{"text": "Continue writing the remaining code or response starting directly from where it stopped. Do not repeat earlier lines."}]})
-                        continue
-                    else:
-                        current_stat["status"] = "failed"
-                        final_err = f"All waterfall models exhausted. Last model ({active_alias}: {active_model}) error: {effective_reason}" if use_waterfall else f"Model ({active_model}) error: {effective_reason}"
-                        telemetry_models = [s for s in model_stats.values() if s["start_time"] is not None]
-                        total_turn_tokens = sum(m.get("total_tokens", 0) for m in telemetry_models)
-                        total_turn_duration = round(time.time() - turn_start_time, 2)
-                        telemetry_payload = {
-                            "models": telemetry_models,
-                            "total_tokens": total_turn_tokens,
-                            "total_duration": total_turn_duration,
-                            "waterfallTransitions": waterfall_transitions
-                        }
-                        saved_resp = "".join(response_text) or f"Error: {final_err}"
-                        await record_conversation_turn_complete(
-                            user["id"], project_id, turn_id, saved_resp,
-                            thought_text="".join(thought_text), status="error",
-                            telemetry=telemetry_payload,
-                            grounding=turn_grounding if (turn_grounding["queries"] or turn_grounding["sources"]) else None,
-                            error=final_err
-                        )
-                        await record_user_token_usage(
-                            user["id"],
-                            total_turn_tokens,
-                            sum(m.get("input_tokens", 0) for m in telemetry_models),
-                            sum(m.get("output_tokens", 0) for m in telemetry_models)
-                        )
-                        yield "event: telemetry\ndata: " + json.dumps(telemetry_payload) + "\n\n"
-                        yield "event: error\ndata: " + json.dumps({"message": final_err}) + "\n\n"
-                        return
-
-                if not full_parts:
-                    current_stat["duration_seconds"] = round(time.time() - (current_stat["start_time"] or time.time()), 2)
-                    current_stat["status"] = "completed"
-                    break
-
-                contents.append({"role":"model","parts":full_parts}); function_results = []
-                for part in full_parts:
-                    call = part["functionCall"]; name = call.get("name"); args = call.get("args", {}); result: dict[str, Any]
-                    tool_desc = ""
-                    if name == "create_file": tool_desc = f"Creating file: {args.get('path', '')}"
-                    elif name == "create_folder": tool_desc = f"Creating folder: {args.get('folder_path', '')}"
-                    elif name == "write_file": tool_desc = f"Writing file: {args.get('path', '')}"
-                    elif name == "read_file": tool_desc = f"Reading file: {args.get('path', '')}"
-                    elif name == "delete_file": tool_desc = f"Deleting file: {args.get('path', '')}"
-                    elif name == "search_files": tool_desc = f"Searching files for '{args.get('query', '')}'"
-                    elif name == "search_grounding": tool_desc = f"Searching Google for: '{args.get('query', '')}'"
-                    elif name == "list_files": tool_desc = "Scanning project files"
-                    elif name == "request_reload": tool_desc = "Live preview reloaded"
-                    if tool_desc:
-                        action_msg = f"\n→ [Action] {tool_desc}\n"
-                        thought_text.append(action_msg)
-                        yield "event: thought\ndata: " + json.dumps({"text": action_msg}) + "\n\n"
                     try:
-                        if name == "list_files": result = {"files": [f["path"] for f in await file_index(project_id)]}
-                        elif name == "read_file": result = {"content": (await project_file_content(project, files_store._relative(args["path"]))).decode("utf-8", "replace")[:50000]}
-                        elif name == "create_file":
-                            if not isinstance(args.get("path"), str): raise HTTPException(400, "File path must be text")
-                            rel = files_store._relative(args["path"])
-                            content = str(args.get("content") or "").encode()
-                            etag = await persist_project_file(project, rel, content, None, enforce_etag=False)
-                            baseline_etags[rel] = etag
-                            result = {"created": rel, "size": len(content)}
-                            yield "event: tool\ndata: " + json.dumps({"name": "create_file", "path": rel}) + "\n\n"
-                        elif name == "create_folder":
-                            if not isinstance(args.get("folder_path"), str): raise HTTPException(400, "Folder path must be text")
-                            clean_folder = args["folder_path"].replace("\\", "/").strip("/")
-                            if not clean_folder or any(p in {".", ".."} or p.startswith(".") for p in clean_folder.split("/")):
-                                raise HTTPException(400, "Invalid folder path")
-                            marker_path = files_store._relative(f"{clean_folder}/.keep.json")
-                            marker_content = b'{"folder": true}'
-                            etag = await persist_project_file(project, marker_path, marker_content, None, enforce_etag=False)
-                            baseline_etags[marker_path] = etag
-                            result = {"created_folder": clean_folder}
-                            yield "event: tool\ndata: " + json.dumps({"name": "create_folder", "path": clean_folder}) + "\n\n"
-                        elif name == "write_file":
-                            if not isinstance(args.get("path"), str) or not isinstance(args.get("content"), str): raise HTTPException(400, "File path and content must be text")
-                            rel = files_store._relative(args["path"]); content = args["content"].encode()
-                            etag = await persist_project_file(project, rel, content, baseline_etags.get(rel), enforce_etag=False)
-                            baseline_etags[rel] = etag
-                            result = {"saved": rel}; yield "event: tool\ndata: " + json.dumps({"name":"write_file","path":rel}) + "\n\n"
-                        elif name == "delete_file":
-                            rel = files_store._relative(args["path"])
-                            if rel == "index.html": raise HTTPException(400,"Cannot delete index.html")
-                            await remove_project_file(project, rel, baseline_etags.get(rel), enforce_etag=True)
-                            baseline_etags.pop(rel, None); result = {"deleted":rel}; yield "event: tool\ndata: " + json.dumps({"name":"delete_file","path":rel}) + "\n\n"
-                        elif name == "search_files":
-                            query = str(args.get("query", "")).strip().lower()
-                            if not query or len(query) > 200: raise HTTPException(400, "Search query must be 1–200 characters")
-                            matches = []
-                            for item in await file_index(project_id):
-                                if item["path"].lower().endswith((".html", ".css", ".js", ".mjs", ".json")):
-                                    text = (await project_file_content(project, item["path"])).decode("utf-8", "replace")
-                                    for line_number, line in enumerate(text.splitlines(), 1):
-                                        if query in line.lower(): matches.append({"path": item["path"], "line": line_number, "text": line[:500]})
-                                        if len(matches) >= 100: break
-                            result = {"matches": matches[:100]}
-                        elif name == "search_grounding":
-                            if not is_antigravity:
-                                result = {"error": "search_grounding tool is only available when Antigravity mode is active"}
+                        async with client.stream(
+                            "POST",
+                            f"{GEMINI_API_BASE}/models/{active_model}:streamGenerateContent?alt=sse",
+                            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                            json=request_body
+                        ) as resp:
+                            if resp.status_code == 429:
+                                raw_body = await resp.aread()
+                                err_text = ""
+                                try:
+                                    err_data = json.loads(raw_body.decode())
+                                    err_text = err_data.get("error", {}).get("message") or err_data.get("message") or ""
+                                except Exception: pass
+                                failed_reason = f"Rate limit reached (429): {err_text}" if err_text else "Rate limit reached (429)"
+                            elif resp.status_code != 200:
+                                raw_body = await resp.aread()
+                                err_text = ""
+                                try:
+                                    err_data = json.loads(raw_body.decode())
+                                    err_text = err_data.get("error", {}).get("message") or err_data.get("message") or ""
+                                except Exception:
+                                    err_text = raw_body.decode("utf-8", "replace")[:500]
+                                failed_reason = f"API error ({resp.status_code}): {err_text}" if err_text else f"API error ({resp.status_code})"
                             else:
-                                sq = str(args.get("query", "")).strip()
-                                status_msg = f"🔍 Grounding with Google Search: '{sq}'…"
-                                yield "event: status\ndata: " + json.dumps({"message": status_msg}) + "\n\n"
-                                grounding_res = await perform_search_grounding(api_key, active_model, sq)
-                                result = grounding_res
-                                if sq and sq not in turn_grounding["queries"]:
-                                    turn_grounding["queries"].append(sq)
-                                for s in grounding_res.get("sources", []):
-                                    if s.get("url") and not any(x.get("url") == s["url"] for x in turn_grounding["sources"]):
-                                        turn_grounding["sources"].append(s)
-                                yield "event: grounding\ndata: " + json.dumps({
-                                    "queries": [sq] if sq else [],
-                                    "sources": grounding_res.get("sources", [])
-                                }) + "\n\n"
-                                yield "event: tool\ndata: " + json.dumps({"name": "search_grounding", "path": sq, "query": sq}) + "\n\n"
-                                if grounding_res.get("sources"):
-                                    top_srcs = ", ".join(f"[{s.get('title') or s.get('url')}]" for s in grounding_res["sources"][:3])
-                                    g_thought = f"\n🌐 [Google Search Grounding] Sources discovered: {top_srcs}\n"
-                                    thought_text.append(g_thought)
-                                    yield "event: thought\ndata: " + json.dumps({"text": g_thought}) + "\n\n"
-                        elif name == "request_reload":
-                            result = {"requested": True}; yield "event: reload_preview\ndata: {}\n\n"
-                        else: result = {"error":"Unknown tool"}
-                    except (HTTPException, KeyError) as exc: result = {"error":exc.detail if isinstance(exc, HTTPException) else "Required file path/content missing"}
-                    function_results.append({"functionResponse":{"name":name,"response":result}})
-                contents.append({"role":"user","parts":function_results}); calls += 1
+                                async for line in resp.aiter_lines():
+                                    if not line.startswith("data: "): continue
+                                    try: payload = json.loads(line[6:])
+                                    except json.JSONDecodeError: continue
 
-        for s in model_stats.values():
-            if s["start_time"] is not None and s["status"] in ("running", "pending"):
-                s["duration_seconds"] = round(time.time() - s["start_time"], 2)
-                s["status"] = "completed"
+                                    if payload.get("error"):
+                                        err_msg = payload["error"].get("message") or json.dumps(payload["error"])
+                                        failed_reason = f"Stream error: {err_msg}"
+                                        break
 
-        telemetry_models = [s for s in model_stats.values() if s["start_time"] is not None]
-        total_turn_tokens = sum(m.get("total_tokens", 0) for m in telemetry_models)
-        turn_input_tokens = sum(m.get("input_tokens", 0) for m in telemetry_models)
-        turn_output_tokens = sum(m.get("output_tokens", 0) for m in telemetry_models)
-        total_turn_duration = round(time.time() - turn_start_time, 2)
-        telemetry_payload = {
-            "models": telemetry_models,
-            "total_tokens": total_turn_tokens,
-            "total_duration": total_turn_duration,
-            "waterfallTransitions": waterfall_transitions
-        }
-        await record_conversation_turn_complete(
-            user["id"], project_id, turn_id, "".join(response_text),
-            thought_text="".join(thought_text), status="complete",
-            telemetry=telemetry_payload,
-            grounding=turn_grounding if (turn_grounding["queries"] or turn_grounding["sources"]) else None
-        )
-        await record_user_token_usage(user["id"], total_turn_tokens, turn_input_tokens, turn_output_tokens)
-        yield "event: telemetry\ndata: " + json.dumps(telemetry_payload) + "\n\n"
-        yield "event: done\ndata: " + json.dumps({"message":"Ready"}) + "\n\n"
+                                    if payload.get("promptFeedback", {}).get("blockReason"):
+                                        reason = payload["promptFeedback"]["blockReason"]
+                                        failed_reason = f"Safety block: {reason}"
+                                        break
+
+                                    if "usageMetadata" in payload:
+                                        u = payload["usageMetadata"]
+                                        call_input_tokens = u.get("promptTokenCount", call_input_tokens)
+                                        call_output_tokens = u.get("candidatesTokenCount", call_output_tokens)
+                                        call_total_tokens = u.get("totalTokenCount", call_total_tokens)
+
+                                    for candidate in payload.get("candidates", []):
+                                        if candidate.get("finishReason") == "MAX_TOKENS":
+                                            turn_interrupted_by_tokens = True
+
+                                        if candidate.get("groundingMetadata"):
+                                            gm = candidate["groundingMetadata"]
+                                            candidate_queries = gm.get("webSearchQueries", [])
+                                            candidate_sources = []
+                                            for chunk in gm.get("groundingChunks", []):
+                                                web = chunk.get("web")
+                                                if web and web.get("uri"):
+                                                    candidate_sources.append({
+                                                        "title": web.get("title") or web.get("uri"),
+                                                        "url": web.get("uri")
+                                                    })
+                                            if candidate_queries or candidate_sources:
+                                                for cq in candidate_queries:
+                                                    if cq and cq not in turn_grounding["queries"]:
+                                                        turn_grounding["queries"].append(cq)
+                                                for cs in candidate_sources:
+                                                    if cs.get("url") and not any(s.get("url") == cs["url"] for s in turn_grounding["sources"]):
+                                                        turn_grounding["sources"].append(cs)
+                                                yield "event: grounding\ndata: " + json.dumps({
+                                                    "queries": candidate_queries,
+                                                    "sources": candidate_sources
+                                                }) + "\n\n"
+
+                                        for part in candidate.get("content", {}).get("parts", []):
+                                            if part.get("thought"):
+                                                t = part.get("text", "")
+                                                if t:
+                                                    thought_text.append(t)
+                                                    yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
+                                            elif part.get("text"):
+                                                call_text_generated.append(part["text"])
+                                                response_text.append(part["text"])
+                                                yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
+                                            if part.get("functionCall"):
+                                                full_parts.append(part)
+                    except httpx.TimeoutException:
+                        failed_reason = "Request timed out after 3000 seconds with no response"
+                    except Exception as exc:
+                        failed_reason = f"Connection error: {str(exc)}"
+
+                    # Accumulate tokens recorded from this API call
+                    if call_total_tokens > 0:
+                        current_stat["input_tokens"] += call_input_tokens
+                        current_stat["output_tokens"] += call_output_tokens
+                        current_stat["total_tokens"] += call_total_tokens
+                    elif call_text_generated and not failed_reason:
+                        fallback_out = len("".join(call_text_generated)) // 4
+                        fallback_in = len(json.dumps(contents)) // 4
+                        current_stat["input_tokens"] += fallback_in
+                        current_stat["output_tokens"] += fallback_out
+                        current_stat["total_tokens"] += (fallback_in + fallback_out)
+
+                    if failed_reason or turn_interrupted_by_tokens:
+                        effective_reason = failed_reason or "Output token limit reached (MAX_TOKENS)"
+                        current_stat["duration_seconds"] = round(time.time() - (current_stat["start_time"] or time.time()), 2)
+                        current_stat["error"] = effective_reason
+                        if current_chain_idx + 1 < len(chain_info):
+                            current_stat["status"] = "cascaded"
+                            current_chain_idx += 1
+                            next_info = chain_info[current_chain_idx]
+                            trans_event = {
+                                "from_model": active_model,
+                                "from_alias": active_alias,
+                                "to_model": next_info["model"],
+                                "to_alias": next_info["alias"],
+                                "reason": effective_reason
+                            }
+                            waterfall_transitions.append(trans_event)
+                            yield "event: waterfall_transition\ndata: " + json.dumps(trans_event) + "\n\n"
+                            trans_thought = f"\n⚡ [{active_alias}: {active_model} error: {effective_reason}] ➔ Cascaded to {next_info['alias']}: {next_info['model']}\n"
+                            thought_text.append(trans_thought)
+                            yield "event: thought\ndata: " + json.dumps({"text": trans_thought}) + "\n\n"
+                            if turn_interrupted_by_tokens:
+                                contents.append({"role": "user", "parts": [{"text": "Continue writing the remaining code or response starting directly from where it stopped. Do not repeat earlier lines."}]})
+                            continue
+                        else:
+                            current_stat["status"] = "failed"
+                            final_err = f"All waterfall models exhausted. Last model ({active_alias}: {active_model}) error: {effective_reason}" if use_waterfall else f"Model ({active_model}) error: {effective_reason}"
+                            telemetry_models = [s for s in model_stats.values() if s["start_time"] is not None]
+                            total_turn_tokens = sum(m.get("total_tokens", 0) for m in telemetry_models)
+                            total_turn_duration = round(time.time() - turn_start_time, 2)
+                            telemetry_payload = {
+                                "models": telemetry_models,
+                                "total_tokens": total_turn_tokens,
+                                "total_duration": total_turn_duration,
+                                "waterfallTransitions": waterfall_transitions
+                            }
+                            saved_resp = "".join(response_text) or f"Error: {final_err}"
+                            await record_conversation_turn_complete(
+                                user["id"], project_id, turn_id, saved_resp,
+                                thought_text="".join(thought_text), status="error",
+                                telemetry=telemetry_payload,
+                                grounding=turn_grounding if (turn_grounding["queries"] or turn_grounding["sources"]) else None,
+                                error=final_err
+                            )
+                            await record_user_token_usage(
+                                user["id"],
+                                total_turn_tokens,
+                                sum(m.get("input_tokens", 0) for m in telemetry_models),
+                                sum(m.get("output_tokens", 0) for m in telemetry_models)
+                            )
+                            yield "event: telemetry\ndata: " + json.dumps(telemetry_payload) + "\n\n"
+                            yield "event: error\ndata: " + json.dumps({"message": final_err}) + "\n\n"
+                            return
+
+                    if not full_parts:
+                        current_stat["duration_seconds"] = round(time.time() - (current_stat["start_time"] or time.time()), 2)
+                        current_stat["status"] = "completed"
+                        break
+
+                    contents.append({"role":"model","parts":full_parts}); function_results = []
+                    for part in full_parts:
+                        call = part["functionCall"]; name = call.get("name"); args = call.get("args", {}); result: dict[str, Any]
+                        tool_desc = ""
+                        if name == "create_file": tool_desc = f"Creating file: {args.get('path', '')}"
+                        elif name == "create_folder": tool_desc = f"Creating folder: {args.get('folder_path', '')}"
+                        elif name == "write_file": tool_desc = f"Writing file: {args.get('path', '')}"
+                        elif name == "read_file": tool_desc = f"Reading file: {args.get('path', '')}"
+                        elif name == "delete_file": tool_desc = f"Deleting file: {args.get('path', '')}"
+                        elif name == "search_files": tool_desc = f"Searching files for '{args.get('query', '')}'"
+                        elif name == "search_grounding": tool_desc = f"Searching Google for: '{args.get('query', '')}'"
+                        elif name == "list_files": tool_desc = "Scanning project files"
+                        elif name == "request_reload": tool_desc = "Live preview reloaded"
+                        if tool_desc:
+                            action_msg = f"\n→ [Action] {tool_desc}\n"
+                            thought_text.append(action_msg)
+                            yield "event: thought\ndata: " + json.dumps({"text": action_msg}) + "\n\n"
+                        try:
+                            if name == "list_files": result = {"files": [f["path"] for f in await file_index(project_id)]}
+                            elif name == "read_file": result = {"content": (await project_file_content(project, files_store._relative(args["path"]))).decode("utf-8", "replace")[:50000]}
+                            elif name == "create_file":
+                                if not isinstance(args.get("path"), str): raise HTTPException(400, "File path must be text")
+                                rel = files_store._relative(args["path"])
+                                content = str(args.get("content") or "").encode()
+                                etag = await persist_project_file(project, rel, content, None, enforce_etag=False)
+                                baseline_etags[rel] = etag
+                                result = {"created": rel, "size": len(content)}
+                                yield "event: tool\ndata: " + json.dumps({"name": "create_file", "path": rel}) + "\n\n"
+                            elif name == "create_folder":
+                                if not isinstance(args.get("folder_path"), str): raise HTTPException(400, "Folder path must be text")
+                                clean_folder = args["folder_path"].replace("\\", "/").strip("/")
+                                if not clean_folder or any(p in {".", ".."} or p.startswith(".") for p in clean_folder.split("/")):
+                                    raise HTTPException(400, "Invalid folder path")
+                                marker_path = files_store._relative(f"{clean_folder}/.keep.json")
+                                marker_content = b'{"folder": true}'
+                                etag = await persist_project_file(project, marker_path, marker_content, None, enforce_etag=False)
+                                baseline_etags[marker_path] = etag
+                                result = {"created_folder": clean_folder}
+                                yield "event: tool\ndata: " + json.dumps({"name": "create_folder", "path": clean_folder}) + "\n\n"
+                            elif name == "write_file":
+                                if not isinstance(args.get("path"), str) or not isinstance(args.get("content"), str): raise HTTPException(400, "File path and content must be text")
+                                rel = files_store._relative(args["path"]); content = args["content"].encode()
+                                etag = await persist_project_file(project, rel, content, baseline_etags.get(rel), enforce_etag=False)
+                                baseline_etags[rel] = etag
+                                result = {"saved": rel}; yield "event: tool\ndata: " + json.dumps({"name":"write_file","path":rel}) + "\n\n"
+                            elif name == "delete_file":
+                                rel = files_store._relative(args["path"])
+                                if rel == "index.html": raise HTTPException(400,"Cannot delete index.html")
+                                await remove_project_file(project, rel, baseline_etags.get(rel), enforce_etag=True)
+                                baseline_etags.pop(rel, None); result = {"deleted":rel}; yield "event: tool\ndata: " + json.dumps({"name":"delete_file","path":rel}) + "\n\n"
+                            elif name == "search_files":
+                                query = str(args.get("query", "")).strip().lower()
+                                if not query or len(query) > 200: raise HTTPException(400, "Search query must be 1–200 characters")
+                                matches = []
+                                for item in await file_index(project_id):
+                                    if item["path"].lower().endswith((".html", ".css", ".js", ".mjs", ".json")):
+                                        text = (await project_file_content(project, item["path"])).decode("utf-8", "replace")
+                                        for line_number, line in enumerate(text.splitlines(), 1):
+                                            if query in line.lower(): matches.append({"path": item["path"], "line": line_number, "text": line[:500]})
+                                            if len(matches) >= 100: break
+                                result = {"matches": matches[:100]}
+                            elif name == "search_grounding":
+                                if not is_antigravity:
+                                    result = {"error": "search_grounding tool is only available when Antigravity mode is active"}
+                                else:
+                                    sq = str(args.get("query", "")).strip()
+                                    status_msg = f"🔍 Grounding with Google Search: '{sq}'…"
+                                    yield "event: status\ndata: " + json.dumps({"message": status_msg}) + "\n\n"
+                                    grounding_res = await perform_search_grounding(api_key, active_model, sq)
+                                    result = grounding_res
+                                    if sq and sq not in turn_grounding["queries"]:
+                                        turn_grounding["queries"].append(sq)
+                                    for s in grounding_res.get("sources", []):
+                                        if s.get("url") and not any(x.get("url") == s["url"] for x in turn_grounding["sources"]):
+                                            turn_grounding["sources"].append(s)
+                                    yield "event: grounding\ndata: " + json.dumps({
+                                        "queries": [sq] if sq else [],
+                                        "sources": grounding_res.get("sources", [])
+                                    }) + "\n\n"
+                                    yield "event: tool\ndata: " + json.dumps({"name": "search_grounding", "path": sq, "query": sq}) + "\n\n"
+                                    if grounding_res.get("sources"):
+                                        top_srcs = ", ".join(f"[{s.get('title') or s.get('url')}]" for s in grounding_res["sources"][:3])
+                                        g_thought = f"\n🌐 [Google Search Grounding] Sources discovered: {top_srcs}\n"
+                                        thought_text.append(g_thought)
+                                        yield "event: thought\ndata: " + json.dumps({"text": g_thought}) + "\n\n"
+                            elif name == "request_reload":
+                                result = {"requested": True}; yield "event: reload_preview\ndata: {}\n\n"
+                            else: result = {"error":"Unknown tool"}
+                        except (HTTPException, KeyError) as exc: result = {"error":exc.detail if isinstance(exc, HTTPException) else "Required file path/content missing"}
+                        function_results.append({"functionResponse":{"name":name,"response":result}})
+                    contents.append({"role":"user","parts":function_results}); calls += 1
+
+            for s in model_stats.values():
+                if s["start_time"] is not None and s["status"] in ("running", "pending"):
+                    s["duration_seconds"] = round(time.time() - s["start_time"], 2)
+                    s["status"] = "completed"
+
+            telemetry_models = [s for s in model_stats.values() if s["start_time"] is not None]
+            total_turn_tokens = sum(m.get("total_tokens", 0) for m in telemetry_models)
+            turn_input_tokens = sum(m.get("input_tokens", 0) for m in telemetry_models)
+            turn_output_tokens = sum(m.get("output_tokens", 0) for m in telemetry_models)
+            total_turn_duration = round(time.time() - turn_start_time, 2)
+            telemetry_payload = {
+                "models": telemetry_models,
+                "total_tokens": total_turn_tokens,
+                "total_duration": total_turn_duration,
+                "waterfallTransitions": waterfall_transitions
+            }
+            await record_conversation_turn_complete(
+                user["id"], project_id, turn_id, "".join(response_text),
+                thought_text="".join(thought_text), status="complete",
+                telemetry=telemetry_payload,
+                grounding=turn_grounding if (turn_grounding["queries"] or turn_grounding["sources"]) else None
+            )
+            await record_user_token_usage(user["id"], total_turn_tokens, turn_input_tokens, turn_output_tokens)
+            yield "event: telemetry\ndata: " + json.dumps(telemetry_payload) + "\n\n"
+            yield "event: done\ndata: " + json.dumps({"message":"Ready"}) + "\n\n"
+        except Exception as unhandled_err:
+            logger.exception("Unexpected error in ai_stream: %s", unhandled_err)
+            err_msg = f"Generation error: {str(unhandled_err)}"
+            try:
+                await record_conversation_turn_complete(
+                    user["id"], project_id, turn_id, "".join(response_text) or f"Error: {err_msg}",
+                    thought_text="".join(thought_text), status="error", error=err_msg
+                )
+            except Exception:
+                pass
+            yield "event: error\ndata: " + json.dumps({"message": err_msg}) + "\n\n"
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control":"no-cache, no-transform","X-Accel-Buffering":"no"})
 
 

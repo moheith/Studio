@@ -6,7 +6,7 @@ import {
   Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
-  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X, Zap
+  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
@@ -373,7 +373,6 @@ export default function StudioPage(p: StudioProps) {
 
   // Live stopwatch and duration timer for AI generation
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0)
-  const [lastElapsedSeconds, setLastElapsedSeconds] = useState<number | null>(null)
   const timerRef = useRef<number | null>(null)
   const startTimeRef = useRef<number | null>(null)
 
@@ -389,10 +388,6 @@ export default function StudioPage(p: StudioProps) {
         }
       }, 100)
     } else {
-      if (startTimeRef.current) {
-        const finalDuration = Math.round(((Date.now() - startTimeRef.current) / 1000) * 10) / 10
-        setLastElapsedSeconds(finalDuration)
-      }
       if (timerRef.current) {
         clearInterval(timerRef.current)
         timerRef.current = null
@@ -406,14 +401,6 @@ export default function StudioPage(p: StudioProps) {
       }
     }
   }, [p.isAiGenerating])
-
-  const lastAiMsg = useMemo(() => {
-    for (let i = p.chatMessages.length - 1; i >= 0; i--) {
-      if (p.chatMessages[i].role !== 'user') return p.chatMessages[i]
-    }
-    return null
-  }, [p.chatMessages])
-  const displayFinishedDuration = lastElapsedSeconds ?? (lastAiMsg?.telemetry?.total_duration ?? null)
 
   const copyMessageText = (id: string, text: string) => {
     navigator.clipboard?.writeText(text)
