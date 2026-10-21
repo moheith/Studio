@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import Editor from '@monaco-editor/react'
 import {
-  ArrowUpRight, Braces, Brain, Check, ChevronDown, ChevronRight, CircleHelp,
+  ArrowUp, ArrowUpRight, Braces, Brain, Check, ChevronDown, ChevronRight, CircleHelp,
   Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
-  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X
+  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X, Zap
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
@@ -1061,7 +1061,8 @@ export default function StudioPage(p: StudioProps) {
       if (kind === 'left') {
         setLeftWidth(Math.max(180, Math.min(420, event.clientX - 48)))
       } else if (kind === 'ai') {
-        setAiPanelWidth(Math.max(260, Math.min(550, window.innerWidth - event.clientX)))
+        const maxWidth = Math.max(380, window.innerWidth - (p.sidebarOpen ? leftWidth + 48 : 48) - 200)
+        setAiPanelWidth(Math.max(280, Math.min(maxWidth, window.innerWidth - event.clientX)))
       } else if (kind === 'preview') {
         const editorAreaWidth = window.innerWidth - (p.sidebarOpen ? leftWidth + 48 : 48) - (aiChatOpen ? aiPanelWidth : 0)
         const pct = Math.max(25, Math.min(75, ((event.clientX - (p.sidebarOpen ? leftWidth + 48 : 48)) / editorAreaWidth) * 100))
@@ -2456,82 +2457,12 @@ export default function StudioPage(p: StudioProps) {
               <div ref={chatEndRef} />
             </div>
 
-            {/* Copilot Chat Composer */}
-            <div className="copilot-composer">
-              <div className="composer-toolbar">
-                {/* Left: Model Selector & Direct Waterfall Settings Button */}
-                <div className="composer-model-group">
-                  <select
-                    className="composer-model-dropdown"
-                    value={p.selectedModel}
-                    onChange={e => {
-                      if (e.target.value === 'connect-key') {
-                        p.setModal('api-key')
-                      } else {
-                        p.setSelectedModel(e.target.value)
-                      }
-                    }}
-                    onClick={() => {
-                      if (!p.models.length) {
-                        p.setModal('api-key')
-                      }
-                    }}
-                    aria-label="AI Model"
-                  >
-                    {p.models.length ? (
-                      p.models.map(m => (
-                        <option key={m.id} value={m.id}>{m.display_name.replace('✦ ', '')}</option>
-                      ))
-                    ) : (
-                      <option value="connect-key">Connect Gemini Key</option>
-                    )}
-                  </select>
-
-                  <button
-                    type="button"
-                    className="composer-waterfall-btn"
-                    onClick={() => setWaterfallModalOpen(true)}
-                    title="Configure Model Waterfall Cascade"
-                  >
-                    <SlidersHorizontal size={11} />
-                    <span>Waterfall Setup</span>
-                  </button>
-                </div>
-
-                {/* Right: Sleek Toggles (No Emojis) */}
-                <div className="composer-toggles-group">
-                  <label
-                    className={`vsc-chat-pill-toggle ${p.isAntigravityMode ? 'is-active' : ''}`}
-                    title="Enable Antigravity Agent (autonomous tools, live Google search grounding)"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={Boolean(p.isAntigravityMode)}
-                      onChange={e => p.setIsAntigravityMode?.(e.target.checked)}
-                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
-                    />
-                    <span className="pill-dot pill-dot-antigravity" />
-                    <span className="pill-text">Antigravity</span>
-                  </label>
-
-                  <label
-                    className={`vsc-chat-pill-toggle ${p.useWaterfall ? 'is-active' : ''}`}
-                    title="Enable Model Waterfall (cascades to fallback models on rate limits or errors)"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={Boolean(p.useWaterfall)}
-                      onChange={e => p.setUseWaterfall?.(e.target.checked)}
-                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
-                    />
-                    <span className="pill-dot pill-dot-waterfall" />
-                    <span className="pill-text">Waterfall</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="composer-input-container">
+            {/* Copilot Chat Composer (VS Code Style Single Card) */}
+            <div className="vsc-composer-wrapper">
+              <div className="vsc-composer-card">
+                {/* Textarea at the top */}
                 <textarea
+                  className="vsc-composer-textarea"
                   value={p.chat}
                   onChange={e => p.setChat(e.target.value)}
                   onKeyDown={e => {
@@ -2541,42 +2472,145 @@ export default function StudioPage(p: StudioProps) {
                     }
                   }}
                   placeholder={p.isAntigravityMode
-                    ? "Ask Antigravity to build, modify, or debug… (Tools & reasoning active)"
-                    : "Ask Copilot or describe changes… (Enter to send, Shift+Enter for newline)"}
+                    ? "Chat with Antigravity Agent… (tools & reasoning active)"
+                    : "Chat with Copilot… (Enter to send, Shift+Enter for newline)"}
                   rows={2}
                 />
-                {p.isAiGenerating ? (
-                  <button
-                    className="copilot-send-btn stop"
-                    onClick={p.stopAiGeneration}
-                    title="Stop generation"
-                  >
-                    <Square size={12} fill="currentColor" />
-                  </button>
-                ) : (
-                  <button
-                    className="copilot-send-btn"
-                    disabled={!p.chat.trim() || !p.selectedModel}
-                    onClick={p.submitPrompt}
-                    title="Send message (Enter)"
-                  >
-                    <ArrowUpRight size={15} />
-                  </button>
-                )}
+
+                {/* Bottom Action Bar inside the card */}
+                <div className="vsc-composer-toolbar">
+                  {/* Left Controls */}
+                  <div className="vsc-toolbar-left">
+                    {/* Attach context button (+) */}
+                    <button
+                      type="button"
+                      className="vsc-composer-icon-btn"
+                      title={p.activeFile ? `Add @${p.activeFile} context` : 'Add file context'}
+                      onClick={() => {
+                        if (p.activeFile) {
+                          p.setChat(p.chat ? `${p.chat} @${p.activeFile} ` : `@${p.activeFile} `)
+                        }
+                      }}
+                    >
+                      <Plus size={14} />
+                    </button>
+
+                    {/* Antigravity Pill (Matches `{/} Agent` in screenshot) */}
+                    <button
+                      type="button"
+                      className={`vsc-chat-pill-btn ${p.isAntigravityMode ? 'is-active' : ''}`}
+                      onClick={() => p.setIsAntigravityMode?.(!p.isAntigravityMode)}
+                      title={p.isAntigravityMode ? "Antigravity Mode active (Tools & Google Grounding). Click to turn OFF" : "Click to activate Antigravity Mode"}
+                    >
+                      <Code2 size={13} className="pill-agent-icon" />
+                      <span>Antigravity</span>
+                    </button>
+
+                    {/* AI Model Selector (Matches Model button in screenshot) */}
+                    <div className="vsc-chat-model-wrapper" title="Select AI Model">
+                      <Sparkles size={11} className="vsc-model-icon text-accent" />
+                      <select
+                        className="vsc-chat-model-select"
+                        value={p.selectedModel}
+                        onChange={e => {
+                          if (e.target.value === 'connect-key') {
+                            p.setModal('api-key')
+                          } else {
+                            p.setSelectedModel(e.target.value)
+                          }
+                        }}
+                        onClick={() => {
+                          if (!p.models.length) {
+                            p.setModal('api-key')
+                          }
+                        }}
+                        aria-label="AI Model"
+                      >
+                        {p.models.length ? (
+                          p.models.map(m => (
+                            <option key={m.id} value={m.id}>{m.display_name.replace('✦ ', '')}</option>
+                          ))
+                        ) : (
+                          <option value="connect-key">Connect Gemini Key</option>
+                        )}
+                      </select>
+                      <ChevronDown size={10} className="vsc-model-chevron" />
+                    </div>
+
+                    {/* Waterfall & Setup Composite Pill (Matches `Auto | Balance` in screenshot) */}
+                    <div className={`vsc-composite-pill ${p.useWaterfall ? 'is-active' : ''}`}>
+                      <button
+                        type="button"
+                        className="vsc-composite-left"
+                        onClick={() => p.setUseWaterfall?.(!p.useWaterfall)}
+                        title={p.useWaterfall ? "Waterfall is ON (cascades on failure). Click to turn OFF" : "Waterfall is OFF. Click to turn ON"}
+                      >
+                        <Zap size={11} className={p.useWaterfall ? "text-amber" : "text-muted"} />
+                        <span>Waterfall</span>
+                      </button>
+                      <span className="vsc-composite-divider">|</span>
+                      <button
+                        type="button"
+                        className="vsc-composite-right"
+                        onClick={() => setWaterfallModalOpen(true)}
+                        title="Configure Model Waterfall Cascade Sequence"
+                      >
+                        <SlidersHorizontal size={10} />
+                        <span>Setup</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Right Controls: Submit / Stop Arrow */}
+                  <div className="vsc-toolbar-right">
+                    {p.isAiGenerating ? (
+                      <button
+                        type="button"
+                        className="vsc-chat-send-btn stop"
+                        onClick={p.stopAiGeneration}
+                        title="Stop generation"
+                      >
+                        <Square size={10} fill="currentColor" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="vsc-chat-send-btn"
+                        disabled={!p.chat.trim() || !p.selectedModel}
+                        onClick={p.submitPrompt}
+                        title="Send message (Enter)"
+                      >
+                        <ArrowUp size={14} strokeWidth={2.4} />
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              {/* Copilot Composer Footer */}
-              <div className="copilot-composer-footer">
-                {p.isAiGenerating ? (
-                  <div className="composer-timer-status running">
-                    <span className="timer-pulse-dot" />
-                    <span className="timer-label">Generating… {elapsedSeconds.toFixed(1)}s</span>
-                  </div>
-                ) : (
-                  <div className="composer-hint-status">
-                    <span>Shift+Enter for newline • Enter to send</span>
-                  </div>
-                )}
+              {/* Status bar beneath composer card */}
+              <div className="vsc-composer-statusbar">
+                <div className="vsc-statusbar-left">
+                  <span className="vsc-status-pill">
+                    <Sparkles size={11} className={p.isAntigravityMode ? "text-accent" : "text-muted"} />
+                    <span>{p.isAntigravityMode ? "Antigravity Agent" : "Copilot"}</span>
+                  </span>
+                  <span className="vsc-status-dot">•</span>
+                  <span className="vsc-status-text">
+                    {p.useWaterfall ? "Waterfall Active" : "Single Model"}
+                  </span>
+                  {p.isAiGenerating && (
+                    <>
+                      <span className="vsc-status-dot">•</span>
+                      <span className="vsc-status-timer">
+                        <Loader2 size={10} className="animate-spin text-accent" />
+                        <span>{elapsedSeconds.toFixed(1)}s</span>
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="vsc-statusbar-right">
+                  <span className="vsc-status-shortcut">↵ send • ⇧↵ newline</span>
+                </div>
               </div>
             </div>
           </aside>
