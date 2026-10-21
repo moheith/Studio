@@ -3269,3 +3269,86 @@
   color: #6d6980;
   line-height: 1.35;
 }
+
+/* ==========================================================================
+   AI Generation Live Stopwatch & Bottom Completed Timer
+   ========================================================================== */
+
+.copilot-live-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #d8b4fe;
+  font: 600 10px var(--mono);
+}
+
+.copilot-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 2px;
+  min-height: 22px;
+}
+
+.composer-timer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 10px var(--mono);
+  user-select: none;
+}
+
+.composer-timer-status.running {
+  color: #a78bfa;
+}
+
+.composer-timer-status.finished {
+  color: #94a3b8;
+}
+
+.composer-timer-status.finished strong {
+  color: #34d399;
+}
+
+.timer-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a78bfa;
+  box-shadow: 0 0 6px #a78bfa;
+  animation: wfPulse 1.2s infinite ease-in-out;
+}
+
+.timer-check-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.timer-label {
+  color: #71717a;
+}
+
+.timer-digits {
+  font-weight: 600;
+}
+
+.composer-timer-status.running .timer-digits {
+  color: #c4b5fd;
+}
+
+.composer-hint-status {
+  font: 400 9.5px var(--sans);
+  color: #52525b;
+  user-select: none;
+}

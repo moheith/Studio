@@ -360,6 +360,50 @@ export default function StudioPage(p: StudioProps) {
     }
   }, [p.user?.waterfall])
 
+  // Live stopwatch and duration timer for AI generation
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0)
+  const [lastElapsedSeconds, setLastElapsedSeconds] = useState<number | null>(null)
+  const timerRef = useRef<number | null>(null)
+  const startTimeRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (p.isAiGenerating) {
+      startTimeRef.current = Date.now()
+      setElapsedSeconds(0)
+      if (timerRef.current) clearInterval(timerRef.current)
+      timerRef.current = window.setInterval(() => {
+        if (startTimeRef.current) {
+          const diff = (Date.now() - startTimeRef.current) / 1000
+          setElapsedSeconds(Math.round(diff * 10) / 10)
+        }
+      }, 100)
+    } else {
+      if (startTimeRef.current) {
+        const finalDuration = Math.round(((Date.now() - startTimeRef.current) / 1000) * 10) / 10
+        setLastElapsedSeconds(finalDuration)
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+      startTimeRef.current = null
+    }
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }, [p.isAiGenerating])
+
+  const lastAiMsg = useMemo(() => {
+    for (let i = p.chatMessages.length - 1; i >= 0; i--) {
+      if (p.chatMessages[i].role !== 'user') return p.chatMessages[i]
+    }
+    return null
+  }, [p.chatMessages])
+  const displayFinishedDuration = lastElapsedSeconds ?? (lastAiMsg?.telemetry?.total_duration ?? null)
+
   const copyMessageText = (id: string, text: string) => {
     navigator.clipboard?.writeText(text)
     setCopiedMsgId(id)
@@ -2308,6 +2352,7 @@ export default function StudioPage(p: StudioProps) {
                 <div className="copilot-generating-bar">
                   <Loader2 size={12} className="animate-spin text-accent" />
                   <span>Copilot is writing code…</span>
+                  <span className="copilot-live-timer">⏱️ {elapsedSeconds.toFixed(1)}s</span>
                   {p.stopAiGeneration && (
                     <button className="stop-link" onClick={p.stopAiGeneration}>Stop</button>
                   )}
@@ -2403,6 +2448,27 @@ export default function StudioPage(p: StudioProps) {
                   >
                     <ArrowUpRight size={15} />
                   </button>
+                )}
+              </div>
+
+              {/* Copilot Composer Footer / Bottom Timer Bar */}
+              <div className="copilot-composer-footer">
+                {p.isAiGenerating ? (
+                  <div className="composer-timer-status running">
+                    <span className="timer-pulse-dot" />
+                    <span className="timer-label">Generating…</span>
+                    <span className="timer-digits">⏱️ {elapsedSeconds.toFixed(1)}s</span>
+                  </div>
+                ) : displayFinishedDuration !== null ? (
+                  <div className="composer-timer-status finished" title="Time taken for the last AI response">
+                    <span className="timer-check-dot">✓</span>
+                    <span className="timer-label">Finished in</span>
+                    <span className="timer-digits">⏱️ {displayFinishedDuration.toFixed(1)}s</span>
+                  </div>
+                ) : (
+                  <div className="composer-hint-status">
+                    <span>Shift+Enter for newline • Enter to send</span>
+                  </div>
                 )}
               </div>
             </div>

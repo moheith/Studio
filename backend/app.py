@@ -1077,20 +1077,37 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         response_text: list[str] = []
         thought_text: list[str] = []
         max_calls = 50 if is_antigravity else 20
-        telemetry_models: list[dict[str, Any]] = []
         turn_start_time = time.time()
         current_chain_idx = 0
+
+        model_stats: dict[str, dict[str, Any]] = {}
+        for item in chain_info:
+            model_stats[item["alias"]] = {
+                "name": item["model"],
+                "alias": item["alias"],
+                "start_time": None,
+                "duration_seconds": 0.0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "status": "pending",
+                "error": None
+            }
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(3000.0, connect=30.0)) as client:
             while calls < max_calls:
                 active_info = chain_info[current_chain_idx]
                 active_model = active_info["model"]
                 active_alias = active_info["alias"]
+                current_stat = model_stats[active_alias]
+                if current_stat["start_time"] is None:
+                    current_stat["start_time"] = time.time()
+                    current_stat["status"] = "running"
 
-                model_start_time = time.time()
-                input_tokens = 0
-                output_tokens = 0
-                total_tokens = 0
+                call_input_tokens = 0
+                call_output_tokens = 0
+                call_total_tokens = 0
+                call_text_generated: list[str] = []
 
                 request_body = {
                     "systemInstruction": {"parts": [{"text": system}]},
@@ -1145,9 +1162,9 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
 
                                 if "usageMetadata" in payload:
                                     u = payload["usageMetadata"]
-                                    input_tokens = u.get("promptTokenCount", input_tokens)
-                                    output_tokens = u.get("candidatesTokenCount", output_tokens)
-                                    total_tokens = u.get("totalTokenCount", total_tokens)
+                                    call_input_tokens = u.get("promptTokenCount", call_input_tokens)
+                                    call_output_tokens = u.get("candidatesTokenCount", call_output_tokens)
+                                    call_total_tokens = u.get("totalTokenCount", call_total_tokens)
 
                                 for candidate in payload.get("candidates", []):
                                     if candidate.get("finishReason") == "MAX_TOKENS":
@@ -1160,6 +1177,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                                                 thought_text.append(t)
                                                 yield "event: thought\ndata: " + json.dumps({"text": t}) + "\n\n"
                                         elif part.get("text"):
+                                            call_text_generated.append(part["text"])
                                             response_text.append(part["text"])
                                             yield "event: token\ndata: " + json.dumps({"text": part["text"]}) + "\n\n"
                                         if part.get("functionCall"):
@@ -1169,25 +1187,24 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                 except Exception as exc:
                     failed_reason = f"Connection error: {str(exc)}"
 
-                model_duration = round(time.time() - model_start_time, 2)
-                if total_tokens == 0:
-                    output_tokens = len("".join(response_text)) // 4
-                    input_tokens = len(json.dumps(contents)) // 4
-                    total_tokens = input_tokens + output_tokens
+                # Accumulate tokens recorded from this API call
+                if call_total_tokens > 0:
+                    current_stat["input_tokens"] += call_input_tokens
+                    current_stat["output_tokens"] += call_output_tokens
+                    current_stat["total_tokens"] += call_total_tokens
+                elif call_text_generated and not failed_reason:
+                    fallback_out = len("".join(call_text_generated)) // 4
+                    fallback_in = len(json.dumps(contents)) // 4
+                    current_stat["input_tokens"] += fallback_in
+                    current_stat["output_tokens"] += fallback_out
+                    current_stat["total_tokens"] += (fallback_in + fallback_out)
 
                 if failed_reason or turn_interrupted_by_tokens:
                     effective_reason = failed_reason or "Output token limit reached (MAX_TOKENS)"
+                    current_stat["duration_seconds"] = round(time.time() - (current_stat["start_time"] or time.time()), 2)
+                    current_stat["error"] = effective_reason
                     if current_chain_idx + 1 < len(chain_info):
-                        telemetry_models.append({
-                            "name": active_model,
-                            "alias": active_alias,
-                            "input_tokens": input_tokens,
-                            "output_tokens": output_tokens,
-                            "total_tokens": total_tokens,
-                            "duration_seconds": model_duration,
-                            "status": "cascaded",
-                            "error": effective_reason
-                        })
+                        current_stat["status"] = "cascaded"
                         current_chain_idx += 1
                         next_info = chain_info[current_chain_idx]
                         trans_event = {
@@ -1205,17 +1222,9 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                             contents.append({"role": "user", "parts": [{"text": "Continue writing the remaining code or response starting directly from where it stopped. Do not repeat earlier lines."}]})
                         continue
                     else:
+                        current_stat["status"] = "failed"
                         final_err = f"All waterfall models exhausted. Last model ({active_alias}: {active_model}) error: {effective_reason}"
-                        telemetry_models.append({
-                            "name": active_model,
-                            "alias": active_alias,
-                            "input_tokens": input_tokens,
-                            "output_tokens": output_tokens,
-                            "total_tokens": total_tokens,
-                            "duration_seconds": model_duration,
-                            "status": "failed",
-                            "error": effective_reason
-                        })
+                        telemetry_models = [s for s in model_stats.values() if s["start_time"] is not None]
                         total_turn_tokens = sum(m.get("total_tokens", 0) for m in telemetry_models)
                         total_turn_duration = round(time.time() - turn_start_time, 2)
                         telemetry_payload = {
@@ -1251,15 +1260,8 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                         return
 
                 if not full_parts:
-                    telemetry_models.append({
-                        "name": active_model,
-                        "alias": active_alias,
-                        "input_tokens": input_tokens,
-                        "output_tokens": output_tokens,
-                        "total_tokens": total_tokens,
-                        "duration_seconds": model_duration,
-                        "status": "completed"
-                    })
+                    current_stat["duration_seconds"] = round(time.time() - (current_stat["start_time"] or time.time()), 2)
+                    current_stat["status"] = "completed"
                     break
 
                 contents.append({"role":"model","parts":full_parts}); function_results = []
@@ -1329,16 +1331,12 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                     function_results.append({"functionResponse":{"name":name,"response":result}})
                 contents.append({"role":"user","parts":function_results}); calls += 1
 
-        if not any(m.get("alias") == active_alias and m.get("status") == "completed" for m in telemetry_models):
-            telemetry_models.append({
-                "name": active_model,
-                "alias": active_alias,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": total_tokens,
-                "duration_seconds": round(time.time() - model_start_time, 2),
-                "status": "completed"
-            })
+        for s in model_stats.values():
+            if s["start_time"] is not None and s["status"] in ("running", "pending"):
+                s["duration_seconds"] = round(time.time() - s["start_time"], 2)
+                s["status"] = "completed"
+
+        telemetry_models = [s for s in model_stats.values() if s["start_time"] is not None]
         total_turn_tokens = sum(m.get("total_tokens", 0) for m in telemetry_models)
         turn_input_tokens = sum(m.get("input_tokens", 0) for m in telemetry_models)
         turn_output_tokens = sum(m.get("output_tokens", 0) for m in telemetry_models)
