@@ -354,20 +354,6 @@ export default function StudioPage(p: StudioProps) {
     return `${mins}m ${rem}s`
   }
 
-  const shortModelName = (id?: string | null, displayName?: string): string => {
-    if (!id && !displayName) return 'Auto'
-    const clean = (displayName || id || '').replace(/^✦\s*/, '').replace(/^models\//, '')
-    if (clean.includes('3.8-flash')) return '3.8 Flash'
-    if (clean.includes('3.7-flash')) return '3.7 Flash'
-    if (clean.includes('3.6-flash')) return '3.6 Flash'
-    if (clean.includes('3.5-flash-lite')) return '3.5 Lite'
-    if (clean.includes('3.5-flash')) return '3.5 Flash'
-    if (clean.includes('2.5-flash')) return '2.5 Flash'
-    if (clean.includes('2.5-pro')) return '2.5 Pro'
-    if (clean.includes('gemma-4-31b')) return 'Gemma 31B'
-    return clean.replace(/^gemini-/, '').slice(0, 10) || 'Auto'
-  }
-
   // Waterfall Cascade & Telemetry modal state
   const [waterfallModalOpen, setWaterfallModalOpen] = useState(false)
   const [openTelemetryId, setOpenTelemetryId] = useState<string | null>(null)
@@ -2506,7 +2492,7 @@ export default function StudioPage(p: StudioProps) {
                         }
                       }}
                     >
-                      <Plus size={14} />
+                      <Plus size={11} />
                     </button>
 
                     {/* Antigravity Pill (Matches `{/} Agent` in screenshot) */}
@@ -2516,13 +2502,13 @@ export default function StudioPage(p: StudioProps) {
                       onClick={() => p.setIsAntigravityMode?.(!p.isAntigravityMode)}
                       title={p.isAntigravityMode ? "Antigravity Mode active (Tools & Google Grounding). Click to turn OFF" : "Click to activate Antigravity Mode"}
                     >
-                      <Code2 size={13} className="pill-agent-icon" />
+                      <Code2 size={11} className="pill-agent-icon" />
                       <span>Antigravity</span>
                     </button>
 
                     {/* AI Model Selector (Matches Model button in screenshot) */}
                     <div className="vsc-chat-model-wrapper" title="Select AI Model">
-                      <Sparkles size={11} className="vsc-model-icon" />
+                      <Sparkles size={10} className="vsc-model-icon" />
                       <select
                         className="vsc-chat-model-select"
                         value={p.selectedModel}
@@ -2542,13 +2528,13 @@ export default function StudioPage(p: StudioProps) {
                       >
                         {p.models.length ? (
                           p.models.map(m => (
-                            <option key={m.id} value={m.id}>{shortModelName(m.id, m.display_name)}</option>
+                            <option key={m.id} value={m.id}>{m.display_name || m.id}</option>
                           ))
                         ) : (
                           <option value="connect-key">Connect Gemini Key</option>
                         )}
                       </select>
-                      <ChevronDown size={10} className="vsc-model-chevron" />
+                      <ChevronDown size={9} className="vsc-model-chevron" />
                     </div>
 
                     {/* Waterfall & Setup Composite Pill (Matches `Auto | Balance` in screenshot) */}
@@ -2559,7 +2545,7 @@ export default function StudioPage(p: StudioProps) {
                         onClick={() => p.setUseWaterfall?.(!p.useWaterfall)}
                         title={p.useWaterfall ? "Waterfall is ON (cascades on failure). Click to turn OFF" : "Waterfall is OFF. Click to turn ON"}
                       >
-                        <Zap size={11} className="vsc-pill-icon" />
+                        <Zap size={10} className="vsc-pill-icon" />
                         <span>Waterfall</span>
                       </button>
                       <span className="vsc-composite-divider">|</span>
@@ -2569,7 +2555,7 @@ export default function StudioPage(p: StudioProps) {
                         onClick={() => setWaterfallModalOpen(true)}
                         title="Configure Model Waterfall Cascade Sequence"
                       >
-                        <SlidersHorizontal size={10} />
+                        <SlidersHorizontal size={9} />
                         <span>Setup</span>
                       </button>
                     </div>
@@ -2584,7 +2570,7 @@ export default function StudioPage(p: StudioProps) {
                         onClick={p.stopAiGeneration}
                         title="Stop generation"
                       >
-                        <Square size={10} fill="currentColor" />
+                        <Square size={8} fill="currentColor" />
                       </button>
                     ) : (
                       <button
@@ -2594,7 +2580,7 @@ export default function StudioPage(p: StudioProps) {
                         onClick={p.submitPrompt}
                         title="Send message (Enter)"
                       >
-                        <ArrowUp size={14} strokeWidth={2.4} />
+                        <ArrowUp size={12} strokeWidth={2.2} />
                       </button>
                     )}
                   </div>
