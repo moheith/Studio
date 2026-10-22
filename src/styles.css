@@ -3783,3 +3783,96 @@
   color: #d8b4fe;
   font: 600 10px var(--mono);
 }
+
+/* ========================================================
+   VS CODE NATIVE STATUS BAR FOOTER
+   ======================================================== */
+.vsc-ide-footer {
+  height: 22px;
+  background: #181818;
+  border-top: 1px solid #282828;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  color: #8c8c8c;
+  flex: none;
+  z-index: 15;
+  user-select: none;
+  overflow: hidden;
+}
+
+.vsc-footer-left,
+.vsc-footer-right {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.vsc-footer-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  color: #8c8c8c;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+
+.vsc-footer-item:hover {
+  background: #2a2b2c;
+  color: #dcdcdc;
+}
+
+.vsc-footer-item:active {
+  background: #333333;
+}
+
+.vsc-footer-item.active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.vsc-footer-item svg {
+  flex-shrink: 0;
+}
+
+.vsc-footer-problems-has-errors {
+  color: #f87171 !important;
+}
+
+.vsc-footer-problems-has-errors .icon-err {
+  color: #ef4444;
+}
+
+.vsc-footer-item.pulse-ai {
+  color: #c4a9f4;
+  animation: vscFooterAiPulse 1.4s infinite ease-in-out;
+}
+
+@keyframes vscFooterAiPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (max-width: 768px) {
+  .vsc-footer-hide-mobile {
+    display: none !important;
+  }
+}

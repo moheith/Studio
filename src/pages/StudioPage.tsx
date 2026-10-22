@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import Editor from '@monaco-editor/react'
 import {
-  ArrowUp, ArrowUpRight, Braces, Brain, Check, ChevronDown, ChevronRight, CircleHelp,
+  AlertTriangle, ArrowUp, ArrowUpRight, Bell, Braces, Brain, Check, ChevronDown, ChevronRight, CircleHelp,
   Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
-  FolderMinus, FolderInput, FolderOpen, FolderPlus, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
-  Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, RefreshCw,
-  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X, Zap
+  FolderMinus, FolderInput, FolderOpen, FolderPlus, GitBranch, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
+  Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, Radio, RefreshCw,
+  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X, XCircle, Zap
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
@@ -431,6 +431,28 @@ export default function StudioPage(p: StudioProps) {
   const chatEndRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<any>(null)
   const previewWrapRef = useRef<HTMLDivElement | null>(null)
+
+  const [cursorPos, setCursorPos] = useState<{ line: number; col: number }>({ line: 1, col: 1 })
+
+  const activeLangLabel = useMemo(() => {
+    if (!p.activeFile) return 'Plain Text'
+    const ext = p.activeFile.split('.').pop()?.toLowerCase()
+    switch (ext) {
+      case 'html': return 'HTML'
+      case 'css': return 'CSS'
+      case 'js':
+      case 'javascript': return 'JavaScript'
+      case 'json': return 'JSON'
+      case 'ts':
+      case 'typescript': return 'TypeScript'
+      case 'md': return 'Markdown'
+      default: return p.language ? p.language.toUpperCase() : 'Plain Text'
+    }
+  }, [p.activeFile, p.language])
+
+  const errorCount = useMemo(() => {
+    return termHistory.filter(t => t.type === 'error').length
+  }, [termHistory])
 
   const title = p.currentGame?.title ?? 'Opening project'
   const publicUrl = p.currentGame && p.user ? `${window.location.origin}/${encodeURIComponent(p.user.username)}/${encodeURIComponent(p.currentGame.id)}` : ''
@@ -1823,7 +1845,16 @@ export default function StudioPage(p: StudioProps) {
                   language={p.language}
                   theme="vs-dark"
                   value={p.code[p.activeFile] ?? ''}
-                  onMount={editor => { editorRef.current = editor }}
+                  onMount={editor => {
+                    editorRef.current = editor
+                    const pos = editor.getPosition()
+                    if (pos) setCursorPos({ line: pos.lineNumber, col: pos.column })
+                    editor.onDidChangeCursorPosition((e: any) => {
+                      if (e?.position) {
+                        setCursorPos({ line: e.position.lineNumber, col: e.position.column })
+                      }
+                    })
+                  }}
                   onChange={p.handleEditor}
                   options={{
                     minimap: { enabled: false },
@@ -2595,7 +2626,129 @@ export default function StudioPage(p: StudioProps) {
           </aside>
         )}
       </div>
-      {/* Global Explorer Right-Click Context Menu */}
+
+      {/* VS Code Native Status Bar Footer */}
+      <footer className="vsc-ide-footer" role="contentinfo" aria-label="Status Bar">
+        <div className="vsc-footer-left">
+          <button
+            type="button"
+            className="vsc-footer-item"
+            title="Source Control: main branch"
+            onClick={() => p.notify('Branch: main (synced with repository)')}
+          >
+            <GitBranch size={11} />
+            <span>main</span>
+          </button>
+
+          <button
+            type="button"
+            className="vsc-footer-item"
+            title={`Workspace status: ${p.saveState || 'Saved'}`}
+            onClick={() => p.notify(`Workspace status: ${p.saveState || 'All changes saved'}`)}
+          >
+            {p.saveState === 'saving' ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <Check size={11} />
+            )}
+            <span>{p.saveState === 'saving' ? 'Saving…' : 'Saved'}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`vsc-footer-item ${errorCount > 0 ? 'vsc-footer-problems-has-errors' : ''}`}
+            title={`${errorCount} error(s). Click to view in Terminal.`}
+            onClick={() => p.setTerminalOpen(true)}
+          >
+            <XCircle size={11} className={errorCount > 0 ? 'icon-err' : ''} />
+            <span>{errorCount}</span>
+            <AlertTriangle size={11} />
+            <span>0</span>
+          </button>
+
+          <button
+            type="button"
+            className={`vsc-footer-item ${p.terminalOpen ? 'active' : ''}`}
+            title="Toggle Integrated Terminal"
+            onClick={() => p.setTerminalOpen(!p.terminalOpen)}
+          >
+            <Terminal size={11} />
+            <span>Terminal</span>
+          </button>
+
+          <button
+            type="button"
+            className={`vsc-footer-item ${previewOpen ? 'active' : ''}`}
+            title="Toggle Live Game Preview (Port 5173)"
+            onClick={() => setPreviewOpen(!previewOpen)}
+          >
+            <Radio size={11} />
+            <span>Port 5173</span>
+          </button>
+        </div>
+
+        <div className="vsc-footer-right">
+          <button
+            type="button"
+            className="vsc-footer-item"
+            title="Current Cursor Position"
+            onClick={() => editorRef.current?.focus()}
+          >
+            <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
+          </button>
+
+          <button
+            type="button"
+            className="vsc-footer-item vsc-footer-hide-mobile"
+            title="Indentation: 2 spaces"
+          >
+            <span>Spaces: 2</span>
+          </button>
+
+          <button
+            type="button"
+            className="vsc-footer-item vsc-footer-hide-mobile"
+            title="File Encoding"
+          >
+            <span>UTF-8</span>
+          </button>
+
+          <button
+            type="button"
+            className="vsc-footer-item vsc-footer-hide-mobile"
+            title="End of Line Sequence"
+          >
+            <span>LF</span>
+          </button>
+
+          <button
+            type="button"
+            className="vsc-footer-item"
+            title={`Language Mode: ${activeLangLabel}`}
+          >
+            <span>{activeLangLabel}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`vsc-footer-item ${p.isAiGenerating ? 'pulse-ai' : ''} ${aiChatOpen ? 'active' : ''}`}
+            title={`AI Assistant (${p.isAntigravityMode ? 'Antigravity Agent' : 'Standard Copilot'}): ${p.selectedModel || 'gemini-2.5-pro'}. Click to toggle chat.`}
+            onClick={() => setAiChatOpen(!aiChatOpen)}
+          >
+            <Sparkles size={11} />
+            <span>{p.isAntigravityMode ? 'Antigravity' : 'Copilot'}: {(p.selectedModel || 'gemini-2.5-pro').replace(/^models\//, '').replace(/^antigravity-/, '')}</span>
+          </button>
+
+          <button
+            type="button"
+            className="vsc-footer-item"
+            title="Notifications"
+            onClick={() => p.notify('Notifications: No pending alerts')}
+          >
+            <Bell size={11} />
+          </button>
+        </div>
+      </footer>
       {contextMenu && (
         <div
           className="vsc-context-menu"
