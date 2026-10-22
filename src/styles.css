@@ -1677,13 +1677,12 @@
    ========================================================================== */
 
 .vsc-composer-wrapper {
-  padding: clamp(5px, 2px + 0.8cqw, 8px) clamp(6px, 3px + 1cqw, 12px) clamp(4px, 2px + 0.5cqw, 6px);
+  padding: clamp(4px, 2px + 0.5cqw, 6px) clamp(6px, 3px + 0.8cqw, 10px) clamp(6px, 3px + 0.8cqw, 8px);
   background: #181818;
   border-top: 1px solid #282828;
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: clamp(2px, 1px + 0.4cqw, 4px);
   min-width: 0;
   box-sizing: border-box;
 }
@@ -1699,6 +1698,7 @@
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
+  gap: 3px;
 }
 
 .vsc-composer-card:focus-within {
@@ -1707,8 +1707,17 @@
   box-shadow: none;
 }
 
-.vsc-composer-textarea {
+/* Top Input Row: Textarea on the left, Up Arrow button on the right */
+.vsc-composer-input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
   width: 100%;
+}
+
+.vsc-composer-textarea {
+  flex: 1 1 auto;
+  min-width: 0;
   background: transparent;
   border: 0;
   outline: none;
@@ -1716,7 +1725,7 @@
   font-family: var(--sans);
   font-size: clamp(11px, 9.5px + 0.5cqw, 12.5px);
   resize: none;
-  min-height: clamp(26px, 18px + 2.5cqw, 38px);
+  min-height: clamp(26px, 18px + 2.5cqw, 36px);
   max-height: 140px;
   line-height: 1.38;
   box-sizing: border-box;
@@ -1727,13 +1736,22 @@
   color: #6e6e6e;
 }
 
+.vsc-composer-send-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 1px;
+}
+
+/* Bottom Toolbar: Tools */
 .vsc-composer-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: clamp(2px, 1px + 0.5cqw, 5px);
   flex-wrap: wrap;
-  margin-top: 2px;
+  margin-top: 1px;
   padding-top: 1px;
   border-top: none;
   min-width: 0;
@@ -1746,14 +1764,6 @@
   flex-wrap: wrap;
   min-width: 0;
   flex: 1 1 auto;
-}
-
-.vsc-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: clamp(2px, 1px + 0.5cqw, 5px);
-  margin-left: auto;
-  flex-shrink: 0;
 }
 
 /* Common icon scaling inside composer buttons as panel is moved */
@@ -1788,7 +1798,7 @@
   color: #cccccc;
 }
 
-/* Antigravity Pill (Matches `{/} Agent` in VS Code) - Scalable */
+/* Antigravity Pill (Matches `{/} Agent` in VS Code) - Scalable & Animated */
 .vsc-chat-pill-btn {
   display: inline-flex;
   align-items: center;
@@ -1803,7 +1813,7 @@
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   white-space: nowrap;
   user-select: none;
   flex-shrink: 0;
@@ -1815,23 +1825,33 @@
   color: #cccccc;
 }
 
+.vsc-chat-pill-btn:active {
+  transform: scale(0.90);
+}
+
 .vsc-chat-pill-btn.is-active {
   background: #2a2b2c;
   border: 1px solid #38393a;
   color: #ffffff;
   font-weight: 500;
+  animation: pillPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .vsc-chat-pill-btn .pill-agent-icon {
   color: inherit;
+  transition: transform 0.15s ease;
 }
 
-/* AI Model Selector Wrapper (Matches Model Picker in VS Code) - Scalable */
+.vsc-chat-pill-btn.is-active .pill-agent-icon {
+  animation: iconBounce 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* AI Model Selector Wrapper (Matches Model Picker in VS Code) - Slimmer & Scalable */
 .vsc-chat-model-wrapper {
   display: inline-flex;
   align-items: center;
-  gap: clamp(2px, 1px + 0.4cqw, 4px);
-  padding: 0 clamp(3px, 1px + 0.8cqw, 6px);
+  gap: clamp(2px, 1px + 0.4cqw, 3px);
+  padding: 0 clamp(2px, 1px + 0.5cqw, 5px);
   height: clamp(18px, 12px + 2cqw, 25px);
   border-radius: clamp(3px, 1.5px + 0.4cqw, 4px);
   background: transparent;
@@ -1860,14 +1880,14 @@
   outline: none;
   font-family: var(--sans);
   font-weight: 500;
-  font-size: clamp(9.5px, 8px + 0.6cqw, 11.5px);
+  font-size: clamp(9px, 7.5px + 0.5cqw, 11px);
   color: #cccccc;
   cursor: pointer;
-  max-width: clamp(110px, 50px + 22cqw, 280px);
+  max-width: clamp(75px, 35px + 12cqw, 150px);
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
-  padding-right: clamp(10px, 8px + 0.8cqw, 14px);
+  padding-right: clamp(8px, 6px + 0.6cqw, 12px);
   padding-left: 1px;
 }
 
@@ -1884,12 +1904,12 @@
 
 .vsc-model-chevron {
   position: absolute;
-  right: clamp(2px, 1px + 0.5cqw, 4px);
+  right: 2px;
   pointer-events: none;
   color: #8c8c8c;
 }
 
-/* Waterfall Composite Pill (Matches `Auto | Balance` in VS Code) - Scalable */
+/* Waterfall Composite Pill (Matches `Auto | Balance` in VS Code) - Scalable & Animated */
 .vsc-composite-pill {
   display: inline-flex;
   align-items: center;
@@ -1897,7 +1917,7 @@
   border-radius: clamp(3px, 1.5px + 0.4cqw, 4px);
   background: transparent;
   border: 1px solid transparent;
-  transition: background 0.12s ease;
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.12s ease;
   flex-shrink: 0;
   box-sizing: border-box;
   overflow: hidden;
@@ -1910,6 +1930,7 @@
 .vsc-composite-pill.is-active {
   background: #2a2b2c;
   border: 1px solid #38393a;
+  animation: pillPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .vsc-composite-left {
@@ -1926,11 +1947,16 @@
   font-size: clamp(9.5px, 8px + 0.6cqw, 11.5px);
   color: #8c8c8c;
   cursor: pointer;
-  transition: color 0.12s ease;
+  transition: transform 0.12s ease, color 0.12s ease;
+}
+
+.vsc-composite-left:active {
+  transform: scale(0.90);
 }
 
 .vsc-composite-pill .vsc-pill-icon {
   color: inherit;
+  transition: transform 0.15s ease;
 }
 
 .vsc-composite-pill.is-active .vsc-composite-left {
@@ -1938,8 +1964,8 @@
   font-weight: 500;
 }
 
-.vsc-composite-left:hover {
-  color: #ffffff;
+.vsc-composite-pill.is-active .vsc-pill-icon {
+  animation: zapBounce 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .vsc-composite-divider {
@@ -1963,17 +1989,40 @@
   font-size: clamp(9px, 7.5px + 0.6cqw, 11px);
   color: #8c8c8c;
   cursor: pointer;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition: transform 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.vsc-composite-right:active {
+  transform: scale(0.90);
 }
 
 .vsc-composite-right:hover {
   color: #ffffff;
 }
 
-/* VS Code Send Button (↑ Arrow / Stop Square) - Scalable */
+/* Micro Interaction Animations for Pills */
+@keyframes pillPop {
+  0% { transform: scale(0.92); }
+  55% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+@keyframes iconBounce {
+  0% { transform: scale(0.75) rotate(-14deg); }
+  55% { transform: scale(1.28) rotate(8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@keyframes zapBounce {
+  0% { transform: scale(0.75) translateY(1px); }
+  55% { transform: scale(1.3) translateY(-2px); }
+  100% { transform: scale(1) translateY(0); }
+}
+
+/* VS Code Send Button (↑ Arrow / Stop Square) - Scalable & Stays at Right End */
 .vsc-chat-send-btn {
-  width: clamp(18px, 12px + 2cqw, 25px);
-  height: clamp(18px, 12px + 2cqw, 25px);
+  width: clamp(20px, 14px + 2cqw, 26px);
+  height: clamp(20px, 14px + 2cqw, 26px);
   border-radius: clamp(3px, 1.5px + 0.4cqw, 4px);
   display: inline-flex;
   align-items: center;
@@ -2022,9 +2071,6 @@
   .vsc-toolbar-left {
     gap: 6px;
   }
-  .vsc-chat-model-select {
-    max-width: 260px;
-  }
 }
 
 @container copilotPanel (min-width: 650px) {
@@ -2034,71 +2080,6 @@
   .vsc-toolbar-left {
     gap: 8px;
   }
-  .vsc-chat-model-select {
-    max-width: 340px;
-  }
-}
-
-/* VS Code Composer Footer Statusbar - Scalable */
-.vsc-composer-statusbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: clamp(3px, 1px + 0.8cqw, 8px);
-  padding: 2px 1px 0;
-  font: 400 clamp(9px, 7.5px + 0.5cqw, 10.5px) var(--sans);
-  color: #7a7a7a;
-  user-select: none;
-  min-width: 0;
-}
-
-.vsc-statusbar-left {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.vsc-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: #7a7a7a;
-  font-weight: 400;
-}
-
-.vsc-status-icon {
-  color: #7a7a7a;
-}
-
-.vsc-status-dot {
-  color: #444444;
-}
-
-.vsc-status-text {
-  color: #7a7a7a;
-}
-
-.vsc-status-timer {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: #cccccc;
-  font-weight: 500;
-  font-family: var(--mono);
-}
-
-.vsc-statusbar-right {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.vsc-status-shortcut {
-  color: #555555;
-  font-size: 9.5px;
 }
 
 /* Tool and Button States */

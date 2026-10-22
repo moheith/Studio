@@ -2463,24 +2463,50 @@ export default function StudioPage(p: StudioProps) {
             {/* Copilot Chat Composer (VS Code Style Single Card) */}
             <div className="vsc-composer-wrapper">
               <div className="vsc-composer-card">
-                {/* Textarea at the top */}
-                <textarea
-                  className="vsc-composer-textarea"
-                  value={p.chat}
-                  onChange={e => p.setChat(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      if (!p.isAiGenerating) p.submitPrompt()
-                    }
-                  }}
-                  placeholder={p.isAntigravityMode
-                    ? "Chat with Antigravity Agent… (tools & reasoning active)"
-                    : "Chat with Copilot… (Enter to send, Shift+Enter for newline)"}
-                  rows={2}
-                />
+                {/* Textarea on the left, Up Arrow button at the right end */}
+                <div className="vsc-composer-input-row">
+                  <textarea
+                    className="vsc-composer-textarea"
+                    value={p.chat}
+                    onChange={e => p.setChat(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        if (!p.isAiGenerating) p.submitPrompt()
+                      }
+                    }}
+                    placeholder={p.isAntigravityMode
+                      ? "Chat with Antigravity Agent… (tools & reasoning active)"
+                      : "Chat with Copilot… (Enter to send, Shift+Enter for newline)"}
+                    rows={2}
+                  />
 
-                {/* Bottom Action Bar inside the card */}
+                  {/* Up arrow / stop button always at the right end of the chatbox */}
+                  <div className="vsc-composer-send-wrap">
+                    {p.isAiGenerating ? (
+                      <button
+                        type="button"
+                        className="vsc-chat-send-btn stop"
+                        onClick={p.stopAiGeneration}
+                        title="Stop generation"
+                      >
+                        <Square size={8} fill="currentColor" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="vsc-chat-send-btn"
+                        disabled={!p.chat.trim() || !p.selectedModel}
+                        onClick={p.submitPrompt}
+                        title="Send message (Enter)"
+                      >
+                        <ArrowUp size={12} strokeWidth={2.2} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bottom Action Bar inside the card: Tools */}
                 <div className="vsc-composer-toolbar">
                   {/* Left Controls */}
                   <div className="vsc-toolbar-left">
@@ -2563,56 +2589,6 @@ export default function StudioPage(p: StudioProps) {
                       </button>
                     </div>
                   </div>
-
-                  {/* Right Controls: Submit / Stop Arrow */}
-                  <div className="vsc-toolbar-right">
-                    {p.isAiGenerating ? (
-                      <button
-                        type="button"
-                        className="vsc-chat-send-btn stop"
-                        onClick={p.stopAiGeneration}
-                        title="Stop generation"
-                      >
-                        <Square size={8} fill="currentColor" />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="vsc-chat-send-btn"
-                        disabled={!p.chat.trim() || !p.selectedModel}
-                        onClick={p.submitPrompt}
-                        title="Send message (Enter)"
-                      >
-                        <ArrowUp size={12} strokeWidth={2.2} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Status bar beneath composer card */}
-              <div className="vsc-composer-statusbar">
-                <div className="vsc-statusbar-left">
-                  <span className="vsc-status-pill">
-                    <Sparkles size={11} className="vsc-status-icon" />
-                    <span>{p.isAntigravityMode ? "Antigravity Agent" : "Copilot"}</span>
-                  </span>
-                  <span className="vsc-status-dot">•</span>
-                  <span className="vsc-status-text">
-                    {p.useWaterfall ? "Waterfall Active" : "Single Model"}
-                  </span>
-                  {p.isAiGenerating && (
-                    <>
-                      <span className="vsc-status-dot">•</span>
-                      <span className="vsc-status-timer">
-                        <Loader2 size={10} className="animate-spin" />
-                        <span>{elapsedSeconds.toFixed(1)}s</span>
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="vsc-statusbar-right">
-                  <span className="vsc-status-shortcut">↵ send • ⇧↵ newline</span>
                 </div>
               </div>
             </div>
