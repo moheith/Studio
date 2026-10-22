@@ -1061,8 +1061,8 @@ export default function StudioPage(p: StudioProps) {
       if (kind === 'left') {
         setLeftWidth(Math.max(180, Math.min(420, event.clientX - 48)))
       } else if (kind === 'ai') {
-        const maxWidth = Math.max(380, window.innerWidth - (p.sidebarOpen ? leftWidth + 48 : 48) - 200)
-        setAiPanelWidth(Math.max(280, Math.min(maxWidth, window.innerWidth - event.clientX)))
+        const maxWidth = Math.max(450, window.innerWidth - (p.sidebarOpen ? leftWidth + 48 : 48) - 160)
+        setAiPanelWidth(Math.max(240, Math.min(maxWidth, window.innerWidth - event.clientX)))
       } else if (kind === 'preview') {
         const editorAreaWidth = window.innerWidth - (p.sidebarOpen ? leftWidth + 48 : 48) - (aiChatOpen ? aiPanelWidth : 0)
         const pct = Math.max(25, Math.min(75, ((event.clientX - (p.sidebarOpen ? leftWidth + 48 : 48)) / editorAreaWidth) * 100))
@@ -2050,7 +2050,10 @@ export default function StudioPage(p: StudioProps) {
 
         {/* Dedicated Vertical Copilot Chat Panel (Right Side - VS Code Style) */}
         {aiChatOpen && (
-          <aside className="vsc-copilot-vertical-panel" style={{ width: aiPanelWidth }}>
+          <aside
+            className="vsc-copilot-vertical-panel"
+            style={{ width: aiPanelWidth, '--copilot-width': `${aiPanelWidth}px` } as React.CSSProperties}
+          >
             <div className="copilot-panel-header">
               <div className="copilot-title-group">
                 <Sparkles size={15} className="copilot-icon" />

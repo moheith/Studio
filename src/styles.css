@@ -1345,14 +1345,16 @@
 /* Dedicated Vertical Copilot Chat Panel (VS Code Style) */
 .vsc-copilot-vertical-panel {
   flex: none;
-  min-width: 250px;
-  max-width: 650px;
+  min-width: 240px;
+  max-width: 900px;
   display: flex;
   flex-direction: column;
   background: #181818;
   border-left: 1px solid #282828;
   overflow: hidden;
   z-index: 3;
+  container-type: inline-size;
+  container-name: copilotPanel;
 }
 
 .copilot-panel-header {
@@ -1671,17 +1673,17 @@
 }
 
 /* ==========================================================================
-   VS Code Native-Style Copilot Composer (Full Grey Theme)
+   VS Code Native-Style Copilot Composer (Fluid Responsive Full Grey Theme)
    ========================================================================== */
 
 .vsc-composer-wrapper {
-  padding: 6px 8px 4px;
+  padding: clamp(5px, 2px + 0.8cqw, 8px) clamp(6px, 3px + 1cqw, 12px) clamp(4px, 2px + 0.5cqw, 6px);
   background: #181818;
   border-top: 1px solid #282828;
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: clamp(2px, 1px + 0.4cqw, 4px);
   min-width: 0;
   box-sizing: border-box;
 }
@@ -1691,8 +1693,8 @@
   flex-direction: column;
   background: #1e1f20;
   border: 1px solid #2d2e30;
-  border-radius: 5px;
-  padding: 4px 6px 3px;
+  border-radius: clamp(4px, 2px + 0.6cqw, 6px);
+  padding: clamp(4px, 2px + 0.6cqw, 6px) clamp(6px, 3px + 0.8cqw, 10px) clamp(3px, 2px + 0.4cqw, 5px);
   transition: border-color 0.12s ease;
   box-sizing: border-box;
   min-width: 0;
@@ -1712,11 +1714,11 @@
   outline: none;
   color: #cccccc;
   font-family: var(--sans);
-  font-size: 11.5px;
+  font-size: clamp(11px, 9.5px + 0.5cqw, 12.5px);
   resize: none;
-  min-height: 28px;
-  max-height: 120px;
-  line-height: 1.35;
+  min-height: clamp(26px, 18px + 2.5cqw, 38px);
+  max-height: 140px;
+  line-height: 1.38;
   box-sizing: border-box;
   padding: 0;
 }
@@ -1729,7 +1731,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 3px;
+  gap: clamp(2px, 1px + 0.5cqw, 5px);
   flex-wrap: wrap;
   margin-top: 2px;
   padding-top: 1px;
@@ -1740,7 +1742,7 @@
 .vsc-toolbar-left {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: clamp(2px, 1px + 0.5cqw, 5px);
   flex-wrap: wrap;
   min-width: 0;
   flex: 1 1 auto;
@@ -1749,8 +1751,19 @@
 .vsc-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: clamp(2px, 1px + 0.5cqw, 5px);
   margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Common icon scaling inside composer buttons as panel is moved */
+.vsc-chat-pill-btn svg,
+.vsc-chat-model-wrapper svg,
+.vsc-composite-pill svg,
+.vsc-composer-icon-btn svg,
+.vsc-chat-send-btn svg {
+  width: clamp(10px, 8px + 0.65cqw, 13px) !important;
+  height: clamp(10px, 8px + 0.65cqw, 13px) !important;
   flex-shrink: 0;
 }
 
@@ -1758,14 +1771,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
+  width: clamp(18px, 12px + 2cqw, 25px);
+  height: clamp(18px, 12px + 2cqw, 25px);
+  border-radius: clamp(3px, 1.5px + 0.4cqw, 4px);
   background: transparent;
   border: 1px solid transparent;
   color: #8c8c8c;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease;
   flex-shrink: 0;
   padding: 0;
 }
@@ -1775,20 +1788,22 @@
   color: #cccccc;
 }
 
-/* Antigravity Pill (Matches `{/} Agent` in VS Code) */
+/* Antigravity Pill (Matches `{/} Agent` in VS Code) - Scalable */
 .vsc-chat-pill-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 0 4px;
-  height: 18px;
-  border-radius: 3px;
-  font: 500 10px var(--sans);
+  gap: clamp(2px, 1px + 0.4cqw, 4px);
+  padding: 0 clamp(4px, 1.5px + 0.8cqw, 8px);
+  height: clamp(18px, 12px + 2cqw, 25px);
+  border-radius: clamp(3px, 1.5px + 0.4cqw, 4px);
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: clamp(9.5px, 8px + 0.6cqw, 11.5px);
   color: #8c8c8c;
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   white-space: nowrap;
   user-select: none;
   flex-shrink: 0;
@@ -1811,18 +1826,19 @@
   color: inherit;
 }
 
-/* AI Model Selector Wrapper (Matches Model Picker in VS Code) */
+/* AI Model Selector Wrapper (Matches Model Picker in VS Code) - Scalable */
 .vsc-chat-model-wrapper {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 0 4px;
-  height: 18px;
-  border-radius: 3px;
+  gap: clamp(2px, 1px + 0.4cqw, 4px);
+  padding: 0 clamp(3px, 1px + 0.8cqw, 6px);
+  height: clamp(18px, 12px + 2cqw, 25px);
+  border-radius: clamp(3px, 1.5px + 0.4cqw, 4px);
   background: transparent;
   border: 1px solid transparent;
-  transition: all 0.12s ease;
-  flex-shrink: 0;
+  transition: background 0.12s ease;
+  flex-shrink: 1;
+  min-width: 0;
   box-sizing: border-box;
   position: relative;
 }
@@ -1842,14 +1858,16 @@
   background: transparent;
   border: none;
   outline: none;
-  font: 500 10px var(--sans);
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: clamp(9.5px, 8px + 0.6cqw, 11.5px);
   color: #cccccc;
   cursor: pointer;
-  max-width: 170px;
+  max-width: clamp(110px, 50px + 22cqw, 280px);
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
-  padding-right: 11px;
+  padding-right: clamp(10px, 8px + 0.8cqw, 14px);
   padding-left: 1px;
 }
 
@@ -1866,20 +1884,20 @@
 
 .vsc-model-chevron {
   position: absolute;
-  right: 3px;
+  right: clamp(2px, 1px + 0.5cqw, 4px);
   pointer-events: none;
   color: #8c8c8c;
 }
 
-/* Waterfall Composite Pill (Matches `Auto | Balance` in VS Code) */
+/* Waterfall Composite Pill (Matches `Auto | Balance` in VS Code) - Scalable */
 .vsc-composite-pill {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  border-radius: 3px;
+  height: clamp(18px, 12px + 2cqw, 25px);
+  border-radius: clamp(3px, 1.5px + 0.4cqw, 4px);
   background: transparent;
   border: 1px solid transparent;
-  transition: all 0.12s ease;
+  transition: background 0.12s ease;
   flex-shrink: 0;
   box-sizing: border-box;
   overflow: hidden;
@@ -1897,13 +1915,15 @@
 .vsc-composite-left {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: clamp(2px, 1px + 0.4cqw, 4px);
   background: transparent;
   border: none;
   outline: none;
-  padding: 0 4px;
+  padding: 0 clamp(3.5px, 1.5px + 0.7cqw, 7px);
   height: 100%;
-  font: 500 10px var(--sans);
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: clamp(9.5px, 8px + 0.6cqw, 11.5px);
   color: #8c8c8c;
   cursor: pointer;
   transition: color 0.12s ease;
@@ -1924,7 +1944,7 @@
 
 .vsc-composite-divider {
   color: #38393a;
-  font-size: 9px;
+  font-size: clamp(8.5px, 7px + 0.5cqw, 10px);
   user-select: none;
   line-height: 1;
 }
@@ -1932,13 +1952,15 @@
 .vsc-composite-right {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: clamp(2px, 1px + 0.4cqw, 4px);
   background: transparent;
   border: none;
   outline: none;
-  padding: 0 4px;
+  padding: 0 clamp(3px, 1.5px + 0.6cqw, 6px);
   height: 100%;
-  font: 500 9.5px var(--sans);
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: clamp(9px, 7.5px + 0.6cqw, 11px);
   color: #8c8c8c;
   cursor: pointer;
   transition: color 0.12s ease, background 0.12s ease;
@@ -1948,11 +1970,11 @@
   color: #ffffff;
 }
 
-/* VS Code Send Button (↑ Arrow / Stop Square) */
+/* VS Code Send Button (↑ Arrow / Stop Square) - Scalable */
 .vsc-chat-send-btn {
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
+  width: clamp(18px, 12px + 2cqw, 25px);
+  height: clamp(18px, 12px + 2cqw, 25px);
+  border-radius: clamp(3px, 1.5px + 0.4cqw, 4px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1960,7 +1982,7 @@
   color: #ffffff;
   border: none;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease;
   flex-shrink: 0;
   padding: 0;
 }
@@ -1986,14 +2008,45 @@
   background: #38393a;
 }
 
-/* VS Code Composer Footer Statusbar */
+/* Container Query Breakpoint Refinements */
+@container copilotPanel (max-width: 295px) {
+  .vsc-composite-right span {
+    display: none;
+  }
+}
+
+@container copilotPanel (min-width: 500px) {
+  .vsc-composer-toolbar {
+    gap: 6px;
+  }
+  .vsc-toolbar-left {
+    gap: 6px;
+  }
+  .vsc-chat-model-select {
+    max-width: 260px;
+  }
+}
+
+@container copilotPanel (min-width: 650px) {
+  .vsc-composer-toolbar {
+    gap: 8px;
+  }
+  .vsc-toolbar-left {
+    gap: 8px;
+  }
+  .vsc-chat-model-select {
+    max-width: 340px;
+  }
+}
+
+/* VS Code Composer Footer Statusbar - Scalable */
 .vsc-composer-statusbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: clamp(3px, 1px + 0.8cqw, 8px);
   padding: 2px 1px 0;
-  font: 400 9.5px var(--sans);
+  font: 400 clamp(9px, 7.5px + 0.5cqw, 10.5px) var(--sans);
   color: #7a7a7a;
   user-select: none;
   min-width: 0;
