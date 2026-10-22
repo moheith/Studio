@@ -2402,16 +2402,8 @@ export default function StudioPage(p: StudioProps) {
                                 }}
                                 title="Click to view Model Waterfall, Tokens & Timing Breakdown"
                               >
-                                <span className="telemetry-models-summary">
-                                  {msg.telemetry.models?.map(m => m.alias).join(' ➔ ') || 'M1'}
-                                </span>
-                                <span className="telemetry-dot">•</span>
                                 <span className="telemetry-stat">
                                   {formatDuration(msg.telemetry.total_duration ?? 0)}
-                                </span>
-                                <span className="telemetry-dot">•</span>
-                                <span className="telemetry-stat">
-                                  {(msg.telemetry.total_tokens ?? 0).toLocaleString()} tok
                                 </span>
                                 <ChevronDown size={10} className={`telemetry-chevron ${openTelemetryId === msg.id ? 'is-open' : ''}`} />
                               </button>

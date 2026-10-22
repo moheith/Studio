@@ -16,6 +16,29 @@ type ProfilePageProps = {
   onUsername: (name: string) => Promise<void>
 }
 
+function formatCompactTokens(num: number | null | undefined): { compact: string; full: string } {
+  const n = Math.max(0, Number(num) || 0)
+  const full = `${n.toLocaleString()} tokens`
+
+  if (n >= 1e12) {
+    const val = (n / 1e12).toFixed(2).replace(/\.?0+$/, '')
+    return { compact: `${val}T`, full }
+  }
+  if (n >= 1e9) {
+    const val = (n / 1e9).toFixed(2).replace(/\.?0+$/, '')
+    return { compact: `${val}B`, full }
+  }
+  if (n >= 1e6) {
+    const val = (n / 1e6).toFixed(2).replace(/\.?0+$/, '')
+    return { compact: `${val}M`, full }
+  }
+  if (n >= 1e3) {
+    const val = (n / 1e3).toFixed(1).replace(/\.?0+$/, '')
+    return { compact: `${val}K`, full }
+  }
+  return { compact: `${n}`, full }
+}
+
 export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, onCreate, onOpen, onKey, onLogout, onUsername }: ProfilePageProps) {
   const [username, setUsername] = useState('')
   const [usernameError, setUsernameError] = useState('')
@@ -24,6 +47,20 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
   const avatar = user?.avatar
     ? <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
     : displayName.slice(0, 1).toUpperCase()
+
+  const totalTokens = user?.tokens?.total_tokens ?? 0
+  const inputTokens = user?.tokens?.input_tokens ?? 0
+  const outputTokens = user?.tokens?.output_tokens ?? 0
+  const peakTokens = user?.tokens?.max_single_turn_tokens ?? 0
+  const turnsCount = user?.tokens?.turns_count ?? 0
+
+  const totalFormatted = formatCompactTokens(totalTokens)
+  const peakFormatted = formatCompactTokens(peakTokens)
+  const inputFormatted = formatCompactTokens(inputTokens)
+  const outputFormatted = formatCompactTokens(outputTokens)
+
+  const inputPct = totalTokens > 0 ? Math.round((inputTokens / totalTokens) * 100) : 0
+  const outputPct = totalTokens > 0 ? 100 - inputPct : 0
 
   return <div className="profile-shell creator-profile-shell">
     <header className="topbar profile-topbar creator-profile-topbar">
@@ -69,61 +106,109 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
         <div className="creator-token-analytics-card">
           <div className="token-card-header">
             <div className="token-header-title">
-              <Zap size={15} className="token-bolt-icon" />
-              <span>AI Token Usage & Performance</span>
+              <div className="token-bolt-wrap">
+                <Zap size={14} className="token-bolt-icon" />
+              </div>
+              <div className="token-title-group">
+                <span className="token-title-main">AI Token Telemetry</span>
+                <span className="token-title-sub">Compute usage & resource intelligence</span>
+              </div>
             </div>
-            <span className="token-header-badge">{user?.tokens?.turns_count ?? 0} AI turns executed</span>
+            <div className="token-header-badge" title="Total AI interaction turns recorded">
+              <span className="token-pulse-dot" />
+              <span>{turnsCount.toLocaleString()} {turnsCount === 1 ? 'Turn' : 'Turns'} Executed</span>
+            </div>
           </div>
 
           <div className="creator-token-grid">
-            <div className="token-stat-box highlight-purple">
+            {/* 1. Lifetime Burnt */}
+            <div className="token-stat-box highlight-amber" title={`Lifetime: ${totalFormatted.full}`}>
               <div className="token-stat-top">
-                <span className="token-stat-label">Peak Tokens (Single Turn)</span>
-                <Sparkles size={12} className="stat-box-icon text-accent" />
-              </div>
-              <div className="token-stat-value text-accent">
-                {(user?.tokens?.max_single_turn_tokens ?? 0).toLocaleString()}
-                <span className="token-stat-unit">tokens</span>
-              </div>
-              <small className="token-stat-desc">Highest tokens burnt in 1 response</small>
-            </div>
-
-            <div className="token-stat-box highlight-amber">
-              <div className="token-stat-top">
-                <span className="token-stat-label">Lifetime Tokens Burnt</span>
-                <Flame size={12} className="stat-box-icon text-gold" />
+                <span className="token-stat-label">Lifetime Tokens</span>
+                <div className="stat-icon-wrap amber">
+                  <Flame size={13} className="stat-box-icon text-gold" />
+                </div>
               </div>
               <div className="token-stat-value text-gold">
-                {(user?.tokens?.total_tokens ?? 0).toLocaleString()}
-                <span className="token-stat-unit">tokens</span>
+                {totalFormatted.compact}
+                <span className="token-stat-unit">tok</span>
               </div>
-              <small className="token-stat-desc">Cumulative total across all projects</small>
+              <div className="token-stat-footer">
+                <span className="token-stat-desc">Cumulative burnt across all projects</span>
+              </div>
             </div>
 
-            <div className="token-stat-box">
+            {/* 2. Peak Turn */}
+            <div className="token-stat-box highlight-purple" title={`Single Turn Peak: ${peakFormatted.full}`}>
               <div className="token-stat-top">
-                <span className="token-stat-label">Total Input (Reading)</span>
-                <Activity size={12} className="stat-box-icon" />
+                <span className="token-stat-label">Peak Turn Burst</span>
+                <div className="stat-icon-wrap purple">
+                  <Sparkles size={13} className="stat-box-icon text-accent" />
+                </div>
               </div>
-              <div className="token-stat-value">
-                {(user?.tokens?.input_tokens ?? 0).toLocaleString()}
-                <span className="token-stat-unit">tokens</span>
+              <div className="token-stat-value text-accent">
+                {peakFormatted.compact}
+                <span className="token-stat-unit">tok</span>
               </div>
-              <small className="token-stat-desc">Context & project files read</small>
+              <div className="token-stat-footer">
+                <span className="token-stat-desc">Highest tokens burnt in 1 response</span>
+              </div>
             </div>
 
-            <div className="token-stat-box">
+            {/* 3. Input / Reading */}
+            <div className="token-stat-box highlight-cyan" title={`Input Tokens: ${inputFormatted.full}`}>
               <div className="token-stat-top">
-                <span className="token-stat-label">Total Output (Writing)</span>
-                <Check size={12} className="stat-box-icon" />
+                <span className="token-stat-label">Input (Reading)</span>
+                <div className="stat-icon-wrap cyan">
+                  <Activity size={13} className="stat-box-icon text-cyan" />
+                </div>
               </div>
-              <div className="token-stat-value">
-                {(user?.tokens?.output_tokens ?? 0).toLocaleString()}
-                <span className="token-stat-unit">tokens</span>
+              <div className="token-stat-value text-cyan">
+                {inputFormatted.compact}
+                <span className="token-stat-unit">tok</span>
               </div>
-              <small className="token-stat-desc">Code & reasoning generated</small>
+              <div className="token-stat-footer">
+                <span className="token-stat-desc">Workspace context & codebase prompts</span>
+              </div>
+            </div>
+
+            {/* 4. Output / Writing */}
+            <div className="token-stat-box highlight-emerald" title={`Output Tokens: ${outputFormatted.full}`}>
+              <div className="token-stat-top">
+                <span className="token-stat-label">Output (Writing)</span>
+                <div className="stat-icon-wrap emerald">
+                  <Check size={13} className="stat-box-icon text-emerald" />
+                </div>
+              </div>
+              <div className="token-stat-value text-emerald">
+                {outputFormatted.compact}
+                <span className="token-stat-unit">tok</span>
+              </div>
+              <div className="token-stat-footer">
+                <span className="token-stat-desc">Code, reasoning & tool output generated</span>
+              </div>
             </div>
           </div>
+
+          {/* Ratio Progress Bar */}
+          {totalTokens > 0 && (
+            <div className="token-ratio-card">
+              <div className="token-ratio-meta">
+                <div className="ratio-meta-left">
+                  <span className="ratio-legend-dot cyan" />
+                  <span>Context Read: <strong>{inputPct}%</strong> ({inputFormatted.compact})</span>
+                </div>
+                <div className="ratio-meta-right">
+                  <span className="ratio-legend-dot emerald" />
+                  <span>Code Generated: <strong>{outputPct}%</strong> ({outputFormatted.compact})</span>
+                </div>
+              </div>
+              <div className="token-ratio-track" role="progressbar" aria-label="Input vs Output token ratio">
+                <div className="token-ratio-fill cyan" style={{ width: `${inputPct}%` }} title={`Input: ${inputPct}%`} />
+                <div className="token-ratio-fill emerald" style={{ width: `${outputPct}%` }} title={`Output: ${outputPct}%`} />
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
