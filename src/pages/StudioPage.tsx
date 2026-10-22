@@ -2636,7 +2636,7 @@ export default function StudioPage(p: StudioProps) {
             title="Source Control: main branch"
             onClick={() => p.notify('Branch: main (synced with repository)')}
           >
-            <GitBranch size={11} />
+            <GitBranch size={13} />
             <span>main</span>
           </button>
 
@@ -2647,9 +2647,9 @@ export default function StudioPage(p: StudioProps) {
             onClick={() => p.notify(`Workspace status: ${p.saveState || 'All changes saved'}`)}
           >
             {p.saveState === 'saving' ? (
-              <Loader2 size={11} className="animate-spin" />
+              <Loader2 size={13} className="animate-spin" />
             ) : (
-              <Check size={11} />
+              <Check size={13} />
             )}
             <span>{p.saveState === 'saving' ? 'Saving…' : 'Saved'}</span>
           </button>
@@ -2660,9 +2660,9 @@ export default function StudioPage(p: StudioProps) {
             title={`${errorCount} error(s). Click to view in Terminal.`}
             onClick={() => p.setTerminalOpen(true)}
           >
-            <XCircle size={11} className={errorCount > 0 ? 'icon-err' : ''} />
+            <XCircle size={13} className={errorCount > 0 ? 'icon-err' : ''} />
             <span>{errorCount}</span>
-            <AlertTriangle size={11} />
+            <AlertTriangle size={13} />
             <span>0</span>
           </button>
 
@@ -2672,7 +2672,7 @@ export default function StudioPage(p: StudioProps) {
             title="Toggle Integrated Terminal"
             onClick={() => p.setTerminalOpen(!p.terminalOpen)}
           >
-            <Terminal size={11} />
+            <Terminal size={13} />
             <span>Terminal</span>
           </button>
 
@@ -2682,7 +2682,7 @@ export default function StudioPage(p: StudioProps) {
             title="Toggle Live Game Preview (Port 5173)"
             onClick={() => setPreviewOpen(!previewOpen)}
           >
-            <Radio size={11} />
+            <Radio size={13} />
             <span>Port 5173</span>
           </button>
         </div>
@@ -2735,7 +2735,7 @@ export default function StudioPage(p: StudioProps) {
             title={`AI Assistant (${p.isAntigravityMode ? 'Antigravity Agent' : 'Standard Copilot'}): ${p.selectedModel || 'gemini-2.5-pro'}. Click to toggle chat.`}
             onClick={() => setAiChatOpen(!aiChatOpen)}
           >
-            <Sparkles size={11} />
+            <Sparkles size={13} />
             <span>{p.isAntigravityMode ? 'Antigravity' : 'Copilot'}: {(p.selectedModel || 'gemini-2.5-pro').replace(/^models\//, '').replace(/^antigravity-/, '')}</span>
           </button>
 
@@ -2745,7 +2745,7 @@ export default function StudioPage(p: StudioProps) {
             title="Notifications"
             onClick={() => p.notify('Notifications: No pending alerts')}
           >
-            <Bell size={11} />
+            <Bell size={13} />
           </button>
         </div>
       </footer>
