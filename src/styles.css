@@ -1465,6 +1465,8 @@
   flex-direction: column;
   gap: 10px;
   background: #181818;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
 
 .copilot-intro-card {
@@ -1730,6 +1732,8 @@
   line-height: 1.38;
   box-sizing: border-box;
   padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
 
 .vsc-composer-textarea::placeholder {
@@ -2792,6 +2796,8 @@
   border-top: 1px solid #1a1b29;
   max-height: 360px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(196, 169, 244, 0.25) transparent;
 }
 
 .thought-accordion-body pre {
@@ -3978,4 +3984,150 @@
   .vsc-footer-hide-mobile {
     display: none !important;
   }
+}
+
+/* ==========================================================================
+   VS CODE NATIVE SLEEK SCROLLBARS (Chat, Tool Activity, Textarea, IDE)
+   ========================================================================== */
+
+/* 1. Chat Message Feed Scrollbar */
+.copilot-chat-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.copilot-chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.copilot-chat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.copilot-chat-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.copilot-chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.copilot-chat-scroll::-webkit-scrollbar-thumb:active {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+/* 2. Tool Activity & Reasoning Accordion Scrollbar */
+.thought-accordion-body::-webkit-scrollbar,
+.thought-accordion-body pre::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.thought-accordion-body::-webkit-scrollbar-track,
+.thought-accordion-body pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thought-accordion-body::-webkit-scrollbar-thumb,
+.thought-accordion-body pre::-webkit-scrollbar-thumb {
+  background: rgba(196, 169, 244, 0.22);
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.thought-accordion-body:hover::-webkit-scrollbar-thumb,
+.thought-accordion-body pre:hover::-webkit-scrollbar-thumb {
+  background: rgba(196, 169, 244, 0.38);
+}
+
+.thought-accordion-body::-webkit-scrollbar-thumb:hover,
+.thought-accordion-body pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(196, 169, 244, 0.6);
+}
+
+/* 3. Textbox (Prompt Input Textarea) Scrollbar */
+.vsc-composer-textarea::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.vsc-composer-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vsc-composer-textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.vsc-composer-textarea:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.vsc-composer-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+/* 4. Chat Code Blocks & Drawers Scrollbars */
+.md-code-content,
+.bubble-error-drawer {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.md-code-content::-webkit-scrollbar,
+.bubble-error-drawer::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.md-code-content::-webkit-scrollbar-track,
+.bubble-error-drawer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.md-code-content::-webkit-scrollbar-thumb,
+.bubble-error-drawer::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+}
+
+.md-code-content:hover::-webkit-scrollbar-thumb,
+.bubble-error-drawer:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* 5. Sleek Scrollbars across the entire IDE */
+.vscode-ide * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
+.vscode-ide *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.vscode-ide *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vscode-ide *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+.vscode-ide *:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.vscode-ide *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.vscode-ide *::-webkit-scrollbar-corner {
+  background: transparent;
 }
