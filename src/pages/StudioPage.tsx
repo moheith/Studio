@@ -2731,7 +2731,7 @@ export default function StudioPage(p: StudioProps) {
 
           <button
             type="button"
-            className={`vsc-footer-item ${p.isAiGenerating ? 'pulse-ai' : ''} ${aiChatOpen ? 'active' : ''}`}
+            className={`vsc-footer-item vsc-footer-ai-item ${p.isAiGenerating ? 'pulse-ai' : ''} ${aiChatOpen ? 'active' : ''}`}
             title={`AI Assistant (${p.isAntigravityMode ? 'Antigravity Agent' : 'Standard Copilot'}): ${p.selectedModel || 'gemini-2.5-pro'}. Click to toggle chat.`}
             onClick={() => setAiChatOpen(!aiChatOpen)}
           >
