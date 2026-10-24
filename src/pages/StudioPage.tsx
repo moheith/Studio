@@ -6,7 +6,7 @@ import {
   Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, GitBranch, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, Radio, RefreshCw,
-  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, Tablet, Terminal, Trash2, Upload, X, XCircle, Zap
+  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, StretchHorizontal, Tablet, Terminal, Trash2, Upload, X, XCircle, Zap
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
@@ -66,7 +66,7 @@ type StudioProps = {
 }
 
 type ActivityTab = 'explorer' | 'search' | 'assets'
-type DeviceMode = 'desktop' | 'tablet' | 'mobile'
+type DeviceMode = 'desktop' | 'tablet' | 'mobile' | 'responsive'
 
 interface TerminalLogEntry {
   id: string
@@ -313,6 +313,15 @@ export default function StudioPage(p: StudioProps) {
   const [previewOpen, setPreviewOpen] = useState(true)
   // Device mode for preview
   const [device, setDevice] = useState<DeviceMode>('desktop')
+  // Virtual viewport scaling & AI playtest state
+  const [stageSize, setStageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 })
+  const [aiCursor, setAiCursor] = useState<{ active: boolean; x: number; y: number; clicking: boolean; label?: string }>({
+    active: false,
+    x: 0,
+    y: 0,
+    clicking: false
+  })
+  const [aiActiveKeys, setAiActiveKeys] = useState<string[]>([])
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
   // Widths & Heights
@@ -471,7 +480,48 @@ export default function StudioPage(p: StudioProps) {
     }
   }, [termHistory, p.terminalOpen])
 
-  // Capture game runtime errors from preview iframe via postMessage bridge
+  // Track preview stage dimensions via ResizeObserver for virtual viewport scaling
+  useEffect(() => {
+    const el = previewWrapRef.current
+    if (!el) return
+    const measure = () => {
+      const rect = el.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        setStageSize({ width: rect.width, height: rect.height })
+      }
+    }
+    measure()
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(entries => {
+        for (const entry of entries) {
+          const cr = entry.contentRect
+          if (cr.width > 0 && cr.height > 0) {
+            setStageSize({ width: cr.width, height: cr.height })
+          }
+        }
+      })
+      ro.observe(el)
+      return () => ro.disconnect()
+    }
+  }, [previewOpen, previewWidth])
+
+  // Clear simulated keys & pause synthetic input when user switches tabs or window minimizes
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        setAiActiveKeys([])
+        setAiCursor(prev => ({ ...prev, active: false, clicking: false }))
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('blur', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('blur', handleVisibility)
+    }
+  }, [])
+
+  // Capture game runtime errors and logs from preview iframe via postMessage bridge
   useEffect(() => {
     const handleGameMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'yulya:game-error') {
@@ -487,6 +537,17 @@ export default function StudioPage(p: StudioProps) {
         ])
         p.setTerminalOpen(true)
         p.notify(`Game Error: ${event.data.message || 'Script error'}`)
+      } else if (event.data && event.data.type === 'yulya:game-log') {
+        const logText = `[Game ${event.data.level || 'info'}] ${event.data.message || ''}`
+        setTermHistory(prev => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            type: event.data.level === 'warn' ? 'system' : 'output',
+            text: logText,
+            time: new Date().toLocaleTimeString()
+          }
+        ])
       }
     }
     window.addEventListener('message', handleGameMessage)
@@ -1980,24 +2041,31 @@ export default function StudioPage(p: StudioProps) {
                 <div className="vsc-device-controls">
                   <button
                     className={`device-btn ${device === 'desktop' ? 'active' : ''}`}
-                    title="Desktop View (100%)"
+                    title="Desktop 16:9 View (1280×720 - Scaled)"
                     onClick={() => setDevice('desktop')}
                   >
                     <Monitor size={14} />
                   </button>
                   <button
                     className={`device-btn ${device === 'tablet' ? 'active' : ''}`}
-                    title="Tablet View (768px)"
+                    title="Tablet View (768×1024 - Scaled)"
                     onClick={() => setDevice('tablet')}
                   >
                     <Tablet size={14} />
                   </button>
                   <button
                     className={`device-btn ${device === 'mobile' ? 'active' : ''}`}
-                    title="Mobile View (390px)"
+                    title="Mobile View (390×844 - Phone Frame)"
                     onClick={() => setDevice('mobile')}
                   >
                     <Smartphone size={14} />
+                  </button>
+                  <button
+                    className={`device-btn ${device === 'responsive' ? 'active' : ''}`}
+                    title="Fluid View (100% Fill)"
+                    onClick={() => setDevice('responsive')}
+                  >
+                    <StretchHorizontal size={14} />
                   </button>
                   <span className="vsc-header-sep" />
                   <button
@@ -2045,26 +2113,123 @@ export default function StudioPage(p: StudioProps) {
                 </button>
               </div>
 
-              <div className="vsc-preview-stage" ref={previewWrapRef}>
-                <div className={`preview-viewport-container device-${device}`}>
-                  {device === 'mobile' && <div className="phone-notch"><span className="phone-speaker" /></div>}
-                  {p.previewUrl ? (
-                    <iframe
-                      key={p.previewKey}
-                      title="Isolated game preview"
-                      className="vsc-game-iframe"
-                      sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-pointer-lock allow-popups"
-                      src={`${p.previewUrl}${p.previewUrl.includes('?') ? '&' : '?'}t=${p.previewKey}`}
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="preview-loading-box">
-                      <span className="loading-spinner" />
-                      <p>Opening preview…</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+              {/* Virtual Viewport Scaling Container */}
+              {(() => {
+                const DEVICE_RESOLUTIONS: Record<string, { width: number; height: number; label: string }> = {
+                  desktop: { width: 1280, height: 720, label: '1280×720' },
+                  tablet: { width: 768, height: 1024, label: '768×1024' },
+                  mobile: { width: 390, height: 844, label: '390×844' },
+                }
+
+                const currentSpec = device !== 'responsive' ? DEVICE_RESOLUTIONS[device] : null
+                const stagePadX = 24
+                const stagePadY = 24
+                const availW = Math.max(60, (stageSize.width || 400) - stagePadX)
+                const availH = Math.max(60, (stageSize.height || 400) - stagePadY)
+
+                const scale = currentSpec
+                  ? Math.min(availW / currentSpec.width, availH / currentSpec.height, 1.0)
+                  : 1.0
+
+                const displayW = currentSpec ? Math.round(currentSpec.width * scale) : 0
+                const displayH = currentSpec ? Math.round(currentSpec.height * scale) : 0
+
+                return (
+                  <div className="vsc-preview-stage" ref={previewWrapRef}>
+                    {device === 'responsive' || !currentSpec ? (
+                      <div className="preview-viewport-container device-responsive">
+                        {p.previewUrl ? (
+                          <iframe
+                            key={p.previewKey}
+                            title="Isolated game preview"
+                            className="vsc-game-iframe"
+                            sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-pointer-lock allow-popups"
+                            src={`${p.previewUrl}${p.previewUrl.includes('?') ? '&' : '?'}t=${p.previewKey}`}
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="preview-loading-box">
+                            <span className="loading-spinner" />
+                            <p>Opening preview…</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        className={`vsc-virtual-device-outer device-${device}`}
+                        style={{
+                          width: displayW > 0 ? `${displayW}px` : `${Math.min(currentSpec.width, 420)}px`,
+                          height: displayH > 0 ? `${displayH}px` : `${Math.min(currentSpec.height, 300)}px`,
+                        }}
+                      >
+                        <div
+                          className="vsc-virtual-device-inner"
+                          style={{
+                            width: `${currentSpec.width}px`,
+                            height: `${currentSpec.height}px`,
+                            transform: `scale(${scale})`,
+                            transformOrigin: '0 0',
+                          }}
+                        >
+                          {device === 'mobile' && (
+                            <div className="phone-notch">
+                              <span className="phone-speaker" />
+                            </div>
+                          )}
+                          {p.previewUrl ? (
+                            <iframe
+                              key={p.previewKey}
+                              title="Isolated game preview"
+                              className="vsc-game-iframe"
+                              sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-pointer-lock allow-popups"
+                              src={`${p.previewUrl}${p.previewUrl.includes('?') ? '&' : '?'}t=${p.previewKey}`}
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="preview-loading-box">
+                              <span className="loading-spinner" />
+                              <p>Opening preview…</p>
+                            </div>
+                          )}
+
+                          {/* AI Virtual Cursor Overlay */}
+                          {aiCursor.active && (
+                            <div
+                              className={`vsc-virtual-ai-cursor ${aiCursor.clicking ? 'clicking' : ''}`}
+                              style={{
+                                transform: `translate3d(${aiCursor.x}px, ${aiCursor.y}px, 0)`,
+                              }}
+                            >
+                              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="ai-cursor-svg">
+                                <path d="M4.5 3L11.5 21L14.5 13.5L22 10.5L4.5 3Z" fill="#a855f7" stroke="#ffffff" strokeWidth="1.5" strokeLinejoin="round" />
+                              </svg>
+                              <span className="ai-cursor-tag">{aiCursor.label || 'Antigravity AI'}</span>
+                              {aiCursor.clicking && <span className="ai-cursor-ripple" />}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Resolution & Scale Badge */}
+                        <div className="vsc-resolution-pill" title={`Virtual Canvas: ${currentSpec.width}×${currentSpec.height}px (Render scale: ${Math.round(scale * 100)}%)`}>
+                          <span>{currentSpec.width}×{currentSpec.height}</span>
+                          <span className="res-sep">•</span>
+                          <span>{Math.round(scale * 100)}%</span>
+                        </div>
+
+                        {/* Active simulated keys HUD */}
+                        {aiActiveKeys.length > 0 && (
+                          <div className="vsc-preview-keys-hud">
+                            <span className="keys-hud-label">AI Input:</span>
+                            {aiActiveKeys.map(k => (
+                              <kbd key={k} className="keys-hud-key">{k}</kbd>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </section>
           )}
         </div>

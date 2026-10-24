@@ -2246,33 +2246,169 @@
 }
 
 .preview-viewport-container {
+  width: 100%;
   height: 100%;
-  transition: width .2s ease;
   display: flex;
   flex-direction: column;
 }
 
-.device-desktop {
-  width: 100%;
-}
-
-.device-tablet {
-  width: 768px;
-  max-width: 100%;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
-  border-inline: 1px solid #292a38;
-}
-
-.device-mobile {
-  width: 390px;
-  max-width: 100%;
-  height: 95%;
-  border: 8px solid #2a2838;
-  border-radius: 36px;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.7);
-  overflow: hidden;
+/* Virtual Device Frame Outer (Scales visually to fit the stage) */
+.vsc-virtual-device-outer {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: width 0.12s ease-out, height 0.12s ease-out;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
   background: #000;
+  flex-shrink: 0;
+}
+
+.vsc-virtual-device-outer.device-desktop {
+  border: 1px solid #2d2b3d;
+  border-radius: 8px;
+}
+
+.vsc-virtual-device-outer.device-tablet {
+  border: 8px solid #252433;
+  border-radius: 20px;
+}
+
+.vsc-virtual-device-outer.device-mobile {
+  border: 8px solid #262436;
+  border-radius: 32px;
+}
+
+/* Inner container holds the canonical virtual resolution (1280x720, 768x1024, 390x844) */
+.vsc-virtual-device-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  transform-origin: 0 0;
+  overflow: hidden;
+}
+
+.vsc-virtual-device-inner .vsc-game-iframe {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+}
+
+/* Resolution & Scaling Pill */
+.vsc-resolution-pill {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  background: rgba(14, 15, 20, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-family: 'DM Mono', monospace;
+  color: #a4a0b3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.vsc-virtual-device-outer:hover .vsc-resolution-pill {
+  opacity: 1;
+}
+
+.vsc-resolution-pill .res-sep {
+  opacity: 0.4;
+}
+
+/* Virtual AI Cursor Overlay */
+.vsc-virtual-ai-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 9999;
+  transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.ai-cursor-svg {
+  filter: drop-shadow(0 2px 6px rgba(168, 85, 247, 0.6));
+}
+
+.ai-cursor-tag {
+  background: #a855f7;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+  box-shadow: 0 2px 8px rgba(168, 85, 247, 0.4);
+  white-space: nowrap;
+}
+
+.ai-cursor-ripple {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #a855f7;
+  border-radius: 50%;
+  animation: aiCursorClick 0.4s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes aiCursorClick {
+  0% { transform: scale(0.2); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Keys HUD */
+.vsc-preview-keys-hud {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  background: rgba(14, 15, 20, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 3px 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.keys-hud-label {
+  font-size: 10px;
+  color: #a855f7;
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.keys-hud-key {
+  background: #1e1d2b;
+  border: 1px solid #3b3752;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-family: 'DM Mono', monospace;
+  color: #e2e0ed;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.4);
 }
 
 .phone-notch {
