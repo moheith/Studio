@@ -1180,6 +1180,64 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             "description": "Notify the editor to reload the live game preview iframe immediately so that recent file changes take effect.",
             "parameters": {"type": "OBJECT", "properties": {}}
         },
+        {
+            "name": "inspect_game_screen",
+            "description": "Capture a live, zero-overhead visual snapshot of the game preview along with runtime console logs and errors. If device_mode is provided, automatically adjusts the viewport resolution ('desktop' for 1280x720, 'tablet' for 768x1024, 'mobile' for 390x844) before capturing.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "device_mode": {
+                        "type": "STRING",
+                        "description": "Optional device resolution to inspect: 'desktop' (1280x720 16:9 HD), 'tablet' (768x1024), or 'mobile' (390x844)."
+                    }
+                }
+            }
+        },
+        {
+            "name": "send_game_input",
+            "description": "Simulate interactive inputs into the game preview (WASD, arrows, space, mouse clicks, movement, and touch). Duration-aware inputs support holding keys down (e.g. hold 'd' for 1500ms to walk right) and mouse dragging.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "actions": {
+                        "type": "ARRAY",
+                        "description": "List of input actions to execute sequentially or simultaneously.",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "type": {"type": "STRING", "description": "'key' for keyboard, 'mouse' for mouse cursor, or 'touch' for touchscreen."},
+                                "key": {"type": "STRING", "description": "Keyboard key to press (e.g. 'w', 'a', 's', 'd', 'Space', 'ArrowUp', 'Enter', 'Shift')."},
+                                "action": {"type": "STRING", "description": "'press', 'down', 'up', 'click', 'move', 'drag', or 'tap'."},
+                                "x": {"type": "INTEGER", "description": "Canonical X coordinate (0–1280)."},
+                                "y": {"type": "INTEGER", "description": "Canonical Y coordinate (0–720)."},
+                                "duration_ms": {"type": "INTEGER", "description": "Milliseconds to hold down the key or drag the mouse (e.g. 1500 to walk for 1.5s)."},
+                                "label": {"type": "STRING", "description": "Brief description of the action (e.g. 'Walk right', 'Jump over spike', 'Click Start')."}
+                            }
+                        }
+                    }
+                },
+                "required": ["actions"]
+            }
+        },
+        {
+            "name": "set_game_device",
+            "description": "Switch the game preview resolution to Desktop (1280x720 16:9 HD), Tablet (768x1024), or Mobile (390x844).",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "device_mode": {
+                        "type": "STRING",
+                        "description": "The target device mode: 'desktop', 'tablet', or 'mobile'."
+                    }
+                },
+                "required": ["device_mode"]
+            }
+        },
+        {
+            "name": "stop_game_playtest",
+            "description": "Conclude the active AI playtest, safely releasing all held keys, dismissing the controlling border, and restoring the user's viewport.",
+            "parameters": {"type": "OBJECT", "properties": {}}
+        },
     ]
 
     # Search Grounding is an exclusive agentic capability for Antigravity only
@@ -1509,6 +1567,10 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                         elif name == "search_grounding": tool_desc = f"Searching Google for: '{args.get('query', '')}'"
                         elif name == "list_files": tool_desc = "Scanning project files"
                         elif name == "request_reload": tool_desc = "Live preview reloaded"
+                        elif name == "inspect_game_screen": tool_desc = f"Inspecting live game screen ({args.get('device_mode', 'desktop')})"
+                        elif name == "send_game_input": tool_desc = f"Simulating AI inputs ({len(args.get('actions', []))} actions)"
+                        elif name == "set_game_device": tool_desc = f"Switching game preview device to '{args.get('device_mode', 'desktop')}'"
+                        elif name == "stop_game_playtest": tool_desc = "Concluded AI game playtest"
                         if tool_desc:
                             action_msg = f"\n→ [Action] {tool_desc}\n"
                             thought_text.append(action_msg)
@@ -1583,6 +1645,21 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                                         yield "event: thought\ndata: " + json.dumps({"text": g_thought}) + "\n\n"
                             elif name == "request_reload":
                                 result = {"requested": True}; yield "event: reload_preview\ndata: {}\n\n"
+                            elif name == "inspect_game_screen":
+                                dev_mode = str(args.get("device_mode") or "desktop").lower()
+                                yield "event: inspect_game_screen\ndata: " + json.dumps({"device_mode": dev_mode}) + "\n\n"
+                                result = {"status": "inspecting", "device_mode": dev_mode, "preview_active": True}
+                            elif name == "send_game_input":
+                                actions_list = args.get("actions") or []
+                                yield "event: send_game_input\ndata: " + json.dumps({"actions": actions_list}) + "\n\n"
+                                result = {"status": "dispatched", "actions_dispatched": len(actions_list)}
+                            elif name == "set_game_device":
+                                target_dev = str(args.get("device_mode") or "desktop").lower()
+                                yield "event: set_game_device\ndata: " + json.dumps({"device_mode": target_dev}) + "\n\n"
+                                result = {"status": "switched", "device_mode": target_dev}
+                            elif name == "stop_game_playtest":
+                                yield "event: stop_game_playtest\ndata: {}\n\n"
+                                result = {"status": "stopped"}
                             else: result = {"error":"Unknown tool"}
                         except (HTTPException, KeyError) as exc: result = {"error":exc.detail if isinstance(exc, HTTPException) else "Required file path/content missing"}
                         function_results.append({"functionResponse":{"name":name,"response":result}})
@@ -1640,7 +1717,6 @@ async def prepare_game_html(project: dict[str, Any], raw_html: str, base_href: s
     error_bridge = (
         "<script>\n"
         "(function() {\n"
-        "  // Error reporting bridge\n"
         "  window.addEventListener('error', function(e) {\n"
         "    try {\n"
         "      var loc = e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ':' + e.colno + ')' : '';\n"
@@ -1653,29 +1729,109 @@ async def prepare_game_html(project: dict[str, Any], raw_html: str, base_href: s
         "      window.parent.postMessage({ type: 'yulya:game-error', message: 'Unhandled Promise Rejection: ' + reason, filename: '', lineno: 0 }, '*');\n"
         "    } catch(err) {}\n"
         "  });\n"
-        "  // Synthetic input and canvas capture bridge\n"
+        "  try {\n"
+        "    var _origWarn = console.warn;\n"
+        "    console.warn = function() {\n"
+        "      _origWarn.apply(console, arguments);\n"
+        "      try {\n"
+        "        var msg = Array.prototype.slice.call(arguments).map(function(a) { return typeof a === 'object' ? JSON.stringify(a) : String(a); }).join(' ');\n"
+        "        window.parent.postMessage({ type: 'yulya:game-log', level: 'warn', message: msg }, '*');\n"
+        "      } catch(e) {}\n"
+        "    };\n"
+        "    var _origErr = console.error;\n"
+        "    console.error = function() {\n"
+        "      _origErr.apply(console, arguments);\n"
+        "      try {\n"
+        "        var msg = Array.prototype.slice.call(arguments).map(function(a) { return typeof a === 'object' ? JSON.stringify(a) : String(a); }).join(' ');\n"
+        "        window.parent.postMessage({ type: 'yulya:game-log', level: 'error', message: msg }, '*');\n"
+        "      } catch(e) {}\n"
+        "    };\n"
+        "  } catch(e) {}\n"
+        "  var activeKeys = {};\n"
+        "  var activeTimers = [];\n"
+        "  function releaseAllKeys() {\n"
+        "    for (var k in activeKeys) {\n"
+        "      if (activeKeys[k]) {\n"
+        "        try {\n"
+        "          var evt = new KeyboardEvent('keyup', { key: k, code: activeKeys[k], bubbles: true, cancelable: true });\n"
+        "          window.dispatchEvent(evt); document.dispatchEvent(evt);\n"
+        "        } catch(e) {}\n"
+        "      }\n"
+        "    }\n"
+        "    activeKeys = {}; activeTimers.forEach(clearTimeout); activeTimers = [];\n"
+        "  }\n"
+        "  function resolveKeyCode(key) {\n"
+        "    if (!key) return { key: ' ', code: 'Space', keyCode: 32 };\n"
+        "    var k = String(key); var lk = k.toLowerCase();\n"
+        "    if (lk === ' ' || lk === 'space') return { key: ' ', code: 'Space', keyCode: 32 };\n"
+        "    if (lk === 'enter') return { key: 'Enter', code: 'Enter', keyCode: 13 };\n"
+        "    if (lk === 'escape' || lk === 'esc') return { key: 'Escape', code: 'Escape', keyCode: 27 };\n"
+        "    if (lk === 'shift') return { key: 'Shift', code: 'ShiftLeft', keyCode: 16 };\n"
+        "    if (lk === 'control' || lk === 'ctrl') return { key: 'Control', code: 'ControlLeft', keyCode: 17 };\n"
+        "    if (lk === 'arrowup' || lk === 'up') return { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 };\n"
+        "    if (lk === 'arrowdown' || lk === 'down') return { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 };\n"
+        "    if (lk === 'arrowleft' || lk === 'left') return { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 };\n"
+        "    if (lk === 'arrowright' || lk === 'right') return { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 };\n"
+        "    if (k.length === 1 && /[a-zA-Z]/.test(k)) return { key: k, code: 'Key' + k.toUpperCase(), keyCode: k.toUpperCase().charCodeAt(0) };\n"
+        "    if (k.length === 1 && /[0-9]/.test(k)) return { key: k, code: 'Digit' + k, keyCode: k.charCodeAt(0) };\n"
+        "    return { key: k, code: k, keyCode: 0 };\n"
+        "  }\n"
         "  window.addEventListener('message', function(e) {\n"
         "    if (!e.data || typeof e.data !== 'object') return;\n"
+        "    if (e.data.type === 'yulya:release-all-keys') {\n"
+        "      releaseAllKeys(); return;\n"
+        "    }\n"
         "    if (e.data.type === 'yulya:simulate-input') {\n"
-        "      var d = e.data;\n"
-        "      if (d.inputKind === 'keydown' || d.inputKind === 'keyup') {\n"
-        "        var k = d.key || '';\n"
-        "        var code = d.code || ('Key' + k.toUpperCase());\n"
-        "        var evt = new KeyboardEvent(d.inputKind, { key: k, code: code, bubbles: true, cancelable: true });\n"
-        "        window.dispatchEvent(evt);\n"
-        "        document.dispatchEvent(evt);\n"
-        "      } else if (d.inputKind === 'mousemove' || d.inputKind === 'mousedown' || d.inputKind === 'mouseup' || d.inputKind === 'click') {\n"
-        "        var target = document.elementFromPoint(d.x, d.y) || document.body;\n"
-        "        var mEvt = new MouseEvent(d.inputKind, { clientX: d.x, clientY: d.y, bubbles: true, cancelable: true, view: window });\n"
+        "      var d = e.data; var kind = d.inputKind || 'keydown';\n"
+        "      if (kind === 'keydown' || kind === 'keyup' || kind === 'keypress') {\n"
+        "        var mapped = resolveKeyCode(d.key);\n"
+        "        var evt = new KeyboardEvent(kind, { key: mapped.key, code: mapped.code, keyCode: mapped.keyCode, which: mapped.keyCode, bubbles: true, cancelable: true });\n"
+        "        window.dispatchEvent(evt); document.dispatchEvent(evt);\n"
+        "        if (kind === 'keydown') {\n"
+        "          activeKeys[mapped.key] = mapped.code;\n"
+        "          if (d.duration_ms && d.duration_ms > 0) {\n"
+        "            var tid = setTimeout(function() {\n"
+        "              delete activeKeys[mapped.key];\n"
+        "              var upEvt = new KeyboardEvent('keyup', { key: mapped.key, code: mapped.code, keyCode: mapped.keyCode, which: mapped.keyCode, bubbles: true, cancelable: true });\n"
+        "              window.dispatchEvent(upEvt); document.dispatchEvent(upEvt);\n"
+        "              window.parent.postMessage({ type: 'yulya:input-held-released', key: mapped.key }, '*');\n"
+        "            }, d.duration_ms);\n"
+        "            activeTimers.push(tid);\n"
+        "          }\n"
+        "        } else if (kind === 'keyup') { delete activeKeys[mapped.key]; }\n"
+        "      } else if (kind === 'mousemove' || kind === 'mousedown' || kind === 'mouseup' || kind === 'click' || kind === 'dblclick' || kind === 'contextmenu') {\n"
+        "        var x = typeof d.x === 'number' ? d.x : (window.innerWidth / 2);\n"
+        "        var y = typeof d.y === 'number' ? d.y : (window.innerHeight / 2);\n"
+        "        var target = document.elementFromPoint(x, y) || document.body;\n"
+        "        var button = d.button || 0;\n"
+        "        var mEvt = new MouseEvent(kind, { clientX: x, clientY: y, button: button, buttons: kind === 'mousedown' ? 1 : 0, bubbles: true, cancelable: true, view: window });\n"
         "        target.dispatchEvent(mEvt);\n"
+        "      } else if (kind === 'touchstart' || kind === 'touchmove' || kind === 'touchend') {\n"
+        "        var tx = typeof d.x === 'number' ? d.x : (window.innerWidth / 2);\n"
+        "        var ty = typeof d.y === 'number' ? d.y : (window.innerHeight / 2);\n"
+        "        var tTarget = document.elementFromPoint(tx, ty) || document.body;\n"
+        "        try {\n"
+        "          var touch = new Touch({ identifier: Date.now(), target: tTarget, clientX: tx, clientY: ty, pageX: tx, pageY: ty, screenX: tx, screenY: ty });\n"
+        "          var tEvt = new TouchEvent(kind, { touches: kind === 'touchend' ? [] : [touch], targetTouches: kind === 'touchend' ? [] : [touch], changedTouches: [touch], bubbles: true, cancelable: true });\n"
+        "          tTarget.dispatchEvent(tEvt);\n"
+        "        } catch(terr) {\n"
+        "          var fallbackKind = kind === 'touchstart' ? 'mousedown' : (kind === 'touchend' ? 'mouseup' : 'mousemove');\n"
+        "          var fbEvt = new MouseEvent(fallbackKind, { clientX: tx, clientY: ty, bubbles: true, cancelable: true });\n"
+        "          tTarget.dispatchEvent(fbEvt);\n"
+        "        }\n"
         "      }\n"
         "    } else if (e.data.type === 'yulya:capture-screen') {\n"
-        "      var canvas = document.querySelector('canvas');\n"
+        "      var canvases = document.querySelectorAll('canvas');\n"
+        "      var canvas = null;\n"
+        "      for (var ci = 0; ci < canvases.length; ci++) {\n"
+        "        if (canvases[ci].width > 50 && canvases[ci].height > 50) { canvas = canvases[ci]; break; }\n"
+        "      }\n"
+        "      if (!canvas && canvases.length > 0) canvas = canvases[0];\n"
         "      var dataUrl = '';\n"
         "      if (canvas) {\n"
-        "        try { dataUrl = canvas.toDataURL('image/jpeg', 0.85); } catch(err) {}\n"
+        "        try { dataUrl = canvas.toDataURL('image/jpeg', 0.82); } catch(err) {}\n"
         "      }\n"
-        "      window.parent.postMessage({ type: 'yulya:screen-captured', reqId: e.data.reqId, dataUrl: dataUrl, width: window.innerWidth, height: window.innerHeight }, '*');\n"
+        "      window.parent.postMessage({ type: 'yulya:screen-captured', reqId: e.data.reqId, dataUrl: dataUrl, hasCanvas: !!canvas, width: canvas ? canvas.width : window.innerWidth, height: canvas ? canvas.height : window.innerHeight }, '*');\n"
         "    }\n"
         "  });\n"
         "})();\n"
