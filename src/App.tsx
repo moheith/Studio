@@ -349,20 +349,22 @@ export default function App() {
           return
         }
       }
-      const current = await api<{ files: Array<{ path: string }> }>(`/api/projects/${currentProjectId}/files`)
-      const nextCode: Record<string, string> = {}
-      for (const file of current.files) {
-        if (/\.(html|css|js|mjs|json)$/.test(file.path)) {
-          nextCode[file.path] = (await getFile(currentProjectId, file.path)).content
+      if (toolsUsed.length > 0) {
+        const current = await api<{ files: Array<{ path: string }> }>(`/api/projects/${currentProjectId}/files`)
+        const nextCode: Record<string, string> = {}
+        for (const file of current.files) {
+          if (/\.(html|css|js|mjs|json)$/.test(file.path)) {
+            nextCode[file.path] = (await getFile(currentProjectId, file.path)).content
+          }
         }
+        setCode(nextCode)
+        setTree(current.files.map(file => ({
+          name: file.path,
+          kind: 'file',
+          language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript'
+        })))
+        setPreviewKey(v => v + 1)
       }
-      setCode(nextCode)
-      setTree(current.files.map(file => ({
-        name: file.path,
-        kind: 'file',
-        language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript'
-      })))
-      setPreviewKey(v => v + 1)
     } catch (error: any) {
       if (error?.name === 'AbortError') {
         notify('AI generation stopped')

@@ -2389,6 +2389,30 @@ export default function StudioPage(p: StudioProps) {
                             <p>Opening preview…</p>
                           </div>
                         )}
+                        {/* AI Virtual Cursor Overlay in Responsive Mode */}
+                        {aiCursor.active && (
+                          <div
+                            className={`vsc-virtual-ai-cursor ${aiCursor.clicking ? 'clicking' : ''}`}
+                            style={{
+                              transform: `translate3d(${aiCursor.x}px, ${aiCursor.y}px, 0)`,
+                            }}
+                          >
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="ai-cursor-svg">
+                              <path d="M4.5 3L11.5 21L14.5 13.5L22 10.5L4.5 3Z" fill="#a855f7" stroke="#ffffff" strokeWidth="1.5" strokeLinejoin="round" />
+                            </svg>
+                            <span className="ai-cursor-tag">{aiCursor.label || 'Antigravity AI'}</span>
+                            {aiCursor.clicking && <span className="ai-cursor-ripple" />}
+                          </div>
+                        )}
+                        {/* Active simulated keys HUD in Responsive Mode */}
+                        {aiActiveKeys.length > 0 && (
+                          <div className="vsc-preview-keys-hud">
+                            <span className="keys-hud-label">AI Input:</span>
+                            {aiActiveKeys.map(k => (
+                              <kbd key={k} className="keys-hud-key">{k}</kbd>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div
