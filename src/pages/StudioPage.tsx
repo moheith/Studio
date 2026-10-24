@@ -578,6 +578,15 @@ export default function StudioPage(p: StudioProps) {
           const k = String(event.data.key).toUpperCase()
           setAiActiveKeys(prev => prev.filter(item => item !== k))
         }
+      } else if (event.data && event.data.type === 'yulya:target-located') {
+        setAiCursor(prev => ({
+          ...prev,
+          active: true,
+          x: event.data.x,
+          y: event.data.y,
+          clicking: true,
+          label: event.data.label ? `Clicking ${event.data.label}` : 'Click'
+        }))
       }
     }
     window.addEventListener('message', handleGameMessage)
@@ -666,6 +675,9 @@ export default function StudioPage(p: StudioProps) {
               previewIframeRef.current?.contentWindow?.postMessage({
                 type: 'yulya:simulate-input',
                 inputKind: 'mousemove',
+                selector: action.selector,
+                text: action.text,
+                label: action.label,
                 x: targetX,
                 y: targetY
               }, '*')
@@ -679,6 +691,9 @@ export default function StudioPage(p: StudioProps) {
                 previewIframeRef.current?.contentWindow?.postMessage({
                   type: 'yulya:simulate-input',
                   inputKind: 'mousedown',
+                  selector: action.selector,
+                  text: action.text,
+                  label: action.label,
                   x: targetX,
                   y: targetY,
                   button: 0
@@ -691,6 +706,9 @@ export default function StudioPage(p: StudioProps) {
                 previewIframeRef.current?.contentWindow?.postMessage({
                   type: 'yulya:simulate-input',
                   inputKind: 'mouseup',
+                  selector: action.selector,
+                  text: action.text,
+                  label: action.label,
                   x: targetX,
                   y: targetY,
                   button: 0
@@ -698,6 +716,9 @@ export default function StudioPage(p: StudioProps) {
                 previewIframeRef.current?.contentWindow?.postMessage({
                   type: 'yulya:simulate-input',
                   inputKind: 'click',
+                  selector: action.selector,
+                  text: action.text,
+                  label: action.label,
                   x: targetX,
                   y: targetY,
                   button: 0
@@ -729,6 +750,9 @@ export default function StudioPage(p: StudioProps) {
               await sleep(60)
             }
           }
+          // After all actions finish, keep cursor visible for 1.8s then smoothly fade out
+          await sleep(1800)
+          setAiCursor(prev => ({ ...prev, active: false, clicking: false }))
         }
         runPacedInputQueue()
       } else if (detail.type === 'set_game_device') {
