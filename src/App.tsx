@@ -339,6 +339,9 @@ export default function App() {
           })
         }
         if (event.type === 'reload_preview') setPreviewKey(v => v + 1)
+        if (event.type === 'inspect_game_screen' || event.type === 'send_game_input' || event.type === 'set_game_device' || event.type === 'stop_game_playtest') {
+          window.dispatchEvent(new CustomEvent('yulya:ai-game-action', { detail: event }))
+        }
         if (event.type === 'error') {
           const errMsg = event.data.message || event.data.text || (typeof event.data === 'string' ? event.data : JSON.stringify(event.data))
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: `Error: ${errMsg}` } : m))

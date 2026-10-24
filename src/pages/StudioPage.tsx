@@ -322,6 +322,20 @@ export default function StudioPage(p: StudioProps) {
     clicking: false
   })
   const [aiActiveKeys, setAiActiveKeys] = useState<string[]>([])
+  // AI Playtest control & ephemeral floating pill state
+  const [isAiControlling, setIsAiControlling] = useState(false)
+  const [inspectionPill, setInspectionPill] = useState<{
+    visible: boolean
+    open: boolean
+    dataUrl?: string
+    width?: number
+    height?: number
+    errorCount: number
+    time: string
+  } | null>(null)
+  const prevViewSettingsRef = useRef<{ device: DeviceMode; previewWidth: number } | null>(null)
+  const gameErrorCountRef = useRef<number>(0)
+  const previewIframeRef = useRef<HTMLIFrameElement | null>(null)
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
   // Widths & Heights
@@ -521,10 +535,11 @@ export default function StudioPage(p: StudioProps) {
     }
   }, [])
 
-  // Capture game runtime errors and logs from preview iframe via postMessage bridge
+  // Capture game runtime errors, logs, and screen captures from preview iframe via postMessage bridge
   useEffect(() => {
     const handleGameMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'yulya:game-error') {
+        gameErrorCountRef.current += 1
         const errorText = `[Game Runtime Error] ${event.data.message || 'Script execution failed'}`
         setTermHistory(prev => [
           ...prev,
@@ -548,11 +563,130 @@ export default function StudioPage(p: StudioProps) {
             time: new Date().toLocaleTimeString()
           }
         ])
+      } else if (event.data && event.data.type === 'yulya:screen-captured') {
+        setInspectionPill({
+          visible: true,
+          open: false,
+          dataUrl: event.data.dataUrl,
+          width: event.data.width || 1280,
+          height: event.data.height || 720,
+          errorCount: gameErrorCountRef.current,
+          time: new Date().toLocaleTimeString()
+        })
+      } else if (event.data && event.data.type === 'yulya:input-held-released') {
+        if (event.data.key) {
+          const k = String(event.data.key).toUpperCase()
+          setAiActiveKeys(prev => prev.filter(item => item !== k))
+        }
       }
     }
     window.addEventListener('message', handleGameMessage)
     return () => window.removeEventListener('message', handleGameMessage)
   }, [])
+
+  // Start & Stop AI Playtest handlers
+  const startAiPlaytest = () => {
+    prevViewSettingsRef.current = { device, previewWidth }
+    setIsAiControlling(true)
+    setDevice('desktop')
+    if (previewWidth < 50) setPreviewWidth(52)
+    p.notify('AI Playtest started — 16:9 HD Desktop view active')
+    previewIframeRef.current?.contentWindow?.postMessage({
+      type: 'yulya:capture-screen',
+      reqId: Date.now().toString()
+    }, '*')
+  }
+
+  const stopAiPlaytest = () => {
+    setIsAiControlling(false)
+    setAiActiveKeys([])
+    setAiCursor(prev => ({ ...prev, active: false, clicking: false }))
+    previewIframeRef.current?.contentWindow?.postMessage({
+      type: 'yulya:release-all-keys'
+    }, '*')
+    if (prevViewSettingsRef.current) {
+      setDevice(prevViewSettingsRef.current.device)
+      setPreviewWidth(prevViewSettingsRef.current.previewWidth)
+    }
+    setInspectionPill(null)
+    p.notify('AI Playtest stopped — Manual control restored')
+  }
+
+  // Handle agent SSE game actions relayed via window events
+  useEffect(() => {
+    const handleAiGameAction = (e: Event) => {
+      const customEvt = e as CustomEvent
+      const detail = customEvt.detail
+      if (!detail) return
+
+      if (detail.type === 'inspect_game_screen') {
+        if (!isAiControlling) {
+          prevViewSettingsRef.current = { device, previewWidth }
+          setIsAiControlling(true)
+          if (previewWidth < 50) setPreviewWidth(52)
+        }
+        if (detail.data?.device_mode) {
+          const m = detail.data.device_mode
+          if (m === 'desktop' || m === 'tablet' || m === 'mobile' || m === 'responsive') {
+            setDevice(m)
+          }
+        }
+        previewIframeRef.current?.contentWindow?.postMessage({
+          type: 'yulya:capture-screen',
+          reqId: Date.now().toString()
+        }, '*')
+      } else if (detail.type === 'send_game_input') {
+        if (!isAiControlling) {
+          prevViewSettingsRef.current = { device, previewWidth }
+          setIsAiControlling(true)
+          if (previewWidth < 50) setPreviewWidth(52)
+        }
+        const actions = detail.data?.actions || []
+        for (const action of actions) {
+          previewIframeRef.current?.contentWindow?.postMessage({
+            type: 'yulya:simulate-input',
+            inputKind: action.action === 'press' ? 'keydown' : action.action,
+            key: action.key,
+            duration_ms: action.duration_ms,
+            x: action.x,
+            y: action.y
+          }, '*')
+
+          if (typeof action.x === 'number' && typeof action.y === 'number') {
+            setAiCursor({
+              active: true,
+              x: action.x,
+              y: action.y,
+              clicking: action.action === 'click' || action.action === 'down',
+              label: action.label || 'Antigravity Copilot'
+            })
+          }
+
+          if (action.key) {
+            const keyLabel = String(action.key).toUpperCase()
+            setAiActiveKeys(prev => prev.includes(keyLabel) ? prev : [...prev, keyLabel])
+            if (action.duration_ms && action.duration_ms > 0) {
+              setTimeout(() => {
+                setAiActiveKeys(prev => prev.filter(k => k !== keyLabel))
+              }, action.duration_ms)
+            } else if (action.action === 'up') {
+              setAiActiveKeys(prev => prev.filter(k => k !== keyLabel))
+            }
+          }
+        }
+      } else if (detail.type === 'set_game_device') {
+        const mode = detail.data?.device_mode
+        if (mode && (mode === 'desktop' || mode === 'tablet' || mode === 'mobile' || mode === 'responsive')) {
+          setDevice(mode)
+        }
+      } else if (detail.type === 'stop_game_playtest') {
+        stopAiPlaytest()
+      }
+    }
+
+    window.addEventListener('yulya:ai-game-action', handleAiGameAction)
+    return () => window.removeEventListener('yulya:ai-game-action', handleAiGameAction)
+  }, [isAiControlling, device, previewWidth])
 
   // List of all folder paths in the project (for Move to Folder dialog)
   const existingFolderPaths = useMemo(() => {
@@ -2068,6 +2202,26 @@ export default function StudioPage(p: StudioProps) {
                     <StretchHorizontal size={14} />
                   </button>
                   <span className="vsc-header-sep" />
+                  {!isAiControlling ? (
+                    <button
+                      className="device-btn playtest-btn"
+                      title="Start AI Playtest & Vision Session"
+                      onClick={startAiPlaytest}
+                    >
+                      <Sparkles size={13} className="playtest-sparkle-icon" />
+                      <span className="playtest-btn-text">Playtest</span>
+                    </button>
+                  ) : (
+                    <button
+                      className="device-btn playtest-stop-btn active-danger"
+                      title="Stop AI Control (Reclaim manual input)"
+                      onClick={stopAiPlaytest}
+                    >
+                      <Square size={11} fill="currentColor" />
+                      <span className="playtest-btn-text">Stop AI</span>
+                    </button>
+                  )}
+                  <span className="vsc-header-sep" />
                   <button
                     className="device-btn"
                     title="Reload Preview"
@@ -2140,6 +2294,7 @@ export default function StudioPage(p: StudioProps) {
                       <div className="preview-viewport-container device-responsive">
                         {p.previewUrl ? (
                           <iframe
+                            ref={previewIframeRef}
                             key={p.previewKey}
                             title="Isolated game preview"
                             className="vsc-game-iframe"
@@ -2156,7 +2311,7 @@ export default function StudioPage(p: StudioProps) {
                       </div>
                     ) : (
                       <div
-                        className={`vsc-virtual-device-outer device-${device}`}
+                        className={`vsc-virtual-device-outer device-${device} ${isAiControlling ? 'ai-controlling' : ''}`}
                         style={{
                           width: displayW > 0 ? `${displayW}px` : `${Math.min(currentSpec.width, 420)}px`,
                           height: displayH > 0 ? `${displayH}px` : `${Math.min(currentSpec.height, 300)}px`,
@@ -2178,6 +2333,7 @@ export default function StudioPage(p: StudioProps) {
                           )}
                           {p.previewUrl ? (
                             <iframe
+                              ref={previewIframeRef}
                               key={p.previewKey}
                               title="Isolated game preview"
                               className="vsc-game-iframe"
@@ -2647,6 +2803,48 @@ export default function StudioPage(p: StudioProps) {
               )}
               <div ref={chatEndRef} />
             </div>
+
+            {/* Ephemeral Floating Inspection Pill in Copilot Chat */}
+            {inspectionPill && inspectionPill.visible && (
+              <div className="copilot-floating-inspection-pill">
+                <div
+                  className="pill-header"
+                  onClick={() => setInspectionPill(prev => prev ? { ...prev, open: !prev.open } : null)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <Eye size={13} className="pill-eye-icon" />
+                  <span className="pill-title">AI Vision: Screen Captured ({inspectionPill.width}×{inspectionPill.height})</span>
+                  <span className={`pill-badge ${inspectionPill.errorCount > 0 ? 'has-errors' : 'clean'}`}>
+                    {inspectionPill.errorCount} {inspectionPill.errorCount === 1 ? 'error' : 'errors'}
+                  </span>
+                  <ChevronDown size={12} className={`pill-chevron ${inspectionPill.open ? 'rotate' : ''}`} />
+                </div>
+                <button
+                  className="pill-close-btn"
+                  title="Dismiss preview"
+                  onClick={e => {
+                    e.stopPropagation()
+                    setInspectionPill(null)
+                  }}
+                >
+                  <X size={12} />
+                </button>
+                {inspectionPill.open && (
+                  <div className="pill-expanded-body">
+                    {inspectionPill.dataUrl ? (
+                      <img src={inspectionPill.dataUrl} alt="Game preview snapshot" className="pill-screenshot" />
+                    ) : (
+                      <div className="pill-empty-state">No canvas visual detected</div>
+                    )}
+                    <div className="pill-meta-row">
+                      <span>Captured at {inspectionPill.time}</span>
+                      <span className="pill-ephemeral-note">Ephemeral • Session only (not saved in DB)</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Copilot Chat Composer (VS Code Style Single Card) */}
             <div className="vsc-composer-wrapper">
