@@ -566,7 +566,7 @@ export default function StudioPage(p: StudioProps) {
       } else if (event.data && event.data.type === 'yulya:screen-captured') {
         setInspectionPill({
           visible: true,
-          open: false,
+          open: true,
           dataUrl: event.data.dataUrl,
           width: event.data.width || 1280,
           height: event.data.height || 720,
@@ -642,38 +642,95 @@ export default function StudioPage(p: StudioProps) {
           if (previewWidth < 50) setPreviewWidth(52)
         }
         const actions = detail.data?.actions || []
-        for (const action of actions) {
-          previewIframeRef.current?.contentWindow?.postMessage({
-            type: 'yulya:simulate-input',
-            inputKind: action.action === 'press' ? 'keydown' : action.action,
-            key: action.key,
-            duration_ms: action.duration_ms,
-            x: action.x,
-            y: action.y
-          }, '*')
+        const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-          if (typeof action.x === 'number' && typeof action.y === 'number') {
-            setAiCursor({
-              active: true,
-              x: action.x,
-              y: action.y,
-              clicking: action.action === 'click' || action.action === 'down',
-              label: action.label || 'Antigravity Copilot'
-            })
-          }
+        const runPacedInputQueue = async () => {
+          for (const action of actions) {
+            const hasCoords = typeof action.x === 'number' && typeof action.y === 'number'
+            const isClickOrMove = action.type === 'mouse' || action.action === 'click' || action.action === 'down' || action.action === 'move' || action.action === 'drag'
 
-          if (action.key) {
-            const keyLabel = String(action.key).toUpperCase()
-            setAiActiveKeys(prev => prev.includes(keyLabel) ? prev : [...prev, keyLabel])
-            if (action.duration_ms && action.duration_ms > 0) {
-              setTimeout(() => {
-                setAiActiveKeys(prev => prev.filter(k => k !== keyLabel))
-              }, action.duration_ms)
-            } else if (action.action === 'up') {
+            if (hasCoords || isClickOrMove) {
+              const targetX = typeof action.x === 'number' ? action.x : 640
+              const targetY = typeof action.y === 'number' ? action.y : 360
+              const actionLabel = action.label || (action.action === 'click' ? 'Clicking…' : 'Moving…')
+
+              // 1. Smoothly glide cursor to target position
+              setAiCursor({
+                active: true,
+                x: targetX,
+                y: targetY,
+                clicking: false,
+                label: actionLabel
+              })
+
+              previewIframeRef.current?.contentWindow?.postMessage({
+                type: 'yulya:simulate-input',
+                inputKind: 'mousemove',
+                x: targetX,
+                y: targetY
+              }, '*')
+
+              // Allow 140ms for human eye to follow cursor movement
+              await sleep(140)
+
+              if (action.action === 'click' || action.action === 'down') {
+                // 2. Trigger visible click (starts ripple animation) and dispatch mousedown
+                setAiCursor(prev => ({ ...prev, clicking: true, label: action.label || 'Click' }))
+                previewIframeRef.current?.contentWindow?.postMessage({
+                  type: 'yulya:simulate-input',
+                  inputKind: 'mousedown',
+                  x: targetX,
+                  y: targetY,
+                  button: 0
+                }, '*')
+
+                // Hold down for 150ms so button :active state and animation register
+                await sleep(150)
+
+                // 3. Dispatch mouseup and click
+                previewIframeRef.current?.contentWindow?.postMessage({
+                  type: 'yulya:simulate-input',
+                  inputKind: 'mouseup',
+                  x: targetX,
+                  y: targetY,
+                  button: 0
+                }, '*')
+                previewIframeRef.current?.contentWindow?.postMessage({
+                  type: 'yulya:simulate-input',
+                  inputKind: 'click',
+                  x: targetX,
+                  y: targetY,
+                  button: 0
+                }, '*')
+
+                await sleep(80)
+                setAiCursor(prev => ({ ...prev, clicking: false }))
+              }
+            } else if (action.type === 'key' || action.key) {
+              const keyLabel = String(action.key).toUpperCase()
+              setAiActiveKeys(prev => prev.includes(keyLabel) ? prev : [...prev, keyLabel])
+
+              previewIframeRef.current?.contentWindow?.postMessage({
+                type: 'yulya:simulate-input',
+                inputKind: 'keydown',
+                key: action.key
+              }, '*')
+
+              const holdTime = action.duration_ms && action.duration_ms > 0 ? action.duration_ms : 200
+              await sleep(holdTime)
+
+              previewIframeRef.current?.contentWindow?.postMessage({
+                type: 'yulya:simulate-input',
+                inputKind: 'keyup',
+                key: action.key
+              }, '*')
               setAiActiveKeys(prev => prev.filter(k => k !== keyLabel))
+
+              await sleep(60)
             }
           }
         }
+        runPacedInputQueue()
       } else if (detail.type === 'set_game_device') {
         const mode = detail.data?.device_mode
         if (mode && (mode === 'desktop' || mode === 'tablet' || mode === 'mobile' || mode === 'responsive')) {

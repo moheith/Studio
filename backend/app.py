@@ -1300,7 +1300,17 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             "6. `delete_file(path)`: Delete unwanted or obsolete files. ('index.html' cannot be deleted).\n"
             "7. `search_files(query)`: Search across project files for variable names, function declarations, or strings.\n"
             "8. `search_grounding(query)`: Ground your work in real-time Google web search results. Use this tool whenever you need documentation on browser Web APIs (Web Audio API, Canvas 2D/WebGL, Gamepad API), mathematical physics equations (AABB, verlet integration, raycasting), sound synthesis recipes, retro algorithms, or modern vanilla JS practices.\n"
-            "9. `request_reload()`: ALWAYS invoke this tool after modifying or creating files so the live game preview immediately reloads with your latest changes.\n\n"
+            "9. `request_reload()`: ALWAYS invoke this tool after modifying or creating files so the live game preview immediately reloads with your latest changes.\n"
+            "10. `inspect_game_screen(device_mode)`: Request a live visual snapshot of the running game in the user's Studio preview at 'desktop' (1280x720), 'tablet' (768x1024), or 'mobile' (390x844). Use this to test your game visually.\n"
+            "11. `send_game_input(actions)`: Dispatch interactive inputs into the game preview (WASD, Space, arrows, mouse clicks, movement, touch). The browser executes these with visible real-time cursor gliding and click animations. Always provide clear 'label' strings for each action.\n"
+            "12. `set_game_device(device_mode)`: Switch the preview viewport between 'desktop', 'tablet', and 'mobile'.\n"
+            "13. `stop_game_playtest()`: Conclude the active playtest session, releasing all inputs and restoring manual control.\n\n"
+            "=== ACCURACY & ANTI-HALLUCINATION RULES FOR PLAYTESTING ===\n"
+            "When inspecting and playtesting:\n"
+            "- Be completely honest, precise, and truthful about what actions you performed.\n"
+            "- State clearly which coordinates and buttons you clicked (e.g. 'Clicked Start at [640, 360]').\n"
+            "- Never invent or hallucinate visual gameplay animations that you did not verify via code logic or console errors.\n"
+            "- Always check for and report any console errors or script failures discovered during the test.\n\n"
             "=== AUTONOMOUS EXECUTION WORKFLOW ===\n"
             "1. Analyze the user request thoroughly against the existing project code.\n"
             "2. Proactively invoke `write_file` or `create_file` to apply all necessary updates to HTML, CSS, and JS.\n"
@@ -1648,7 +1658,13 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                             elif name == "inspect_game_screen":
                                 dev_mode = str(args.get("device_mode") or "desktop").lower()
                                 yield "event: inspect_game_screen\ndata: " + json.dumps({"device_mode": dev_mode}) + "\n\n"
-                                result = {"status": "inspecting", "device_mode": dev_mode, "preview_active": True}
+                                result = {
+                                    "status": "screen_captured",
+                                    "device_mode": dev_mode,
+                                    "resolution": "1280x720" if dev_mode == "desktop" else ("768x1024" if dev_mode == "tablet" else "390x844"),
+                                    "rendered_to_ui": True,
+                                    "note": "Screenshot captured and rendered directly in user's Studio UI. Analyze project files, button selectors, and runtime console errors for verification."
+                                }
                             elif name == "send_game_input":
                                 actions_list = args.get("actions") or []
                                 yield "event: send_game_input\ndata: " + json.dumps({"actions": actions_list}) + "\n\n"
