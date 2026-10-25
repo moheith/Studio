@@ -473,9 +473,22 @@ export default function StudioPage(p: StudioProps) {
     }
   }, [p.activeFile, p.language])
 
+  const [termFilter, setTermFilter] = useState<'all' | 'errors' | 'logs'>('all')
+
   const errorCount = useMemo(() => {
     return termHistory.filter(t => t.type === 'error').length
   }, [termHistory])
+
+  const filteredTermHistory = useMemo(() => {
+    if (termFilter === 'errors') return termHistory.filter(t => t.type === 'error')
+    if (termFilter === 'logs') return termHistory.filter(t => t.type !== 'error' && t.type !== 'input')
+    return termHistory
+  }, [termHistory, termFilter])
+
+  const copyTerminalLogs = () => {
+    const text = termHistory.map(t => `[${t.time || ''}] [${t.type.toUpperCase()}] ${t.text}`).join('\n')
+    navigator.clipboard.writeText(text).then(() => p.notify('Terminal logs copied to clipboard'))
+  }
 
   const title = p.currentGame?.title ?? 'Opening project'
   const publicUrl = p.currentGame && p.user ? `${window.location.origin}/${encodeURIComponent(p.user.username)}/${encodeURIComponent(p.currentGame.id)}` : ''
@@ -682,8 +695,8 @@ export default function StudioPage(p: StudioProps) {
                 y: targetY
               }, '*')
 
-              // Allow 140ms for human eye to follow cursor movement
-              await sleep(140)
+              // Allow 220ms for human eye to follow fluid cursor glide
+              await sleep(220)
 
               if (action.action === 'click' || action.action === 'down') {
                 // 2. Trigger visible click (starts ripple animation) and dispatch mousedown
@@ -724,7 +737,7 @@ export default function StudioPage(p: StudioProps) {
                   button: 0
                 }, '*')
 
-                await sleep(80)
+                await sleep(120)
                 setAiCursor(prev => ({ ...prev, clicking: false }))
               }
             } else if (action.type === 'key' || action.key) {
@@ -2028,7 +2041,14 @@ export default function StudioPage(p: StudioProps) {
                 <PanelLeft size={15} />
               </button>
 
-              <div className="vsc-tabs-scroll">
+              <div
+                className="vsc-tabs-scroll"
+                onWheel={e => {
+                  if (e.deltaY !== 0) {
+                    e.currentTarget.scrollLeft += e.deltaY
+                  }
+                }}
+              >
                 {p.openFiles.map(fileName => {
                   const isDirty = p.dirtyFiles?.has(fileName)
                   return (
@@ -2041,15 +2061,18 @@ export default function StudioPage(p: StudioProps) {
                       <FileIcon name={fileName} />
                       <span className="tab-label">{fileName}</span>
                       {isDirty ? (
-                        <span
+                        <button
+                          type="button"
                           className="tab-dirty-dot"
                           title="Unsaved changes. Click to close."
                           onClick={e => closeFileTab(e, fileName)}
                         >
-                          ●
-                        </span>
+                          <span className="dirty-indicator" />
+                          <X size={11} className="dirty-close-icon" />
+                        </button>
                       ) : (
                         <button
+                          type="button"
                           className="tab-close-btn"
                           title="Close Tab"
                           onClick={e => closeFileTab(e, fileName)}
@@ -2167,12 +2190,45 @@ export default function StudioPage(p: StudioProps) {
                 />
                 <div className="vsc-terminal-drawer" style={{ height: bottomHeight }}>
                   <div className="drawer-header">
-                    <div className="drawer-title">
-                      <Terminal size={13} />
-                      <span>TERMINAL CONSOLE</span>
+                    <div className="drawer-tabs">
+                      <button
+                        type="button"
+                        className={`drawer-tab-btn ${termFilter === 'all' ? 'active' : ''}`}
+                        onClick={() => setTermFilter('all')}
+                      >
+                        <Terminal size={12} />
+                        <span>Console</span>
+                        <span className="drawer-tab-badge">{termHistory.length}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`drawer-tab-btn ${termFilter === 'errors' ? 'active' : ''} ${errorCount > 0 ? 'has-errors' : ''}`}
+                        onClick={() => setTermFilter('errors')}
+                      >
+                        <AlertTriangle size={12} />
+                        <span>Errors</span>
+                        {errorCount > 0 && <span className="drawer-tab-badge danger">{errorCount}</span>}
+                      </button>
+                      <button
+                        type="button"
+                        className={`drawer-tab-btn ${termFilter === 'logs' ? 'active' : ''}`}
+                        onClick={() => setTermFilter('logs')}
+                      >
+                        <Code2 size={12} />
+                        <span>Logs</span>
+                      </button>
                     </div>
                     <div className="drawer-tools">
                       <button
+                        type="button"
+                        className="vsc-tool-btn"
+                        title="Copy All Terminal Logs"
+                        onClick={copyTerminalLogs}
+                      >
+                        <Copy size={13} />
+                      </button>
+                      <button
+                        type="button"
                         className="vsc-tool-btn"
                         title="Clear Terminal Output"
                         onClick={() => setTermHistory([])}
@@ -2180,6 +2236,7 @@ export default function StudioPage(p: StudioProps) {
                         <Trash2 size={13} />
                       </button>
                       <button
+                        type="button"
                         className="vsc-tool-btn"
                         title="Close Terminal"
                         onClick={() => p.setTerminalOpen(false)}
@@ -2190,15 +2247,23 @@ export default function StudioPage(p: StudioProps) {
                   </div>
                   <div className="terminal-view">
                     <div className="terminal-log-flow">
-                      {termHistory.map(entry => (
-                        <div key={entry.id} className={`term-line term-${entry.type}`}>
-                          <pre>{entry.text}</pre>
+                      {filteredTermHistory.length === 0 ? (
+                        <div className="terminal-empty-hint">
+                          <span>No {termFilter === 'errors' ? 'runtime errors' : 'output logs'} recorded. Game logs and console errors appear here in real-time.</span>
                         </div>
-                      ))}
+                      ) : (
+                        filteredTermHistory.map(entry => (
+                          <div key={entry.id} className={`term-line term-${entry.type}`}>
+                            {entry.time && <span className="term-timestamp">{entry.time}</span>}
+                            <span className={`term-kind-tag kind-${entry.type}`}>{entry.type.toUpperCase()}</span>
+                            <pre className="term-text">{entry.text}</pre>
+                          </div>
+                        ))
+                      )}
                       <div ref={termEndRef} />
                     </div>
                     <form className="terminal-prompt-row" onSubmit={handleTerminalSubmit}>
-                      <span className="term-prompt-label">yulya-shell:~$</span>
+                      <span className="term-prompt-label">❯</span>
                       <input
                         type="text"
                         value={termInput}
@@ -3523,7 +3588,7 @@ export default function StudioPage(p: StudioProps) {
                 </select>
                 <button
                   type="button"
-                  className="button button-outline button-small"
+                  className="button button-outline button-small wf-add-btn"
                   disabled={!selectedNewFallback || customWaterfall.includes(selectedNewFallback)}
                   onClick={() => {
                     if (!selectedNewFallback || customWaterfall.includes(selectedNewFallback)) return
@@ -3539,14 +3604,14 @@ export default function StudioPage(p: StudioProps) {
             <div className="waterfall-modal-footer">
               <button
                 type="button"
-                className="button button-ghost"
+                className="wf-cancel-btn"
                 onClick={() => setWaterfallModalOpen(false)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="button button-primary"
+                className="wf-save-btn"
                 disabled={isSavingWaterfall || customWaterfall.length === 0}
                 onClick={async () => {
                   setIsSavingWaterfall(true)
