@@ -15,6 +15,7 @@ import PublicProfilePage from './pages/PublicProfilePage'
 import StudioPage from './pages/StudioPage'
 import ArcadePage from './pages/ArcadePage'
 import SetupProfilePage from './pages/SetupProfilePage'
+import StudioBootLoader from './components/StudioBootLoader'
 import HeroVisual from './components/HeroVisual'
 import StudioShowcase from './components/StudioShowcase'
 import ProfileMenu from './components/ProfileMenu'
@@ -550,21 +551,51 @@ export default function App() {
 
   const loadProject = async (id: string, meta: Game) => {
     try {
-      const result = await api<{ files: Array<{ path: string }> }>(`/api/projects/${id}/files`)
-      const loaded: Record<string, string> = {}
-      for (const file of result.files) {
-        if (/\.(html|css|js|mjs|json)$/.test(file.path)) {
-          loaded[file.path] = (await getFile(id, file.path)).content
+      // 1. Concurrently fetch AI chat history in the background so it never stalls editor booting
+      const historyPromise = api<{ conversations: Array<{ id: string; prompt: string; response: string; error?: string; status?: string; thought?: string; model?: string; created_at: number; telemetry?: any; grounding?: any }> }>(`/api/projects/${id}/ai/history`).catch(() => ({ conversations: [] }))
+
+      let loaded: Record<string, string> = {}
+      let treeList: FileEntry[] = []
+      let precomputedPreview = ''
+
+      // 2. Try fetching the entire project bundle in one fast database query
+      try {
+        const bundle = await api<{
+          project: Record<string, unknown>
+          files: Array<{ path: string; size: number; etag: string; content: string | null }>
+          preview_url: string
+        }>(`/api/projects/${id}/bundle`)
+
+        precomputedPreview = bundle.preview_url || ''
+        for (const file of bundle.files) {
+          if (file.content !== null && file.content !== undefined) {
+            loaded[file.path] = file.content
+          }
+          treeList.push({
+            name: file.path,
+            kind: 'file',
+            language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript'
+          })
+        }
+      } catch {
+        // Fallback: parallel fetch if bundle endpoint is unavailable
+        const result = await api<{ files: Array<{ path: string }> }>(`/api/projects/${id}/files`)
+        treeList = result.files.map(file => ({
+          name: file.path,
+          kind: 'file',
+          language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript'
+        }))
+        const textFiles = result.files.filter(f => /\.(html|css|js|mjs|json|svg|txt)$/i.test(f.path))
+        const fetched = await Promise.all(textFiles.map(f => getFile(id, f.path).then(res => ({ path: f.path, content: res.content })).catch(() => ({ path: f.path, content: '' }))))
+        for (const f of fetched) {
+          loaded[f.path] = f.content
         }
       }
+
+      // Immediately activate project state
       setCurrentProjectId(id)
       setCurrentGame(meta)
       setCode(loaded)
-      const treeList: FileEntry[] = result.files.map(file => ({
-        name: file.path,
-        kind: 'file',
-        language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript'
-      }))
       setTree(treeList)
       const firstFile = Object.keys(loaded)[0] || 'index.html'
       setActiveFile(prev => loaded[prev] !== undefined ? prev : firstFile)
@@ -573,9 +604,19 @@ export default function App() {
         return valid.length ? valid : Object.keys(loaded).slice(0, 5)
       })
 
-      // Load persistent AI conversation history
-      try {
-        const historyData = await api<{ conversations: Array<{ id: string; prompt: string; response: string; error?: string; status?: string; thought?: string; model?: string; created_at: number; telemetry?: any; grounding?: any }> }>(`/api/projects/${id}/ai/history`)
+      // Resolve preview URL
+      if (precomputedPreview) {
+        setPreviewUrl(precomputedPreview)
+      } else if (meta.visibility === 'public') {
+        setPreviewUrl(publicGameUrl(meta.creator, meta.id))
+      } else {
+        api<{ url: string }>(`/api/projects/${id}/preview-token`, { method: 'POST', body: '{}' })
+          .then(res => setPreviewUrl(res.url))
+          .catch(() => {})
+      }
+
+      // Populate AI history when the concurrent request finishes
+      historyPromise.then(historyData => {
         if (historyData?.conversations) {
           const msgs: ChatMessage[] = []
           for (const conv of historyData.conversations) {
@@ -599,16 +640,7 @@ export default function App() {
           }
           setChatMessages(msgs)
         }
-      } catch {
-        // history empty or offline
-      }
-
-      if (meta.visibility === 'public') {
-        setPreviewUrl(publicGameUrl(meta.creator, meta.id))
-      } else {
-        const preview = await api<{ url: string }>(`/api/projects/${id}/preview-token`, { method: 'POST', body: '{}' }).catch(() => ({ url: '' }))
-        setPreviewUrl(preview.url)
-      }
+      }).catch(() => {})
     } catch (error) { notify(error instanceof Error ? error.message : 'Could not open project') }
   }
 
@@ -664,7 +696,12 @@ export default function App() {
 
   if (page === 'studio' && !currentProjectId) {
     if (sessionReady && !editorRoute()) { setPage(user ? 'profile' : 'home'); return null }
-    return <main className="project-opening"><span className="key-spinner"/><b>Opening your project…</b><small>Loading your files and saved AI conversation.</small></main>
+    return (
+      <StudioBootLoader
+        game={currentGame}
+        onCancel={() => setPage(user ? 'profile' : 'home')}
+      />
+    )
   }
   if (page === 'setup-profile' && user) return <>
     <SetupProfilePage user={user} onComplete={(updatedUser) => { setUser(updatedUser); setPage('profile', `/${encodeURIComponent(updatedUser.username)}`) }} notify={notify} />

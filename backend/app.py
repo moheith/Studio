@@ -865,6 +865,38 @@ async def create_project(body: ProjectBody, user: dict[str, Any] = Depends(mutat
     return {"project": {k: v for k, v in project.items() if k != "_id"}}
 
 
+@app.get("/api/projects/{project_id}/bundle")
+async def project_bundle(project_id: str, user: dict[str, Any] = Depends(current_user)):
+    project = await owned_project(user, project_id)
+    rows = await store.collection("files").find({"project_id": project_id}).to_list(200)
+    files_data = []
+    for f in rows:
+        path = f["path"]
+        content_bytes = f.get("content")
+        is_text = any(path.endswith(ext) for ext in (".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json", ".svg", ".txt"))
+        content_str = None
+        if is_text and isinstance(content_bytes, (bytes, bytearray)):
+            try: content_str = content_bytes.decode("utf-8")
+            except Exception: content_str = None
+        files_data.append({
+            "path": path,
+            "size": f.get("size", len(content_bytes) if content_bytes else 0),
+            "etag": f.get("etag", ""),
+            "content": content_str,
+        })
+    preview_url = ""
+    if project.get("visibility") == "public":
+        preview_url = f"{API_ORIGIN}/api/games/{project['username']}/{project['slug']}/index.html"
+    elif PREVIEW_TOKEN_SECRET:
+        token = preview_token(project, ttl=86400)
+        preview_url = f"{API_ORIGIN}/api/worker/private/{project['owner_id']}/{project['id']}/{token}/index.html"
+    return {
+        "project": {k: v for k, v in project.items() if k != "_id"},
+        "files": files_data,
+        "preview_url": preview_url,
+    }
+
+
 @app.get("/api/projects/{project_id}/files")
 async def list_project_files(project_id: str, user: dict[str, Any] = Depends(current_user)):
     project = await owned_project(user, project_id); rows = await file_index(project_id)

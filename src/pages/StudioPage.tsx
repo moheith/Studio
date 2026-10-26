@@ -6,7 +6,8 @@ import {
   Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, GitBranch, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, Radio, RefreshCw,
-  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, StretchHorizontal, Tablet, Terminal, Trash2, Upload, X, XCircle, Zap
+  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, StretchHorizontal, Tablet, Terminal, Trash2, Upload, User as UserIcon, X, XCircle, Zap,
+  Gamepad2, LogOut
 } from 'lucide-react'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
@@ -349,6 +350,7 @@ export default function StudioPage(p: StudioProps) {
   const [aiMenuOpen, setAiMenuOpen] = useState(false)
   const [topMenuOpen, setTopMenuOpen] = useState(false)
   const [explorerMenuOpen, setExplorerMenuOpen] = useState(false)
+  const [ideProfileMenuOpen, setIdeProfileMenuOpen] = useState<'top' | 'bottom' | null>(null)
 
   // Explorer advanced features: collapsing folders, empty folders, inline creation, renaming, context menu, loading
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
@@ -1091,13 +1093,14 @@ export default function StudioPage(p: StudioProps) {
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null
-      if (target?.closest('.vsc-menu-container') || target?.closest('.vsc-context-menu')) {
+      if (target?.closest('.vsc-menu-container') || target?.closest('.vsc-context-menu') || target?.closest('.vsc-profile-menu-container')) {
         return
       }
       setContextMenu(null)
       setExplorerMenuOpen(false)
       setAiMenuOpen(false)
       setTopMenuOpen(false)
+      setIdeProfileMenuOpen(null)
     }
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -1105,6 +1108,7 @@ export default function StudioPage(p: StudioProps) {
         setExplorerMenuOpen(false)
         setAiMenuOpen(false)
         setTopMenuOpen(false)
+        setIdeProfileMenuOpen(null)
         setCreatingItem(null)
         setRenamingItem(null)
       }
@@ -1626,13 +1630,32 @@ export default function StudioPage(p: StudioProps) {
           </div>
 
           {/* Profile Avatar */}
-          <button
-            className="vsc-profile-badge"
-            onClick={() => p.setPage('profile')}
-            title={`Logged in as ${p.user?.username || 'Creator'}`}
-          >
-            {p.user?.username?.[0]?.toUpperCase() ?? 'Y'}
-          </button>
+          <div className="vsc-profile-menu-container">
+            <button
+              type="button"
+              className="vsc-profile-badge"
+              onClick={() => setIdeProfileMenuOpen(prev => prev === 'top' ? null : 'top')}
+              title={`Logged in as ${p.user?.username || 'Creator'} (Click for menu)`}
+              aria-expanded={ideProfileMenuOpen === 'top'}
+            >
+              {p.user?.avatar ? (
+                <img src={p.user.avatar} alt={p.user?.username || 'Profile'} className="vsc-avatar-img" />
+              ) : (
+                p.user?.username?.[0]?.toUpperCase() ?? 'Y'
+              )}
+            </button>
+            {ideProfileMenuOpen === 'top' && (
+              <IdeProfileMenu
+                user={p.user}
+                align="top"
+                onClose={() => setIdeProfileMenuOpen(null)}
+                onGoProfile={() => p.setPage('profile')}
+                onOpenSettings={() => p.setModal('api-key')}
+                onOpenArcade={() => window.open('/arcade', '_blank')}
+                onNotify={p.notify}
+              />
+            )}
+          </div>
         </div>
       </header>
 
@@ -1695,13 +1718,32 @@ export default function StudioPage(p: StudioProps) {
             >
               <Settings2 size={18} />
             </button>
-            <button
-              className="activity-avatar-btn"
-              title="Profile"
-              onClick={() => p.setPage('profile')}
-            >
-              {p.user?.username?.[0]?.toUpperCase() ?? 'Y'}
-            </button>
+            <div className="vsc-profile-menu-container">
+              <button
+                type="button"
+                className="activity-avatar-btn"
+                title="Profile & Options"
+                onClick={() => setIdeProfileMenuOpen(prev => prev === 'bottom' ? null : 'bottom')}
+                aria-expanded={ideProfileMenuOpen === 'bottom'}
+              >
+                {p.user?.avatar ? (
+                  <img src={p.user.avatar} alt={p.user?.username || 'Profile'} className="vsc-avatar-img" />
+                ) : (
+                  p.user?.username?.[0]?.toUpperCase() ?? 'Y'
+                )}
+              </button>
+              {ideProfileMenuOpen === 'bottom' && (
+                <IdeProfileMenu
+                  user={p.user}
+                  align="bottom"
+                  onClose={() => setIdeProfileMenuOpen(null)}
+                  onGoProfile={() => p.setPage('profile')}
+                  onOpenSettings={() => p.setModal('api-key')}
+                  onOpenArcade={() => window.open('/arcade', '_blank')}
+                  onNotify={p.notify}
+                />
+              )}
+            </div>
           </div>
         </aside>
 
@@ -3644,4 +3686,130 @@ function FileIcon({ name }: { name: string }) {
   if (['mp3', 'wav', 'ogg'].includes(ext ?? '')) return <Sparkles size={14} className="icon-audio" />
   if (ext === 'json') return <Braces size={14} className="icon-json" />
   return <Code2 size={14} className="icon-js" />
+}
+
+function IdeProfileMenu({
+  user,
+  align,
+  onClose,
+  onGoProfile,
+  onOpenSettings,
+  onOpenArcade,
+  onNotify
+}: {
+  user: User | null
+  align: 'top' | 'bottom'
+  onClose: () => void
+  onGoProfile: () => void
+  onOpenSettings: () => void
+  onOpenArcade: () => void
+  onNotify: (msg: string) => void
+}) {
+  const initial = user?.display_name?.[0]?.toUpperCase() || user?.username?.[0]?.toUpperCase() || 'Y'
+  const displayName = user?.display_name || user?.username || 'Creator'
+  const username = user?.username ? `@${user.username}` : '@creator'
+  const hasKey = Boolean(user?.has_api_key)
+
+  return (
+    <div className={`vsc-profile-popover ${align === 'top' ? 'vsc-popover-top' : 'vsc-popover-bottom'}`}>
+      <div className="vsc-popover-header">
+        <div className="vsc-popover-avatar">
+          {user?.avatar ? (
+            <img src={user.avatar} alt={displayName} className="vsc-popover-avatar-img" />
+          ) : (
+            <span>{initial}</span>
+          )}
+        </div>
+        <div className="vsc-popover-info">
+          <div className="vsc-popover-name" title={displayName}>{displayName}</div>
+          <div className="vsc-popover-username">{username}</div>
+          <div className={`vsc-popover-badge ${hasKey ? 'badge-active' : 'badge-idle'}`}>
+            <span className="vsc-popover-badge-dot" />
+            {hasKey ? 'Gemini AI Ready' : 'No Gemini Key'}
+          </div>
+        </div>
+      </div>
+
+      <div className="vsc-popover-divider" />
+
+      <div className="vsc-popover-actions">
+        <button
+          type="button"
+          className="vsc-popover-item"
+          onClick={() => {
+            onClose()
+            onGoProfile()
+          }}
+        >
+          <UserIcon size={15} />
+          <div className="vsc-popover-item-text">
+            <span>My Profile & Games</span>
+            <small>Manage portfolio and project settings</small>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="vsc-popover-item"
+          onClick={() => {
+            onClose()
+            onOpenSettings()
+          }}
+        >
+          <Settings2 size={15} />
+          <div className="vsc-popover-item-text">
+            <span>AI Key & Models</span>
+            <small>Configure Gemini token & waterfall cascade</small>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="vsc-popover-item"
+          onClick={() => {
+            onClose()
+            onOpenArcade()
+          }}
+        >
+          <Gamepad2 size={15} />
+          <div className="vsc-popover-item-text">
+            <span>Explore Arcade</span>
+            <small>Play community games in new tab</small>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="vsc-popover-item"
+          onClick={() => {
+            onClose()
+            onNotify('Shortcuts: Ctrl/Cmd+S saves • Enter sends in chat • Shift+Enter adds new line')
+          }}
+        >
+          <CircleHelp size={15} />
+          <div className="vsc-popover-item-text">
+            <span>Help & Shortcuts</span>
+            <small>Editor hotkeys and quick reference</small>
+          </div>
+        </button>
+      </div>
+
+      <div className="vsc-popover-divider" />
+
+      <button
+        type="button"
+        className="vsc-popover-item vsc-popover-exit"
+        onClick={() => {
+          onClose()
+          onGoProfile()
+        }}
+      >
+        <LogOut size={15} />
+        <div className="vsc-popover-item-text">
+          <span>Exit Studio</span>
+          <small>Leave editor and return to profile</small>
+        </div>
+      </button>
+    </div>
+  )
 }
