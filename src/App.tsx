@@ -137,6 +137,26 @@ export default function App() {
   }, [toast])
 
   useEffect(() => {
+    if (page === 'arcade') {
+      document.title = 'Community Arcade — Play Free Online Web Games | Yulya Studio'
+    } else if (page === 'studio') {
+      document.title = currentGame?.title
+        ? `${currentGame.title} — Yulya Studio IDE & Game Engine`
+        : 'Studio IDE — Next-Gen Web Game Engine'
+    } else if (page === 'profile') {
+      document.title = user?.username
+        ? `@${user.username} — Creator Profile | Yulya Studio`
+        : 'My Studio Profile — Yulya Studio'
+    } else if (page === 'login') {
+      document.title = 'Sign In — Yulya Studio Game Maker'
+    } else if (page === 'register') {
+      document.title = 'Create Account — Yulya Studio Game Maker'
+    } else {
+      document.title = 'Yulya Studio — Next-Gen Game Maker, Browser IDE & Online Arcade'
+    }
+  }, [page, currentGame?.title, user?.username])
+
+  useEffect(() => {
     api<{ user: User; csrf_token: string; needs_username: boolean }>('/api/auth/me').then(async (session) => {
       setCsrfToken(session.csrf_token); setUser(session.user); setHasKey(Boolean((session.user as User & { has_api_key?: boolean }).has_api_key))
       if ((session.user as User & { has_api_key?: boolean }).has_api_key) api<{models: Array<{id: string; display_name: string}>}>('/api/models').then(result => { setModels(result.models); if (result.models[0]) setSelectedModel(result.models[0].id) }).catch(() => {})

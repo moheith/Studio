@@ -1,0 +1,13 @@
+# Yulya Studio Search Crawler Instructions
+User-agent: *
+Allow: /
+Allow: /arcade
+Allow: /login
+Allow: /register
+Disallow: /api/
+Disallow: /setup-profile
+Disallow: /verify-email
+
+# Host & Sitemap
+Host: https://studio.yulya.me
+Sitemap: https://studio.yulya.me/sitemap.xml

@@ -2224,9 +2224,64 @@ async def editor_route(username: str, slug: str):
     return frontend_file()
 
 
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    return frontend_file("robots.txt")
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml():
+    base_url = "https://studio.yulya.me"
+    urls = [
+        f"""  <url>
+    <loc>{base_url}/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>""",
+        f"""  <url>
+    <loc>{base_url}/arcade</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>""",
+        f"""  <url>
+    <loc>{base_url}/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>""",
+        f"""  <url>
+    <loc>{base_url}/register</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>"""
+    ]
+    try:
+        public_projects = await store.collection("projects").find(
+            {"visibility": "public"},
+            {"username": 1, "slug": 1}
+        ).to_list(500)
+        for p in public_projects:
+            uname = p.get("username")
+            slug = p.get("slug")
+            if uname and slug:
+                urls.append(f"""  <url>
+    <loc>{base_url}/{uname}/{slug}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>""")
+    except Exception:
+        pass
+
+    joined_urls = "\n".join(urls)
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{joined_urls}
+</urlset>"""
+    return Response(content=content, media_type="application/xml")
+
+
 @app.get("/{username}/{slug}", include_in_schema=False)
 async def named_public_game(username: str, slug: str):
-    reserved = {"api", "assets", "static", "favicon.ico", "robots.txt", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
+    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "arcade", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
     if username.lower() == "api": raise HTTPException(404, "API route not found")
     if username.lower() in reserved: return frontend_file(f"{username}/{slug}")
     return await public_game_file(username, slug, "index.html")
@@ -2234,7 +2289,7 @@ async def named_public_game(username: str, slug: str):
 
 @app.get("/{username}/{slug}/{file_path:path}", include_in_schema=False)
 async def named_public_game_file(username: str, slug: str, file_path: str):
-    reserved = {"api", "assets", "static", "favicon.ico", "robots.txt", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
+    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "arcade", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
     if username.lower() == "api": raise HTTPException(404, "API route not found")
     if username.lower() in reserved: return frontend_file(f"{username}/{slug}/{file_path}")
     return await public_game_file(username, slug, file_path)
@@ -2243,7 +2298,7 @@ async def named_public_game_file(username: str, slug: str, file_path: str):
 @app.get("/{username}", include_in_schema=False)
 async def named_profile(username: str):
     if username.lower() == "api": raise HTTPException(404, "API route not found")
-    if username.lower() in {"favicon.ico", "robots.txt"}: return frontend_file(username)
+    if username.lower() in {"favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml"}: return frontend_file(username)
     return frontend_file()
 
 
