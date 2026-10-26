@@ -4,6 +4,7 @@ import {
   Gamepad2, X, Filter, Compass, Sparkles
 } from 'lucide-react'
 import type { Game, User } from '../types'
+import ProfileMenu from '../components/ProfileMenu'
 
 interface ArcadePageProps {
   user: User | null
@@ -104,23 +105,18 @@ export default function ArcadePage({
           )}
         </div>
 
-        {/* Right User Actions */}
+        {/* Right User Actions with Zoom-in Profile Menu */}
         <div className="roblox-topbar-right">
           <button className="roblox-create-btn" onClick={() => onOpenStudio()}>
             <Plus size={15} />
             <span>Studio</span>
           </button>
-
-          {user ? (
-            <button className="roblox-user-avatar" onClick={() => setPage('profile')}>
-              <span className="roblox-avatar-char">{user.username[0]?.toUpperCase()}</span>
-              <span className="roblox-username-label">@{user.username}</span>
-            </button>
-          ) : (
-            <button className="roblox-login-btn" onClick={() => setPage('login')}>
-              Log In
-            </button>
-          )}
+          <ProfileMenu
+            user={user}
+            setPage={setPage as any}
+            onLogout={() => { setPage('home') }}
+            onOpenStudio={() => onOpenStudio()}
+          />
         </div>
       </header>
 

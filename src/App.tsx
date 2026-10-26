@@ -16,6 +16,7 @@ import StudioPage from './pages/StudioPage'
 import ArcadePage from './pages/ArcadePage'
 import HeroVisual from './components/HeroVisual'
 import StudioShowcase from './components/StudioShowcase'
+import ProfileMenu from './components/ProfileMenu'
 import type { Game, FileEntry, Page, User, ChatMessage } from './types'
 function projectToGame(value: Record<string, unknown>): Game {
   const id = String(value.slug ?? value.id ?? 'project')
@@ -734,7 +735,19 @@ export default function App() {
         <a href="#discover" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Community Games</a>
         <a href="#how" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }) }}>Workflow</a>
       </nav>
-      <div className="top-actions"><button className="top-link" onClick={() => user ? setPage('profile') : setPage('login')}>{user ? `@${user.username}` : 'Log in'}</button><button className="button button-primary button-small" onClick={() => user ? setPage('profile') : setPage('login')}>{user ? 'My studio' : 'Start creating'} <ArrowRight size={15}/></button><button className="icon-button mobile-menu" aria-label="Toggle menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={19}/></button></div>
+      <div className="top-actions">
+        {user ? (
+          <button className="button button-primary button-small" onClick={() => setPage('profile')}>
+            My Studio <ArrowRight size={14}/>
+          </button>
+        ) : (
+          <button className="button button-primary button-small" onClick={() => setPage('login')}>
+            Start Creating <ArrowRight size={14}/>
+          </button>
+        )}
+        <ProfileMenu user={user} setPage={setPage} onLogout={logout} onOpenStudio={() => openStudio()} />
+        <button className="icon-button mobile-menu" aria-label="Toggle menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={19}/></button>
+      </div>
     </header>
     <main>
       <section className="hero" id="home">

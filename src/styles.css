@@ -6628,3 +6628,300 @@ html {
   pointer-events: none;
   z-index: 0;
 }
+
+/* ==========================================================================
+   Profile Circular Trigger & Zoom-In Popover Menu
+   ========================================================================== */
+
+.profile-menu-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* 1. Round Profile Triggers */
+.profile-round-avatar,
+.profile-round-guest {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #1e2028;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s, box-shadow 0.18s;
+}
+
+.profile-round-avatar:hover,
+.profile-round-guest:hover {
+  transform: scale(1.06);
+  border-color: #cbb3ff;
+  box-shadow: 0 0 16px rgba(203, 179, 255, 0.35);
+}
+
+.profile-round-avatar.active-ring,
+.profile-round-guest.active-ring {
+  border-color: #cbb3ff;
+  box-shadow: 0 0 0 3px rgba(203, 179, 255, 0.25), 0 0 20px rgba(203, 179, 255, 0.4);
+}
+
+.avatar-text-circle {
+  font-family: var(--display, 'Space Grotesk', sans-serif);
+  font-size: 15px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #cbb3ff, #9ce0c8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  user-select: none;
+}
+
+.avatar-img-circle {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-online-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #10b981;
+  border: 2px solid #121315;
+  box-shadow: 0 0 8px #10b981;
+}
+
+.guest-icon {
+  color: #aaa5b1;
+  transition: color 0.15s;
+}
+
+.profile-round-guest:hover .guest-icon {
+  color: #ffffff;
+}
+
+/* 2. Zoom-in Profile Popover Menu */
+.profile-popover-menu {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  width: 290px;
+  background: rgba(22, 23, 30, 0.94);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  z-index: 1000;
+  transform-origin: top right;
+}
+
+.animate-zoom-in {
+  animation: popover-zoom-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes popover-zoom-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.82) translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* User Card in Popover */
+.popover-user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.popover-user-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(203, 179, 255, 0.25);
+}
+
+.popover-avatar-large {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #2a2c38;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-family: var(--display, 'Space Grotesk', sans-serif);
+  font-size: 18px;
+  font-weight: 700;
+  color: #cbb3ff;
+}
+
+.popover-avatar-large img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.popover-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.popover-username {
+  font-family: var(--display, 'Space Grotesk', sans-serif);
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.popover-email {
+  font-size: 11px;
+  color: #8c899c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.popover-badge {
+  align-self: flex-start;
+  font-family: var(--mono, monospace);
+  font-size: 8.5px;
+  font-weight: 700;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-top: 2px;
+}
+
+.popover-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 12px 0;
+}
+
+.popover-actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.popover-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: #d1ceda;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+
+.popover-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+}
+
+.popover-item .item-arrow {
+  margin-left: auto;
+  opacity: 0.4;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.popover-item:hover .item-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+.popover-logout {
+  color: #f87171;
+}
+
+.popover-logout:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+/* Guest View inside Popover */
+.popover-guest {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.guest-header {
+  text-align: center;
+  padding: 6px 0 2px;
+}
+
+.guest-header-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(203, 179, 255, 0.15);
+  color: #cbb3ff;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 10px;
+}
+
+.guest-header h4 {
+  font-family: var(--display, 'Space Grotesk', sans-serif);
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 4px;
+}
+
+.guest-header p {
+  font-size: 12px;
+  color: #8c899c;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.guest-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guest-btn {
+  width: 100%;
+  justify-content: center;
+  font-size: 12.5px;
+  padding: 10px 14px;
+}
+
+.quiet-link {
+  font-size: 11.5px;
+  color: #9ce0c8;
+}
