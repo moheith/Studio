@@ -43,6 +43,53 @@ const starterFiles: Record<string, string> = {
 // Hard-coded placeholder folders used to flash before the server data arrived.
 const initialTree: FileEntry[] = []
 
+const curatedStarterGames: Game[] = [
+  {
+    id: 'grandmaster-chess',
+    title: 'Grandmaster Chess',
+    creator: 'alex',
+    genre: 'STRATEGY',
+    color: '#c7a6ff',
+    art: '♟️',
+    plays: '1.4k',
+    description: 'A thoughtful chess engine in your browser with AI moves and piece capturing.',
+    visibility: 'public'
+  },
+  {
+    id: 'neon-highway',
+    title: 'Neon Highway',
+    creator: 'maya',
+    genre: 'ARCADE',
+    color: '#ffbba4',
+    art: '🏎️',
+    plays: '2.8k',
+    description: 'Retro speeder dodging traffic with synthesized engine sounds.',
+    visibility: 'public'
+  },
+  {
+    id: 'star-defender',
+    title: 'Star Defender',
+    creator: 'leo',
+    genre: 'ACTION',
+    color: '#9ce0c8',
+    art: '🚀',
+    plays: '1.9k',
+    description: 'Defend the galaxy with procedural laser effects and starry skies.',
+    visibility: 'public'
+  },
+  {
+    id: 'tiny-dungeon',
+    title: 'Chambers of Eldoria',
+    creator: 'sam',
+    genre: 'RPG',
+    color: '#9ebff8',
+    art: '⚔️',
+    plays: '980',
+    description: 'Turn-based room exploration with treasures and simple monster battles.',
+    visibility: 'public'
+  }
+]
+
 export default function App() {
   const pageFromPath = (): Page => {
     const route = window.location.pathname
@@ -101,6 +148,7 @@ export default function App() {
   const [previewKey, setPreviewKey] = useState(0)
   const [newFileName, setNewFileName] = useState('')
   const [mobileNav, setMobileNav] = useState(false)
+  const [selectedGenre, setSelectedGenre] = useState('ALL')
   const [previewUrl, setPreviewUrl] = useState('')
   const [isAiGenerating, setIsAiGenerating] = useState(false)
   const aiAbortController = useRef<AbortController | null>(null)
@@ -685,24 +733,52 @@ export default function App() {
     isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles, updateWaterfall,
   }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={() => addFile()}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
+  const displayGames = games.length ? games : curatedStarterGames
+  const filteredGames = selectedGenre === 'ALL' ? displayGames : displayGames.filter(g => g.genre.toUpperCase() === selectedGenre.toUpperCase())
+
   return <div className="site-shell">
     <header className="topbar home-topbar">
-      <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); setPage('home') }}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span><span className="beta-pill">BETA</span></a>
+      <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span><span className="beta-pill">BETA</span></a>
       <nav className={`main-nav ${mobileNav ? 'nav-open' : ''}`}>
-        <a href="#discover">Discover</a><a href="#how">How it works</a><a href="#community">Community</a>
+        <a href="#discover" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Discover</a>
+        <a href="#how" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }) }}>How it works</a>
+        <a href="#community" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('community')?.scrollIntoView({ behavior: 'smooth' }) }}>Community</a>
       </nav>
       <div className="top-actions"><button className="top-link" onClick={() => user ? setPage('profile') : setPage('login')}>{user ? `@${user.username}` : 'Log in'}</button><button className="button button-primary button-small" onClick={() => user ? setPage('profile') : setPage('login')}>{user ? 'My studio' : 'Start creating'} <ArrowRight size={15}/></button><button className="icon-button mobile-menu" aria-label="Toggle menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={19}/></button></div>
     </header>
     <main>
       <section className="hero" id="home">
-        <div className="hero-copy"><div className="eyebrow hero-eyebrow"><span className="live-dot"/> YOUR IDEAS, PLAYABLE</div><h1>Make a game.<br/><span>See it come alive.</span></h1><p className="hero-description">A tiny game studio in your browser. Describe what you imagine, shape it with code, and share something people can play.</p><div className="hero-actions"><button className="button button-primary" onClick={() => user ? setPage('profile') : setPage('login')}>Make your first game <ArrowRight size={16}/></button><a className="text-button" href="#discover">Explore the arcade <ArrowDown size={15}/></a></div><div className="hero-note"><div className="avatar-stack"><span className="avatar peach">p</span><span className="avatar lilac">l</span><span className="avatar mint">o</span><span className="avatar sky">m</span></div><span><b>Made by curious people</b><br/>Played everywhere</span></div></div>
+        <div className="hero-copy"><div className="eyebrow hero-eyebrow"><span className="live-dot"/> YOUR IDEAS, PLAYABLE</div><h1>Make a game.<br/><span>See it come alive.</span></h1><p className="hero-description">A tiny game studio in your browser. Describe what you imagine, shape it with code, and share something people can play.</p><div className="hero-actions"><button className="button button-primary" onClick={() => user ? setPage('profile') : setPage('login')}>Make your first game <ArrowRight size={16}/></button><a className="text-button" href="#discover" onClick={(e) => { e.preventDefault(); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Explore the arcade <ArrowDown size={15}/></a></div><div className="hero-note"><div className="avatar-stack"><span className="avatar peach">p</span><span className="avatar lilac">l</span><span className="avatar mint">o</span><span className="avatar sky">m</span></div><span><b>Made by curious people</b><br/>Played everywhere</span></div></div>
         <div className="hero-art" aria-label="A dreamy illustration of a little game world"><div className="hero-grid"/><div className="floating-label label-top"><Sparkles size={13}/> made with a little help</div><div className="hero-orbit orbit-one"/><div className="hero-orbit orbit-two"/><div className="hero-planet"><div className="planet-ring"/><div className="planet-face">✦</div><div className="planet-spark">✧</div></div><div className="hero-moon">☾</div><div className="pixel-cloud cloud-one">▪ ▪<br/>▪ ▪ ▪</div><div className="pixel-cloud cloud-two">▪ ▪ ▪<br/>　▪</div><div className="floating-label label-bottom"><span className="mini-wave">〰</span> playable in one click</div><div className="art-caption">a universe<br/>of tiny ideas <span>↗</span></div></div>
       </section>
       <section className="community-strip"><div className="strip-item"><span className="strip-icon violet"><Code2 size={17}/></span><span><b>Made in the browser</b><small>No setup, just make</small></span></div><div className="strip-divider"/><div className="strip-item"><span className="strip-icon orange"><Gamepad2 size={18}/></span><span><b>Made to be played</b><small>One link, any device</small></span></div><div className="strip-divider"/><div className="strip-item"><span className="strip-icon green"><Sparkles size={17}/></span><span><b>Made together</b><small>Play games you love</small></span></div><div className="strip-end">A little studio for big imagination <span>✳</span></div></section>
-      <section className="arcade-section" id="discover"><div className="section-heading"><div><div className="eyebrow">THE COMMUNITY ARCADE</div><h2>Little worlds, <em>made by you.</em></h2><p>Press play. Find a favorite. Share your world.</p></div><button className="button button-outline" onClick={() => api<{projects: Array<Record<string, unknown>>}>('/api/gallery').then(data => setGames(data.projects.map(projectToGame))).catch(() => notify('Could not refresh games'))}>Refresh games <ArrowRight size={15}/></button></div>{games.length ? <div className="game-grid">{games.map((game, index) => <GameCard key={game.projectId ?? game.id} game={game} index={index} onClick={() => { setCurrentGame(game); setModal('game') }} />)}</div> : <div className="gallery-empty">No public games yet. Be the first to make one.</div>}<div className="gallery-footer"><span><span className="live-dot"/> {games.length} PUBLIC GAMES</span><button className="quiet-button" onClick={() => setPage(user ? 'profile' : 'login')}>Have an idea? Make it real <ArrowRight size={14}/></button></div></section>
+      <section className="arcade-section" id="discover">
+        <div className="section-heading">
+          <div><div className="eyebrow">THE COMMUNITY ARCADE</div><h2>Little worlds, <em>made by you.</em></h2><p>Press play. Find a favorite. Share your world.</p></div>
+          <button className="button button-outline" onClick={() => api<{projects: Array<Record<string, unknown>>}>('/api/gallery').then(data => { setGames(data.projects.map(projectToGame)); notify('Gallery refreshed'); }).catch(() => notify('Could not refresh games'))}>Refresh games <ArrowRight size={15}/></button>
+        </div>
+        <div className="arcade-filters">
+          {['ALL', 'ARCADE', 'STRATEGY', 'ACTION', 'RPG'].map(g => (
+            <button key={g} type="button" className={`genre-pill ${selectedGenre === g ? 'active' : ''}`} onClick={() => setSelectedGenre(g)}>
+              {g}
+            </button>
+          ))}
+        </div>
+        {filteredGames.length ? (
+          <div className="game-grid">
+            {filteredGames.map((game, index) => <GameCard key={game.projectId ?? game.id} game={game} index={index} onClick={() => { setCurrentGame(game); setModal('game') }} />)}
+          </div>
+        ) : (
+          <div className="gallery-empty">No games found in this genre.</div>
+        )}
+        <div className="gallery-footer">
+          <span><span className="live-dot"/> {displayGames.length} PUBLIC GAMES</span>
+          <button className="quiet-button" onClick={() => setPage(user ? 'profile' : 'login')}>Have an idea? Make it real <ArrowRight size={14}/></button>
+        </div>
+      </section>
       <section className="how-section" id="how"><div className="how-title"><div className="eyebrow">FROM THOUGHT TO THUMBS-UP</div><h2>Three steps.<br/><em>One playable idea.</em></h2></div><div className="how-steps"><div className="how-step"><span className="step-index">01</span><div className="step-icon"><MessageSquare size={20}/></div><h3>Tell it what you imagine</h3><p>Start with a sentence, a sketch in your head, or a “what if…”</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">02</span><div className="step-icon peach-step"><Code2 size={20}/></div><h3>Make it yours</h3><p>See the code and the game side by side. Tweak anything you like.</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">03</span><div className="step-icon mint-step"><Rocket size={20}/></div><h3>Send it to a friend</h3><p>Share one link. Anyone can play it in their browser.</p></div></div></section>
       <section className="cta-section" id="community"><div className="cta-spark">✳</div><div><div className="eyebrow">YOUR TURN, CREATOR</div><h2>What will you make<br/>people <em>feel?</em></h2></div><button className="button button-light" onClick={() => setPage(user ? 'profile' : 'login')}>{user ? 'Open your studio' : 'Let’s find out'} <ArrowRight size={16}/></button><span className="cta-orbit cta-orbit-a"/><span className="cta-orbit cta-orbit-b"/></section>
-    </main><footer className="footer"><a className="brand" href="#home"><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span></a><span>A tiny studio for curious minds.</span><span>Made with care <span className="footer-heart">♥</span></span></footer>
+    </main><footer className="footer"><a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span></a><span>A tiny studio for curious minds.</span><span>Made with care <span className="footer-heart">♥</span></span></footer>
     {modal === 'game' && currentGame && <GameModal game={currentGame} close={() => setModal(null)} play={() => { if (currentGame.visibility === 'public') window.open(publicGameUrl(currentGame.creator, currentGame.id), '_blank', 'noopener,noreferrer'); else notify('This project is private'); setModal(null) }} />}
     {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
     {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
