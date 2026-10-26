@@ -44,52 +44,7 @@ const starterFiles: Record<string, string> = {
 // Hard-coded placeholder folders used to flash before the server data arrived.
 const initialTree: FileEntry[] = []
 
-const curatedStarterGames: Game[] = [
-  {
-    id: 'grandmaster-chess',
-    title: 'Grandmaster Chess',
-    creator: 'alex',
-    genre: 'STRATEGY',
-    color: '#c7a6ff',
-    art: '♟️',
-    plays: '1.4k',
-    description: 'A thoughtful chess engine in your browser with AI moves and piece capturing.',
-    visibility: 'public'
-  },
-  {
-    id: 'neon-highway',
-    title: 'Neon Highway',
-    creator: 'maya',
-    genre: 'ARCADE',
-    color: '#ffbba4',
-    art: '🏎️',
-    plays: '2.8k',
-    description: 'Retro speeder dodging traffic with synthesized engine sounds.',
-    visibility: 'public'
-  },
-  {
-    id: 'star-defender',
-    title: 'Star Defender',
-    creator: 'leo',
-    genre: 'ACTION',
-    color: '#9ce0c8',
-    art: '🚀',
-    plays: '1.9k',
-    description: 'Defend the galaxy with procedural laser effects and starry skies.',
-    visibility: 'public'
-  },
-  {
-    id: 'tiny-dungeon',
-    title: 'Chambers of Eldoria',
-    creator: 'sam',
-    genre: 'RPG',
-    color: '#9ebff8',
-    art: '⚔️',
-    plays: '980',
-    description: 'Turn-based room exploration with treasures and simple monster battles.',
-    visibility: 'public'
-  }
-]
+
 
 export default function App() {
   const pageFromPath = (): Page => {
@@ -766,8 +721,7 @@ export default function App() {
     isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles, updateWaterfall,
   }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={() => addFile()}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
-  const displayGames = games.length ? games : curatedStarterGames
-  const filteredGames = selectedGenre === 'ALL' ? displayGames : displayGames.filter(g => g.genre.toUpperCase() === selectedGenre.toUpperCase())
+  const filteredGames = selectedGenre === 'ALL' ? games : games.filter(g => g.genre.toUpperCase() === selectedGenre.toUpperCase())
 
   return <div className="site-shell">
     <header className="topbar home-topbar">
@@ -794,22 +748,24 @@ export default function App() {
             <button className="button button-primary button-small" onClick={() => setPage('arcade')}>Open Full Arcade <ArrowRight size={14}/></button>
           </div>
         </div>
-        <div className="arcade-filters">
-          {['ALL', 'ARCADE', 'STRATEGY', 'ACTION', 'RPG'].map(g => (
-            <button key={g} type="button" className={`genre-pill ${selectedGenre === g ? 'active' : ''}`} onClick={() => setSelectedGenre(g)}>
-              {g}
-            </button>
-          ))}
-        </div>
+        {games.length > 0 && (
+          <div className="arcade-filters">
+            {['ALL', ...Array.from(new Set(games.map(g => g.genre.toUpperCase())))].map(g => (
+              <button key={g} type="button" className={`genre-pill ${selectedGenre === g ? 'active' : ''}`} onClick={() => setSelectedGenre(g)}>
+                {g}
+              </button>
+            ))}
+          </div>
+        )}
         {filteredGames.length ? (
           <div className="game-grid">
             {filteredGames.map((game, index) => <GameCard key={game.projectId ?? game.id} game={game} index={index} onClick={() => { setCurrentGame(game); setModal('game') }} />)}
           </div>
         ) : (
-          <div className="gallery-empty">No games found in this genre.</div>
+          <div className="gallery-empty">{games.length === 0 ? "No public games published yet. Be the first to publish one!" : "No games found in this genre."}</div>
         )}
         <div className="gallery-footer">
-          <span><span className="live-dot"/> {displayGames.length} PUBLIC GAMES</span>
+          <span><span className="live-dot"/> {games.length} PUBLIC GAMES</span>
           <button className="quiet-button" onClick={() => setPage('arcade')}>Explore all in Roblox Arcade <ArrowRight size={14}/></button>
         </div>
       </section>

@@ -5284,24 +5284,7 @@ html {
   gap: 12px;
 }
 
-.roblox-currency-pill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #222532;
-  border: 1px solid #313547;
-  border-radius: 999px;
-  padding: 5px 12px;
-  font-family: var(--mono, monospace);
-  font-size: 12px;
-  font-weight: 700;
-  color: #fbbf24;
-}
 
-.currency-gem {
-  color: #fbbf24;
-  font-size: 14px;
-}
 
 .roblox-create-btn {
   display: flex;
@@ -6014,9 +5997,6 @@ html {
 
 @media (max-width: 800px) {
   .roblox-subnav {
-    display: none;
-  }
-  .roblox-currency-pill {
     display: none;
   }
   .roblox-cards-row {
