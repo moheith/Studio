@@ -2,16 +2,19 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRight } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
+import GoogleSignInButton from '../components/GoogleSignInButton'
 import { api } from '../api'
+import type { User } from '../types'
 
 type RegisterPageProps = {
   onBack: () => void
   onLogin: () => void
+  onGoogleSuccess: (user: User, csrf: string) => void
   onRegistered: (email: string) => void
   notify: (message: string) => void
 }
 
-export default function RegisterPage({ onBack, onLogin, onRegistered, notify }: RegisterPageProps) {
+export default function RegisterPage({ onBack, onLogin, onGoogleSuccess, onRegistered, notify }: RegisterPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -31,6 +34,7 @@ export default function RegisterPage({ onBack, onLogin, onRegistered, notify }: 
 
   return <AuthLayout eyebrow="YOUR NEXT LITTLE BIG THING" title="Let’s make something." description="Create an email account to save your studio." onBack={onBack}>
     <form className="auth-form" onSubmit={submit}>
+      <GoogleSignInButton onLogin={onGoogleSuccess} notify={notify} text="signup" />
       <div className="auth-separator"><span />create with email<span /></div>
       <label>Email address<input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
       <label>Password<input required type="password" autoComplete="new-password" minLength={10} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 10 characters" /></label>

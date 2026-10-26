@@ -3,6 +3,7 @@ import {
   User as UserIcon, LogIn, UserPlus, LogOut,
   Sparkles, Gamepad2, ArrowRight, Code2
 } from 'lucide-react'
+import GoogleSignInButton from './GoogleSignInButton'
 import type { User, Page } from '../types'
 
 interface ProfileMenuProps {
@@ -10,13 +11,17 @@ interface ProfileMenuProps {
   setPage: (page: Page) => void
   onLogout: () => void
   onOpenStudio?: () => void
+  onLogin?: (user: User, csrf: string) => void
+  notify?: (msg: string) => void
 }
 
 export default function ProfileMenu({
   user,
   setPage,
   onLogout,
-  onOpenStudio
+  onOpenStudio,
+  onLogin,
+  notify
 }: ProfileMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -170,6 +175,20 @@ export default function ProfileMenu({
                   <span>Create Account</span>
                 </button>
               </div>
+
+              {onLogin && (
+                <div className="popover-google-btn-wrap">
+                  <GoogleSignInButton
+                    text="continue"
+                    width={258}
+                    onLogin={(u, csrf) => {
+                      setIsOpen(false)
+                      onLogin(u, csrf)
+                    }}
+                    notify={notify || (() => {})}
+                  />
+                </div>
+              )}
 
               <div className="popover-divider" />
 

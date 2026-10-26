@@ -638,7 +638,7 @@ export default function App() {
     return <main className="project-opening"><span className="key-spinner"/><b>Opening your project…</b><small>Loading your files and saved AI conversation.</small></main>
   }
   if (page === 'login') return <LoginPage onBack={() => setPage('home')} onRegister={() => setPage('register')} onLogin={completeLogin} notify={notify} />
-  if (page === 'register') return <RegisterPage onBack={() => setPage('home')} onLogin={() => setPage('login')} onRegistered={(email) => { setVerificationEmail(email); sessionStorage.setItem('yulya-verification-email', email); setPage('verify-email') }} notify={notify} />
+  if (page === 'register') return <RegisterPage onBack={() => setPage('home')} onLogin={() => setPage('login')} onGoogleSuccess={completeLogin} onRegistered={(email) => { setVerificationEmail(email); sessionStorage.setItem('yulya-verification-email', email); setPage('verify-email') }} notify={notify} />
   if (page === 'verify-email') return <VerifyEmailPage email={verificationEmail} onBack={() => setPage('register')} onLogin={(nextUser, csrf) => { sessionStorage.removeItem('yulya-verification-email'); completeLogin(nextUser, csrf) }} notify={notify} />
   if (page === 'profile') {
     const routeUsername = decodeURIComponent(window.location.pathname.split('/').filter(Boolean)[0] ?? '')
@@ -689,6 +689,7 @@ export default function App() {
           onSelectGame={(game) => { setCurrentGame(game); setModal('game') }}
           onOpenStudio={(game) => openStudio(game)}
           setPage={setPage}
+          onLogin={completeLogin}
           notify={notify}
           modal={modal}
           currentGame={currentGame}
@@ -745,7 +746,7 @@ export default function App() {
             Start Creating <ArrowRight size={14}/>
           </button>
         )}
-        <ProfileMenu user={user} setPage={setPage} onLogout={logout} onOpenStudio={() => openStudio()} />
+        <ProfileMenu user={user} setPage={setPage} onLogout={logout} onOpenStudio={() => openStudio()} onLogin={completeLogin} notify={notify} />
         <button className="icon-button mobile-menu" aria-label="Toggle menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={19}/></button>
       </div>
     </header>

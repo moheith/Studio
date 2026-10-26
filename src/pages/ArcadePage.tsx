@@ -13,6 +13,7 @@ interface ArcadePageProps {
   onOpenStudio: (game?: Game) => void
   setPage: (page: 'home' | 'arcade' | 'studio' | 'login' | 'register' | 'profile') => void
   notify: (msg: string) => void
+  onLogin?: (user: User, csrf: string) => void
   modal: string | null
   currentGame: Game | null
   setModal: (modal: any) => void
@@ -24,7 +25,9 @@ export default function ArcadePage({
   games,
   onSelectGame,
   onOpenStudio,
-  setPage
+  setPage,
+  onLogin,
+  notify
 }: ArcadePageProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedGenre, setSelectedGenre] = useState('ALL')
@@ -114,6 +117,8 @@ export default function ArcadePage({
           <ProfileMenu
             user={user}
             setPage={setPage as any}
+            onLogin={onLogin}
+            notify={notify}
             onLogout={() => { setPage('home') }}
             onOpenStudio={() => onOpenStudio()}
           />

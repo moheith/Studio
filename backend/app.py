@@ -52,6 +52,7 @@ if APP_ENV != "production":
 MONGODB_URI = os.getenv("MONGODB_URI", "")
 DATABASE_NAME = os.getenv("MONGODB_DATABASE", "yulya_studio")
 GEMINI_API_BASE = os.getenv("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "317604926106-n8ktfn1aplm9tkfuoe9fgdlgre18frab.apps.googleusercontent.com")
 ALLOWED_EXTENSIONS = {
     ".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json",
     ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico",
@@ -429,6 +430,7 @@ async def rate_limit(scope: str, identity: str, max_requests: int, window: int =
 
 class RegisterBody(BaseModel): email: str = Field(min_length=5, max_length=254); password: str = Field(min_length=10, max_length=128)
 class LoginBody(BaseModel): email: str; password: str
+class GoogleAuthBody(BaseModel): credential: str
 class VerifyBody(BaseModel): email: str; code: str = Field(min_length=6, max_length=6)
 class UsernameBody(BaseModel): username: str
 class KeyBody(BaseModel): api_key: str = Field(min_length=12, max_length=256)
@@ -479,7 +481,11 @@ async def health(): return {"ok": True, "storage": "mongodb-files" if store.db i
 @app.post("/api/auth/register")
 async def register(body: RegisterBody, request: Request):
     email = body.email.strip().lower(); await rate_limit("register", email, 5)
-    if await store.collection("users").find_one({"email_norm": email}): raise HTTPException(409, "An account already exists for this email")
+    existing_user = await store.collection("users").find_one({"email_norm": email})
+    if existing_user:
+        if existing_user.get("auth_provider") == "google" or (existing_user.get("google_id") and not existing_user.get("password_hash")):
+            raise HTTPException(409, "This email is registered with Google. Please use Continue with Google.")
+        raise HTTPException(409, "An account already exists for this email")
     code = f"{secrets.randbelow(1_000_000):06d}"; salt = secrets.token_hex(12)
     await store.collection("email_codes").delete_many({"email_norm": email})
     await store.collection("email_codes").insert_one({"email_norm": email, "password_hash": PH.hash(body.password), "code_hash": hashlib.sha256((salt + code).encode()).hexdigest(), "salt": salt, "expires_at": _expires(600), "attempts": 0})
@@ -524,12 +530,81 @@ async def verify_email(body: VerifyBody, response: Response):
 async def login(body: LoginBody, response: Response, request: Request):
     email = body.email.strip().lower(); await rate_limit("login", email, 10)
     user = await store.collection("users").find_one({"email_norm": email})
+    if user and (user.get("auth_provider") == "google" or (user.get("google_id") and not user.get("password_hash"))):
+        raise HTTPException(400, "This account was registered with Google. Please use Continue with Google.")
     try:
         if not user or not user.get("password_hash"): raise VerifyMismatchError()
         PH.verify(user["password_hash"], body.password)
     except VerifyMismatchError: raise HTTPException(401, "Email or password is incorrect")
     csrf = await issue_session(user, response)
     return {"user": _public_user(user), "csrf_token": csrf, "needs_username": not bool(user.get("username"))}
+
+
+@app.post("/api/auth/google")
+async def google_auth(body: GoogleAuthBody, response: Response):
+    credential = body.credential.strip()
+    if not credential:
+        raise HTTPException(400, "Google credential required")
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={credential}")
+        if res.status_code != 200:
+            raise HTTPException(401, "Invalid or expired Google token")
+        payload = res.json()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Google token verification failed: %s", exc)
+        raise HTTPException(401, "Could not verify Google account")
+
+    token_aud = payload.get("aud")
+    if token_aud != GOOGLE_CLIENT_ID:
+        logger.warning("Google token audience mismatch: %s != %s", token_aud, GOOGLE_CLIENT_ID)
+        raise HTTPException(401, "Google token audience mismatch")
+
+    email = (payload.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(400, "Google account does not provide an email address")
+
+    google_id = payload.get("sub")
+    picture = payload.get("picture")
+
+    # 1. Look up existing Google user by google_id
+    user = await store.collection("users").find_one({"google_id": google_id})
+
+    if not user:
+        # Check if an email-based account already exists with this email
+        # As requested: Keep email login and Google login separate!
+        email_user = await store.collection("users").find_one({"email_norm": email})
+        if email_user and (email_user.get("password_hash") or email_user.get("auth_provider") == "email"):
+            raise HTTPException(409, "An account with this email was registered using email and password. Please log in with your password.")
+
+        # Create new Google-authenticated user
+        user = {
+            "id": uuid.uuid4().hex,
+            "email": email,
+            "email_norm": email,
+            "password_hash": None,
+            "google_id": google_id,
+            "avatar": picture,
+            "auth_provider": "google",
+            "created_at": _now(),
+            "username": None,
+        }
+        await store.collection("users").insert_one(user)
+    else:
+        # User already exists via Google, update avatar if missing
+        if picture and not user.get("avatar"):
+            await store.collection("users").update_one({"id": user["id"]}, {"$set": {"avatar": picture}})
+            user["avatar"] = picture
+
+    csrf = await issue_session(user, response)
+    return {
+        "user": _public_user(user),
+        "csrf_token": csrf,
+        "needs_username": not bool(user.get("username")),
+    }
 
 
 @app.get("/api/auth/me")

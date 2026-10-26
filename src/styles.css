@@ -6925,3 +6925,67 @@ html {
   font-size: 11.5px;
   color: #9ce0c8;
 }
+
+
+/* Google Authentication Button */
+.google-auth-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  min-height: 42px;
+}
+
+.google-rendered-btn {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.google-rendered-btn.loading {
+  display: none;
+}
+
+.google-rendered-btn.ready {
+  display: flex;
+}
+
+.google-custom-btn {
+  width: 100%;
+  height: 42px;
+  border: 1px solid #3a3942;
+  border-radius: 8px;
+  background: #18191d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #f1edf5;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+
+.google-custom-btn:hover:not(:disabled) {
+  background: #23242a;
+  border-color: #555263;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.google-custom-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.google-g-icon {
+  flex-shrink: 0;
+}
+
+.popover-google-btn-wrap {
+  margin-top: 10px;
+  width: 100%;
+}

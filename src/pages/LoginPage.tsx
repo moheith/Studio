@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRight } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
+import GoogleSignInButton from '../components/GoogleSignInButton'
 import { api } from '../api'
 import type { User } from '../types'
 
@@ -34,6 +35,7 @@ export default function LoginPage({ onBack, onRegister, onLogin, notify }: Login
 
   return <AuthLayout eyebrow="YOUR NEXT LITTLE BIG THING" title="Welcome back." description="Sign in to your studio and make an idea playable." onBack={onBack}>
     <form className="auth-form" onSubmit={submit}>
+      <GoogleSignInButton onLogin={onLogin} notify={notify} text="signin" />
       <div className="auth-separator"><span />email sign-in<span /></div>
       <label>Email address<input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
       <label>Password<input required type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" /></label>
