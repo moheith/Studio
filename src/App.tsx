@@ -405,6 +405,19 @@ export default function App() {
     }
     catch (error) { notify(error instanceof Error ? error.message : 'Could not change visibility') }
   }
+  const toggleProjectVisibility = async (project: Game) => {
+    const id = project.projectId || project.id
+    if (!id) return
+    const next = project.visibility === 'public' ? 'private' : 'public'
+    try {
+      await api(`/api/projects/${id}/visibility`, { method: 'PATCH', body: JSON.stringify({ visibility: next }) })
+      const updated = { ...project, visibility: next as 'public' | 'private' }
+      setProjects(items => items.map(item => (item.projectId === id || item.id === id) ? updated : item))
+      notify(next === 'public' ? `"${project.title}" is now public in the arcade` : `"${project.title}" is now private`)
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not change visibility')
+    }
+  }
   const saveKey = async () => {
     if (apiKey.trim().length < 12) throw new Error('Enter a valid Gemini API key')
     // The POST validates and stores the key, returning the model that passed.
@@ -688,6 +701,9 @@ export default function App() {
         throw error
       }
     }}
+    onUpdateUser={(updated) => setUser(updated)}
+    onToggleVisibility={toggleProjectVisibility}
+    notify={notify}
     />
     {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
     {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}

@@ -384,6 +384,8 @@ def _public_user(doc: dict[str, Any]) -> dict[str, Any]:
         "id": doc["id"],
         "username": doc.get("username"),
         "display_name": doc.get("display_name"),
+        "bio": doc.get("bio", ""),
+        "created_at": doc.get("created_at"),
         "email": doc.get("email"),
         "avatar": doc.get("avatar"),
         "has_api_key": bool(doc.get("api_key_ciphertext")),
@@ -434,6 +436,7 @@ class LoginBody(BaseModel): email: str; password: str
 class GoogleAuthBody(BaseModel): credential: str
 class VerifyBody(BaseModel): email: str; code: str = Field(min_length=6, max_length=6)
 class UsernameBody(BaseModel): username: str; display_name: str | None = None
+class ProfileUpdateBody(BaseModel): display_name: str | None = None; bio: str | None = None
 class KeyBody(BaseModel): api_key: str = Field(min_length=12, max_length=256)
 class ProjectBody(BaseModel): title: str = Field(min_length=1, max_length=60); visibility: str = "private"
 class VisibilityBody(BaseModel): visibility: str
@@ -690,6 +693,19 @@ async def set_username(body: UsernameBody, user: dict[str, Any] = Depends(mutati
     return {"username": username, "display_name": update_fields.get("display_name", user.get("display_name"))}
 
 
+@app.put("/api/profile")
+async def update_profile(body: ProfileUpdateBody, user: dict[str, Any] = Depends(mutating_user)):
+    updates: dict[str, Any] = {}
+    if body.display_name is not None:
+        updates["display_name"] = body.display_name.strip()[:60]
+    if body.bio is not None:
+        updates["bio"] = body.bio.strip()[:280]
+    if updates:
+        await store.collection("users").update_one({"id": user["id"]}, {"$set": updates})
+        user.update(updates)
+    return {"user": _public_user(user)}
+
+
 @app.get("/api/profile/waterfall")
 async def get_user_waterfall(user: dict[str, Any] = Depends(current_user)):
     user_doc = await store.collection("users").find_one({"id": user["id"]})
@@ -911,7 +927,7 @@ async def profile(username: str):
     user = await store.collection("users").find_one({"username": username.lower()})
     if not user: raise HTTPException(404, "Creator not found")
     rows = await store.collection("projects").find({"owner_id": user["id"], "visibility": "public"}).sort("updated_at", -1).limit(100).to_list(100)
-    return {"profile": {"username": user["username"], "avatar": user.get("avatar")}, "projects": [{k: v for k, v in p.items() if k not in {"_id", "owner_id"}} for p in rows]}
+    return {"profile": {"username": user["username"], "display_name": user.get("display_name"), "bio": user.get("bio", ""), "avatar": user.get("avatar"), "created_at": user.get("created_at")}, "projects": [{k: v for k, v in p.items() if k not in {"_id", "owner_id"}} for p in rows]}
 
 
 def preview_token(project: dict[str, Any], ttl: int = 86400) -> str:

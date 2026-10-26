@@ -72,10 +72,12 @@ export type User = {
   id?: string
   username: string
   display_name?: string
+  bio?: string
   email: string
   avatar?: string
   has_api_key?: boolean
   waterfall?: string[]
   tokens?: UserTokens
+  created_at?: number
 }
 export type Page = 'home' | 'arcade' | 'studio' | 'login' | 'register' | 'verify-email' | 'setup-profile' | 'profile' | 'not-found'

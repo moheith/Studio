@@ -1,7 +1,12 @@
-import { useState } from 'react'
-import { Activity, ArrowRight, Check, Flame, Gamepad2, KeyRound, LogOut, Plus, Sparkles, Zap } from 'lucide-react'
+import { useState, useMemo } from 'react'
 import type * as React from 'react'
+import {
+  Activity, ArrowRight, ArrowUpRight, Check, Copy, Edit3, Flame,
+  Gamepad2, Globe, KeyRound, Lock, LogOut, Play, Plus, Search,
+  Share2, Sparkles, X, Zap
+} from 'lucide-react'
 import type { Game, User } from '../types'
+import { api } from '../api'
 
 type ProfilePageProps = {
   user: User | null
@@ -14,6 +19,9 @@ type ProfilePageProps = {
   onKey: () => void
   onLogout: () => void
   onUsername: (name: string) => Promise<void>
+  onUpdateUser?: (updated: User) => void
+  onToggleVisibility?: (game: Game) => Promise<void>
+  notify: (msg: string) => void
 }
 
 function formatCompactTokens(num: number | null | undefined): { compact: string; full: string } {
@@ -39,15 +47,77 @@ function formatCompactTokens(num: number | null | undefined): { compact: string;
   return { compact: `${n}`, full }
 }
 
-export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, onCreate, onOpen, onKey, onLogout, onUsername }: ProfilePageProps) {
-  const [username, setUsername] = useState('')
+function formatJoinDate(timestamp?: number): string {
+  if (!timestamp) return 'Member since 2026'
+  try {
+    const date = new Date(timestamp * 1000)
+    return `Joined ${date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+  } catch {
+    return 'Member since 2026'
+  }
+}
+
+export default function ProfilePage({
+  user,
+  hasKey,
+  projects,
+  onHome,
+  onArcade,
+  onCreate,
+  onOpen,
+  onKey,
+  onLogout,
+  onUsername,
+  onUpdateUser,
+  onToggleVisibility,
+  notify
+}: ProfilePageProps) {
+  // Username claim state (fallback for accounts without username)
+  const [usernameInput, setUsernameInput] = useState('')
   const [usernameError, setUsernameError] = useState('')
   const [savingUsername, setSavingUsername] = useState(false)
-  const displayName = user?.display_name || user?.username || user?.email?.split('@')[0] || 'Creator'
-  const avatar = user?.avatar
-    ? <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
-    : displayName.slice(0, 1).toUpperCase()
 
+  // Edit Profile Modal
+  const [isEditing, setIsEditing] = useState(false)
+  const [editDisplayName, setEditDisplayName] = useState(user?.display_name || user?.username || '')
+  const [editBio, setEditBio] = useState(user?.bio || '')
+  const [savingProfile, setSavingProfile] = useState(false)
+
+  // Projects filter & search
+  const [projectFilter, setProjectFilter] = useState<'all' | 'public' | 'private'>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Toggling project visibility inline
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+
+  const displayName = user?.display_name || user?.username || (user?.email ? user.email.split('@')[0] : 'Creator')
+  const bio = user?.bio || 'Creator and game designer in Yulya Studio.'
+
+  // Computed metrics
+  const publicCount = useMemo(() => projects.filter((p) => p.visibility === 'public').length, [projects])
+  const privateCount = projects.length - publicCount
+  const totalPlays = useMemo(() => {
+    return projects.reduce((acc, p) => acc + (Number(p.plays) || 0), 0)
+  }, [projects])
+
+  // Filtered projects
+  const filteredProjects = useMemo(() => {
+    return projects.filter((p) => {
+      const matchesFilter =
+        projectFilter === 'all'
+          ? true
+          : projectFilter === 'public'
+          ? p.visibility === 'public'
+          : p.visibility !== 'public'
+      const matchesSearch =
+        !searchQuery.trim() ||
+        p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.description.toLowerCase().includes(searchQuery.toLowerCase())
+      return matchesFilter && matchesSearch
+    })
+  }, [projects, projectFilter, searchQuery])
+
+  // Telemetry metrics
   const totalTokens = user?.tokens?.total_tokens ?? 0
   const inputTokens = user?.tokens?.input_tokens ?? 0
   const outputTokens = user?.tokens?.output_tokens ?? 0
@@ -62,48 +132,458 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
   const inputPct = totalTokens > 0 ? Math.round((inputTokens / totalTokens) * 100) : 0
   const outputPct = totalTokens > 0 ? 100 - inputPct : 0
 
-  return <div className="profile-shell creator-profile-shell">
-    <header className="topbar profile-topbar creator-profile-topbar">
-      <button className="brand" onClick={onHome} aria-label="Yulya Studio home"><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span></button>
-      <nav className="creator-profile-nav" aria-label="Account navigation">
-        <button className="quiet-button" onClick={onArcade}>Arcade</button>
-        <button className="creator-signout" onClick={onLogout}><LogOut size={14}/> Sign out</button>
-      </nav>
-    </header>
+  // Copy Profile link
+  const copyProfileLink = () => {
+    if (!user?.username) {
+      notify('Claim your username first to get a shareable profile URL')
+      return
+    }
+    const url = `${window.location.origin}/@${user.username}`
+    navigator.clipboard.writeText(url)
+    notify('Profile link copied to clipboard!')
+  }
 
-    <main className="creator-profile-main">
-      <div className="creator-profile-heading">
-        <div><span className="creator-profile-eyebrow">CREATOR ACCOUNT</span><h1>Your profile</h1><p>Manage your projects and studio settings.</p></div>
-        <button className="button button-outline creator-settings-button" onClick={onKey}><KeyRound size={15}/>{hasKey ? 'AI settings' : 'Connect AI'}</button>
-      </div>
+  // Copy Game link
+  const copyGameLink = (game: Game) => {
+    const username = user?.username || game.creator
+    const url = `${window.location.origin}/${encodeURIComponent(username)}/${encodeURIComponent(game.id)}`
+    navigator.clipboard.writeText(url)
+    notify(`Game link for "${game.title}" copied!`)
+  }
 
-      <section className="creator-identity-card" aria-label="Your profile">
-        <div className="creator-cover" aria-hidden="true"><span>✳</span></div>
-        <div className="creator-identity-content">
-          <div className="creator-avatar">{avatar}</div>
-          <div className="creator-identity-text"><h2>{displayName}</h2><p>@{user?.username || 'username not set'}</p><span>{user?.email}</span></div>
-          {user?.username && <span className="creator-username-status"><Check size={13}/> Username claimed</span>}
-        </div>
-        {!user?.username && <form className="creator-username-setup" onSubmit={async event => {
-          event.preventDefault()
-          const value = username.trim().toLowerCase()
-          if (!/^[a-z0-9_]{3,24}$/.test(value)) { setUsernameError('Use 3–24 lowercase letters, numbers, or underscores.'); return }
-          setSavingUsername(true); setUsernameError('')
-          try { await onUsername(value) } catch (error) { setUsernameError(error instanceof Error ? error.message : 'Could not save username.') }
-          finally { setSavingUsername(false) }
-        }}>
-          <div><b>Choose your creator username</b><small>It will identify your profile and is unique to your account.</small></div>
-          <div className="creator-username-control"><span>@</span><input value={username} maxLength={24} placeholder="username" autoComplete="username" onChange={event => { setUsername(event.target.value.toLowerCase().replace(/\s/g, '')); setUsernameError('') }}/><button className="button button-primary" disabled={savingUsername || !/^[a-z0-9_]{3,24}$/.test(username)}>{savingUsername ? 'Saving…' : 'Save username'}</button></div>
-          {usernameError && <p role="alert">{usernameError}</p>}
-        </form>}
-        <div className="creator-profile-stats">
-          <div><strong>{projects.length}</strong><span>Projects</span></div>
-          <div><strong>{projects.filter(project => project.visibility === 'public').length}</strong><span>Public games</span></div>
-          <div className="creator-ai-stat"><span className={`creator-ai-dot ${hasKey ? 'is-connected' : ''}`}/><span>AI key {hasKey ? 'connected' : 'not connected'}</span><button onClick={onKey}>{hasKey ? 'Manage' : 'Set up'} <ArrowRight size={12}/></button></div>
-        </div>
+  // Handle Save Profile
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingProfile(true)
+    try {
+      const res = await api<{ user: User }>('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          display_name: editDisplayName.trim(),
+          bio: editBio.trim()
+        })
+      })
+      if (onUpdateUser) onUpdateUser(res.user)
+      setIsEditing(false)
+      notify('Profile updated successfully!')
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not save profile')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
 
-        {/* Token Usage & Telemetry Stats */}
-        <div className="creator-token-analytics-card">
+  // Handle Toggle Visibility
+  const handleToggle = async (game: Game) => {
+    const id = game.projectId || game.id
+    if (!id || togglingId) return
+    setTogglingId(id)
+    try {
+      if (onToggleVisibility) {
+        await onToggleVisibility(game)
+      } else {
+        const next = game.visibility === 'public' ? 'private' : 'public'
+        await api(`/api/projects/${id}/visibility`, {
+          method: 'PATCH',
+          body: JSON.stringify({ visibility: next })
+        })
+        notify(next === 'public' ? `"${game.title}" is now public` : `"${game.title}" is now private`)
+      }
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not update visibility')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  return (
+    <div className="profile-shell creator-profile-shell">
+      {/* Top Navbar */}
+      <header className="topbar profile-topbar creator-profile-topbar">
+        <button className="brand" onClick={onHome} aria-label="Yulya Studio home">
+          <span className="brand-mark">✳</span>
+          <span>
+            yulya<span className="brand-light">studio</span>
+          </span>
+        </button>
+
+        <nav className="creator-profile-nav" aria-label="Account navigation">
+          <button className="quiet-button" onClick={onArcade}>
+            <Gamepad2 size={15} /> Arcade
+          </button>
+          <button className="creator-signout" onClick={onLogout}>
+            <LogOut size={14} /> Sign out
+          </button>
+        </nav>
+      </header>
+
+      <main className="creator-profile-main">
+        {/* 1. HERO IDENTITY CARD */}
+        <section className="pro-identity-card" aria-label="Creator Profile">
+          {/* Cosmic Banner */}
+          <div className="pro-cover-banner">
+            <div className="pro-banner-mesh" />
+            <div className="pro-banner-stars">✦　·　✧　✳　✦</div>
+            <div className="pro-banner-badge">
+              <span className="pro-badge-dot" />
+              <span>STUDIO CREATOR</span>
+            </div>
+          </div>
+
+          {/* Identity Header */}
+          <div className="pro-identity-body">
+            <div className="pro-identity-top">
+              {/* Avatar with Glow Ring */}
+              <div className="pro-avatar-wrap">
+                <div className="pro-avatar-inner">
+                  {user?.avatar ? (
+                    <img src={user.avatar} alt={displayName} referrerPolicy="no-referrer" />
+                  ) : (
+                    <span>{(displayName[0] || 'C').toUpperCase()}</span>
+                  )}
+                </div>
+                <span className="pro-avatar-status" title="Online in Studio" />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pro-actions-group">
+                <button
+                  className="button button-outline pro-action-btn"
+                  onClick={copyProfileLink}
+                  title="Share creator profile"
+                >
+                  <Share2 size={14} />
+                  <span>Share</span>
+                </button>
+
+                <button
+                  className="button button-outline pro-action-btn"
+                  onClick={() => {
+                    setEditDisplayName(user?.display_name || user?.username || '')
+                    setEditBio(user?.bio || '')
+                    setIsEditing(true)
+                  }}
+                  title="Edit profile information"
+                >
+                  <Edit3 size={14} />
+                  <span>Edit Profile</span>
+                </button>
+
+                <button
+                  className={`button button-outline pro-action-btn ${hasKey ? 'key-connected' : ''}`}
+                  onClick={onKey}
+                  title={hasKey ? 'Manage Gemini AI settings' : 'Connect Gemini AI Key'}
+                >
+                  <KeyRound size={14} />
+                  <span>{hasKey ? 'AI Engine' : 'Connect AI'}</span>
+                  {hasKey && <span className="key-active-dot" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Names & Handle */}
+            <div className="pro-info-wrap">
+              <div className="pro-title-line">
+                <h1>{displayName}</h1>
+                <span className="pro-tier-pill">
+                  <Sparkles size={11} /> PRO
+                </span>
+              </div>
+
+              <div className="pro-meta-line">
+                <span className="pro-username">@{user?.username || 'handle_not_set'}</span>
+                <span className="pro-meta-bullet">•</span>
+                <span className="pro-email">{user?.email}</span>
+                <span className="pro-meta-bullet">•</span>
+                <span className="pro-joined">{formatJoinDate(user?.created_at)}</span>
+              </div>
+
+              <p className="pro-bio">{bio}</p>
+            </div>
+
+            {/* Fallback Username Setup if missing */}
+            {!user?.username && (
+              <form
+                className="creator-username-setup pro-username-alert"
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  const value = usernameInput.trim().toLowerCase()
+                  if (!/^[a-z0-9_]{3,24}$/.test(value)) {
+                    setUsernameError('Use 3–24 lowercase letters, numbers, or underscores.')
+                    return
+                  }
+                  setSavingUsername(true)
+                  setUsernameError('')
+                  try {
+                    await onUsername(value)
+                  } catch (err) {
+                    setUsernameError(err instanceof Error ? err.message : 'Could not save username.')
+                  } finally {
+                    setSavingUsername(false)
+                  }
+                }}
+              >
+                <div>
+                  <b>Choose your permanent creator handle</b>
+                  <small>Your username creates your unique profile & arcade game links.</small>
+                </div>
+                <div className="creator-username-control">
+                  <span>@</span>
+                  <input
+                    value={usernameInput}
+                    maxLength={24}
+                    placeholder="username"
+                    autoComplete="username"
+                    onChange={(e) => {
+                      setUsernameInput(e.target.value.toLowerCase().replace(/\s/g, ''))
+                      setUsernameError('')
+                    }}
+                  />
+                  <button
+                    className="button button-primary"
+                    disabled={savingUsername || !/^[a-z0-9_]{3,24}$/.test(usernameInput)}
+                  >
+                    {savingUsername ? 'Saving…' : 'Save handle'}
+                  </button>
+                </div>
+                {usernameError && <p role="alert">{usernameError}</p>}
+              </form>
+            )}
+
+            {/* 2. STATS OVERVIEW CARDS */}
+            <div className="pro-stats-grid">
+              <div className="pro-stat-card">
+                <div className="pro-stat-icon-wrap lilac">
+                  <Gamepad2 size={16} />
+                </div>
+                <div className="pro-stat-content">
+                  <span className="pro-stat-number">{projects.length}</span>
+                  <span className="pro-stat-label">Studio Projects</span>
+                </div>
+                <span className="pro-stat-sub">
+                  <b>{publicCount}</b> public · <b>{privateCount}</b> drafts
+                </span>
+              </div>
+
+              <div className="pro-stat-card">
+                <div className="pro-stat-icon-wrap emerald">
+                  <Play size={15} />
+                </div>
+                <div className="pro-stat-content">
+                  <span className="pro-stat-number">{totalPlays.toLocaleString()}</span>
+                  <span className="pro-stat-label">Total Game Plays</span>
+                </div>
+                <span className="pro-stat-sub">Across all public arcade games</span>
+              </div>
+
+              <div className="pro-stat-card">
+                <div className="pro-stat-icon-wrap amber">
+                  <Flame size={16} />
+                </div>
+                <div className="pro-stat-content">
+                  <span className="pro-stat-number">{totalFormatted.compact}</span>
+                  <span className="pro-stat-label">AI Tokens Burnt</span>
+                </div>
+                <span className="pro-stat-sub">Intelligence compute used</span>
+              </div>
+
+              <div className="pro-stat-card">
+                <div className="pro-stat-icon-wrap cyan">
+                  <Zap size={16} />
+                </div>
+                <div className="pro-stat-content">
+                  <span className="pro-stat-number">{turnsCount.toLocaleString()}</span>
+                  <span className="pro-stat-label">Generation Turns</span>
+                </div>
+                <span className="pro-stat-sub">AI co-pilot iterations</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 3. WORKSPACE PROJECTS SECTION */}
+        <section className="pro-workspace-section" aria-labelledby="workspace-title">
+          <div className="pro-workspace-topbar">
+            <div className="pro-workspace-title-group">
+              <span className="creator-profile-eyebrow">YOUR CREATIVE PORTFOLIO</span>
+              <h2 id="workspace-title">Studio Projects</h2>
+            </div>
+
+            <button
+              className="button button-primary pro-new-project-btn"
+              onClick={onCreate}
+              disabled={!user?.username}
+              title={!user?.username ? 'Choose a username before creating a project' : 'Create new project'}
+            >
+              <Plus size={16} />
+              <span>New Project</span>
+            </button>
+          </div>
+
+          {/* Filter Bar & Search */}
+          <div className="pro-filter-bar">
+            <div className="pro-filter-tabs">
+              <button
+                className={`pro-tab-pill ${projectFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setProjectFilter('all')}
+              >
+                All <span>{projects.length}</span>
+              </button>
+              <button
+                className={`pro-tab-pill ${projectFilter === 'public' ? 'active' : ''}`}
+                onClick={() => setProjectFilter('public')}
+              >
+                <Globe size={12} /> Public Arcade <span>{publicCount}</span>
+              </button>
+              <button
+                className={`pro-tab-pill ${projectFilter === 'private' ? 'active' : ''}`}
+                onClick={() => setProjectFilter('private')}
+              >
+                <Lock size={12} /> Private Drafts <span>{privateCount}</span>
+              </button>
+            </div>
+
+            <div className="pro-search-box">
+              <Search size={14} className="pro-search-icon" />
+              <input
+                type="text"
+                placeholder="Search projects..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="pro-search-clear"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear search"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Projects Grid */}
+          {filteredProjects.length > 0 ? (
+            <div className="pro-project-grid">
+              {filteredProjects.map((project) => {
+                const isPublic = project.visibility === 'public'
+                const plays = Number(project.plays) || 0
+                const isToggling = togglingId === (project.projectId || project.id)
+
+                return (
+                  <div className="pro-card" key={project.projectId || project.id}>
+                    {/* Visual Thumbnail */}
+                    <div
+                      className="pro-card-thumbnail"
+                      style={{ '--game-color': project.color || '#cbb3ff' } as React.CSSProperties}
+                      onClick={() => onOpen(project)}
+                    >
+                      <div className="pro-thumb-overlay" />
+                      <div className="pro-thumb-glyph">{project.art || '✦'}</div>
+
+                      {/* Visibility Badge */}
+                      <span className={`pro-vis-badge ${isPublic ? 'badge-public' : 'badge-private'}`}>
+                        {isPublic ? <Globe size={11} /> : <Lock size={11} />}
+                        <span>{isPublic ? 'PUBLIC' : 'PRIVATE'}</span>
+                      </span>
+
+                      {/* Plays Badge */}
+                      {isPublic && (
+                        <span className="pro-plays-pill">
+                          <Play size={10} fill="currentColor" /> {plays} plays
+                        </span>
+                      )}
+
+                      {/* Hover Overlay with Open Studio */}
+                      <div className="pro-thumb-hover">
+                        <span className="pro-hover-btn">Open Editor →</span>
+                      </div>
+                    </div>
+
+                    {/* Meta info */}
+                    <div className="pro-card-details">
+                      <div className="pro-card-header" onClick={() => onOpen(project)}>
+                        <h3>{project.title}</h3>
+                        <p>{project.description || 'Browser game created in Yulya Studio.'}</p>
+                      </div>
+
+                      {/* Footer Actions */}
+                      <div className="pro-card-footer">
+                        <button
+                          type="button"
+                          className="pro-card-action-btn primary"
+                          onClick={() => onOpen(project)}
+                          title="Open game editor"
+                        >
+                          Editor <ArrowRight size={13} />
+                        </button>
+
+                        {isPublic && (
+                          <>
+                            <a
+                              className="pro-card-action-btn secondary"
+                              href={`/${encodeURIComponent(user?.username || project.creator)}/${encodeURIComponent(project.id)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Play live in browser"
+                            >
+                              Play <ArrowUpRight size={12} />
+                            </a>
+
+                            <button
+                              type="button"
+                              className="pro-card-icon-btn"
+                              onClick={() => copyGameLink(project)}
+                              title="Copy game link"
+                            >
+                              <Copy size={13} />
+                            </button>
+                          </>
+                        )}
+
+                        <button
+                          type="button"
+                          className={`pro-card-vis-btn ${isPublic ? 'make-private' : 'make-public'}`}
+                          onClick={() => handleToggle(project)}
+                          disabled={isToggling}
+                          title={isPublic ? 'Make this project private' : 'Publish this game to the Arcade'}
+                        >
+                          {isToggling ? '…' : isPublic ? 'Make Private' : 'Publish'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="creator-empty-projects pro-empty-box">
+              <div className="creator-empty-icon">
+                <Gamepad2 size={24} />
+              </div>
+              <h3>
+                {searchQuery || projectFilter !== 'all'
+                  ? 'No matching projects found'
+                  : 'Start your first masterpiece'}
+              </h3>
+              <p>
+                {searchQuery || projectFilter !== 'all'
+                  ? 'Try adjusting your filters or search keywords.'
+                  : 'Write code with AI in real-time, preview your live game, and publish for creators worldwide.'}
+              </p>
+              {!(searchQuery || projectFilter !== 'all') && (
+                <button className="button button-primary" onClick={onCreate} disabled={!user?.username}>
+                  <Plus size={15} /> Create your first game
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* 4. AI TOKEN TELEMETRY */}
+        <section className="creator-token-analytics-card pro-telemetry-shell">
           <div className="token-card-header">
             <div className="token-header-title">
               <div className="token-bolt-wrap">
@@ -116,12 +596,13 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
             </div>
             <div className="token-header-badge" title="Total AI interaction turns recorded">
               <span className="token-pulse-dot" />
-              <span>{turnsCount.toLocaleString()} {turnsCount === 1 ? 'Turn' : 'Turns'} Executed</span>
+              <span>
+                {turnsCount.toLocaleString()} {turnsCount === 1 ? 'Turn' : 'Turns'} Executed
+              </span>
             </div>
           </div>
 
           <div className="creator-token-grid">
-            {/* 1. Lifetime Burnt */}
             <div className="token-stat-box highlight-amber" title={`Lifetime: ${totalFormatted.full}`}>
               <div className="token-stat-top">
                 <span className="token-stat-label">Lifetime Tokens</span>
@@ -138,7 +619,6 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
               </div>
             </div>
 
-            {/* 2. Peak Turn */}
             <div className="token-stat-box highlight-purple" title={`Single Turn Peak: ${peakFormatted.full}`}>
               <div className="token-stat-top">
                 <span className="token-stat-label">Peak Turn Burst</span>
@@ -155,10 +635,9 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
               </div>
             </div>
 
-            {/* 3. Input / Reading */}
             <div className="token-stat-box highlight-cyan" title={`Input Tokens: ${inputFormatted.full}`}>
               <div className="token-stat-top">
-                <span className="token-stat-label">Input (Reading)</span>
+                <span className="token-stat-label">Input Context (Read)</span>
                 <div className="stat-icon-wrap cyan">
                   <Activity size={13} className="stat-box-icon text-cyan" />
                 </div>
@@ -172,10 +651,9 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
               </div>
             </div>
 
-            {/* 4. Output / Writing */}
             <div className="token-stat-box highlight-emerald" title={`Output Tokens: ${outputFormatted.full}`}>
               <div className="token-stat-top">
-                <span className="token-stat-label">Output (Writing)</span>
+                <span className="token-stat-label">Output Code (Write)</span>
                 <div className="stat-icon-wrap emerald">
                   <Check size={13} className="stat-box-icon text-emerald" />
                 </div>
@@ -190,17 +668,20 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
             </div>
           </div>
 
-          {/* Ratio Progress Bar */}
           {totalTokens > 0 && (
             <div className="token-ratio-card">
               <div className="token-ratio-meta">
                 <div className="ratio-meta-left">
                   <span className="ratio-legend-dot cyan" />
-                  <span>Context Read: <strong>{inputPct}%</strong> ({inputFormatted.compact})</span>
+                  <span>
+                    Context Read: <strong>{inputPct}%</strong> ({inputFormatted.compact})
+                  </span>
                 </div>
                 <div className="ratio-meta-right">
                   <span className="ratio-legend-dot emerald" />
-                  <span>Code Generated: <strong>{outputPct}%</strong> ({outputFormatted.compact})</span>
+                  <span>
+                    Code Generated: <strong>{outputPct}%</strong> ({outputFormatted.compact})
+                  </span>
                 </div>
               </div>
               <div className="token-ratio-track" role="progressbar" aria-label="Input vs Output token ratio">
@@ -209,20 +690,57 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
               </div>
             </div>
           )}
-        </div>
-      </section>
+        </section>
+      </main>
 
-      <section className="creator-projects-section" aria-labelledby="creator-projects-title">
-        <div className="creator-projects-heading"><div><span className="creator-profile-eyebrow">YOUR WORKSPACE</span><h2 id="creator-projects-title">Projects <span>{projects.length}</span></h2></div>
-          <button className="button button-primary creator-new-project" onClick={onCreate} disabled={!user?.username} title={!user?.username ? 'Choose a username before creating a project' : 'Create a new project'}><Plus size={16}/> New project</button>
+      {/* 5. EDIT PROFILE MODAL */}
+      {isEditing && (
+        <div className="modal-backdrop" onClick={() => setIsEditing(false)}>
+          <div className="modal-card pro-edit-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setIsEditing(false)} aria-label="Close modal">
+              <X size={16} />
+            </button>
+
+            <div className="modal-icon">
+              <Edit3 size={18} />
+            </div>
+
+            <h2>Edit Creator Profile</h2>
+            <p>Update how other creators and arcade players see your studio identity.</p>
+
+            <form onSubmit={handleSaveProfile} className="auth-form">
+              <label>
+                Display Name
+                <input
+                  required
+                  type="text"
+                  maxLength={50}
+                  value={editDisplayName}
+                  onChange={(e) => setEditDisplayName(e.target.value)}
+                  placeholder="e.g. Mayur Patel"
+                />
+              </label>
+
+              <label>
+                Bio / Tagline
+                <textarea
+                  className="pro-bio-textarea"
+                  maxLength={200}
+                  rows={3}
+                  value={editBio}
+                  onChange={(e) => setEditBio(e.target.value)}
+                  placeholder="Tell creators about the games and playable experiences you build..."
+                />
+                <small className="setup-field-hint">{editBio.length}/200 characters</small>
+              </label>
+
+              <button className="button button-primary modal-submit" disabled={savingProfile || !editDisplayName.trim()}>
+                {savingProfile ? 'Saving…' : 'Save Changes'} <Check size={15} />
+              </button>
+            </form>
+          </div>
         </div>
-        {projects.length ? <div className="creator-project-grid">
-          {projects.map(project => <button className="creator-project-card" key={project.projectId || project.id} onClick={() => onOpen(project)}>
-            <div className="creator-project-art" style={{ '--game-color': project.color } as React.CSSProperties}><span>{project.art || '✦'}</span><small>{project.visibility === 'public' ? 'PUBLIC' : 'PRIVATE'}</small></div>
-            <div className="creator-project-info"><div><h3>{project.title}</h3><p>{project.description}</p></div><ArrowRight size={15}/></div>
-          </button>)}
-        </div> : <div className="creator-empty-projects"><div className="creator-empty-icon"><Gamepad2 size={21}/></div><h3>Your next game starts here</h3><p>Create a project to open the editor, write your game, and preview it as you build.</p><button className="button button-outline" onClick={onCreate} disabled={!user?.username}><Plus size={15}/> Create your first project</button></div>}
-      </section>
-    </main>
-  </div>
+      )}
+    </div>
+  )
 }
