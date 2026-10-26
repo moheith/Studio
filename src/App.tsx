@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import {
-  ArrowDown, ArrowRight, ArrowUpRight, Check, Code2, Gamepad2,
+ArrowRight, ArrowUpRight, Check, Code2, Gamepad2,
   Globe2, LockKeyhole, Menu, MessageSquare,
   Play, Rocket, Sparkles,
   X, Zap,
@@ -14,6 +14,8 @@ import ProfilePage from './pages/ProfilePage'
 import PublicProfilePage from './pages/PublicProfilePage'
 import StudioPage from './pages/StudioPage'
 import ArcadePage from './pages/ArcadePage'
+import Hero3DCanvas from './components/Hero3DCanvas'
+import StudioShowcase from './components/StudioShowcase'
 import type { Game, FileEntry, Page, User, ChatMessage } from './types'
 function projectToGame(value: Record<string, unknown>): Game {
   const id = String(value.slug ?? value.id ?? 'project')
@@ -727,18 +729,47 @@ export default function App() {
     <header className="topbar home-topbar">
       <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span><span className="beta-pill">BETA</span></a>
       <nav className={`main-nav ${mobileNav ? 'nav-open' : ''}`}>
-        <a href="#discover" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Discover</a>
+        <a href="#showcase" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('showcase')?.scrollIntoView({ behavior: 'smooth' }) }}>Features</a>
         <a href="/arcade" onClick={(e) => { e.preventDefault(); setMobileNav(false); setPage('arcade') }}>Arcade</a>
-        <a href="#how" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }) }}>How it works</a>
-        <a href="#community" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('community')?.scrollIntoView({ behavior: 'smooth' }) }}>Community</a>
+        <a href="#discover" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Community Games</a>
+        <a href="#how" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }) }}>Workflow</a>
       </nav>
       <div className="top-actions"><button className="top-link" onClick={() => user ? setPage('profile') : setPage('login')}>{user ? `@${user.username}` : 'Log in'}</button><button className="button button-primary button-small" onClick={() => user ? setPage('profile') : setPage('login')}>{user ? 'My studio' : 'Start creating'} <ArrowRight size={15}/></button><button className="icon-button mobile-menu" aria-label="Toggle menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={19}/></button></div>
     </header>
     <main>
       <section className="hero" id="home">
-        <div className="hero-copy"><div className="eyebrow hero-eyebrow"><span className="live-dot"/> YOUR IDEAS, PLAYABLE</div><h1>Make a game.<br/><span>See it come alive.</span></h1><p className="hero-description">A tiny game studio in your browser. Describe what you imagine, shape it with code, and share something people can play.</p><div className="hero-actions"><button className="button button-primary" onClick={() => user ? setPage('profile') : setPage('login')}>Make your first game <ArrowRight size={16}/></button><a className="text-button" href="#discover" onClick={(e) => { e.preventDefault(); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Explore the arcade <ArrowDown size={15}/></a></div><div className="hero-note"><div className="avatar-stack"><span className="avatar peach">p</span><span className="avatar lilac">l</span><span className="avatar mint">o</span><span className="avatar sky">m</span></div><span><b>Made by curious people</b><br/>Played everywhere</span></div></div>
-        <div className="hero-art" aria-label="A dreamy illustration of a little game world"><div className="hero-grid"/><div className="floating-label label-top"><Sparkles size={13}/> made with a little help</div><div className="hero-orbit orbit-one"/><div className="hero-orbit orbit-two"/><div className="hero-planet"><div className="planet-ring"/><div className="planet-face">✦</div><div className="planet-spark">✧</div></div><div className="hero-moon">☾</div><div className="pixel-cloud cloud-one">▪ ▪<br/>▪ ▪ ▪</div><div className="pixel-cloud cloud-two">▪ ▪ ▪<br/>　▪</div><div className="floating-label label-bottom"><span className="mini-wave">〰</span> playable in one click</div><div className="art-caption">a universe<br/>of tiny ideas <span>↗</span></div></div>
+        <div className="hero-copy">
+          <div className="eyebrow hero-eyebrow">
+            <span className="live-dot"/> NEXT-GEN GAME ENGINE
+          </div>
+          <h1>
+            Make real games.<br/>
+            <span className="hero-gradient-text">See them come alive.</span>
+          </h1>
+          <p className="hero-description">
+            A professional browser-native studio powered by Gemini. Prompt mechanics in plain words, shape TypeScript and Canvas 2D logic with zero build steps, and share instant playable links worldwide.
+          </p>
+          <div className="hero-actions">
+            <button className="button button-primary" onClick={() => user ? setPage('profile') : setPage('login')}>
+              Start Creating Free <ArrowRight size={16}/>
+            </button>
+            <button className="button button-outline" onClick={() => setPage('arcade')}>
+              <Gamepad2 size={16}/> Explore Arcade
+            </button>
+          </div>
+          <div className="hero-note">
+            <div className="avatar-stack">
+              <span className="avatar peach">p</span>
+              <span className="avatar lilac">l</span>
+              <span className="avatar mint">o</span>
+              <span className="avatar sky">m</span>
+            </div>
+            <span><b>Zero installation required</b><br/>WebGL • Canvas 2D • Web Audio</span>
+          </div>
+        </div>
+        <Hero3DCanvas />
       </section>
+      <StudioShowcase />
       <section className="community-strip"><div className="strip-item"><span className="strip-icon violet"><Code2 size={17}/></span><span><b>Made in the browser</b><small>No setup, just make</small></span></div><div className="strip-divider"/><div className="strip-item"><span className="strip-icon orange"><Gamepad2 size={18}/></span><span><b>Made to be played</b><small>One link, any device</small></span></div><div className="strip-divider"/><div className="strip-item"><span className="strip-icon green"><Sparkles size={17}/></span><span><b>Made together</b><small>Play games you love</small></span></div><div className="strip-end">A little studio for big imagination <span>✳</span></div></section>
       <section className="arcade-section" id="discover">
         <div className="section-heading">
