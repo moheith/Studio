@@ -77,4 +77,4 @@ export type User = {
   waterfall?: string[]
   tokens?: UserTokens
 }
-export type Page = 'home' | 'studio' | 'login' | 'register' | 'verify-email' | 'profile' | 'not-found'
+export type Page = 'home' | 'arcade' | 'studio' | 'login' | 'register' | 'verify-email' | 'profile' | 'not-found'

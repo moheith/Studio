@@ -13,6 +13,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage'
 import ProfilePage from './pages/ProfilePage'
 import PublicProfilePage from './pages/PublicProfilePage'
 import StudioPage from './pages/StudioPage'
+import ArcadePage from './pages/ArcadePage'
 import type { Game, FileEntry, Page, User, ChatMessage } from './types'
 function projectToGame(value: Record<string, unknown>): Game {
   const id = String(value.slug ?? value.id ?? 'project')
@@ -93,7 +94,7 @@ const curatedStarterGames: Game[] = [
 export default function App() {
   const pageFromPath = (): Page => {
     const route = window.location.pathname
-    const fixed = ({ '/': 'home', '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/profile': 'profile', '/studio': 'studio', '/not-found': 'not-found' }[route] as Page | undefined)
+    const fixed = ({ '/': 'home', '/arcade': 'arcade', '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/profile': 'profile', '/studio': 'studio', '/not-found': 'not-found' }[route] as Page | undefined)
     if (fixed) return fixed
     const parts = route.split('/').filter(Boolean)
     if (parts.length === 3 && parts[2] === 'edit') return 'studio'
@@ -102,7 +103,7 @@ export default function App() {
   }
   const [page, setPageState] = useState<Page>(pageFromPath)
   const setPage = (next: Page, pathOverride?: string) => {
-    const route: Record<Page, string> = { home: '/', login: '/login', register: '/register', 'verify-email': '/verify-email', profile: '/profile', studio: '/studio', 'not-found': '/not-found' }
+    const route: Record<Page, string> = { home: '/', arcade: '/arcade', login: '/login', register: '/register', 'verify-email': '/verify-email', profile: '/profile', studio: '/studio', 'not-found': '/not-found' }
     const path = pathOverride ?? (next === 'profile' && user?.username ? `/${encodeURIComponent(user.username)}` : next === 'studio' && currentGame && user?.username ? editorPath(user.username, currentGame.id) : route[next])
     // Dialogs belong to the page that opened them; never carry one across routes.
     setModal(null)
@@ -721,6 +722,38 @@ export default function App() {
     </>
   }
   if (page === 'not-found') return <main className="route-not-found"><span>404</span><h1>This page isn’t available</h1><p>The editor is private to its owner, or this link is incorrect.</p><button className="button button-primary" onClick={() => setPage(user ? 'profile' : 'home')}>Return to Yulya Studio</button></main>
+  if (page === 'arcade') {
+    return (
+      <>
+        <ArcadePage
+          user={user}
+          games={games}
+          onSelectGame={(game) => { setCurrentGame(game); setModal('game') }}
+          onOpenStudio={(game) => openStudio(game)}
+          setPage={setPage}
+          notify={notify}
+          modal={modal}
+          currentGame={currentGame}
+          setModal={setModal}
+          toast={toast}
+        />
+        {modal === 'game' && currentGame && (
+          <GameModal
+            game={currentGame}
+            close={() => setModal(null)}
+            play={() => {
+              if (currentGame.visibility === 'public') window.open(publicGameUrl(currentGame.creator, currentGame.id), '_blank', 'noopener,noreferrer')
+              else notify('This project is private')
+              setModal(null)
+            }}
+          />
+        )}
+        {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
+        {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
+        {toast && <div className="toast"><Check size={15}/>{toast}</div>}
+      </>
+    )
+  }
   if (page === 'studio') return <><StudioPage {...{
     user, currentGame, activeFile, openFiles, setOpenFiles, code, language, tree, sidebarOpen, terminalOpen, chat, chatMessages, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel, dirtyFiles, setDirtyFiles,
     isAntigravityMode, setIsAntigravityMode,
@@ -741,6 +774,7 @@ export default function App() {
       <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span><span className="beta-pill">BETA</span></a>
       <nav className={`main-nav ${mobileNav ? 'nav-open' : ''}`}>
         <a href="#discover" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Discover</a>
+        <a href="/arcade" onClick={(e) => { e.preventDefault(); setMobileNav(false); setPage('arcade') }}>Arcade</a>
         <a href="#how" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }) }}>How it works</a>
         <a href="#community" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('community')?.scrollIntoView({ behavior: 'smooth' }) }}>Community</a>
       </nav>
@@ -755,7 +789,10 @@ export default function App() {
       <section className="arcade-section" id="discover">
         <div className="section-heading">
           <div><div className="eyebrow">THE COMMUNITY ARCADE</div><h2>Little worlds, <em>made by you.</em></h2><p>Press play. Find a favorite. Share your world.</p></div>
-          <button className="button button-outline" onClick={() => api<{projects: Array<Record<string, unknown>>}>('/api/gallery').then(data => { setGames(data.projects.map(projectToGame)); notify('Gallery refreshed'); }).catch(() => notify('Could not refresh games'))}>Refresh games <ArrowRight size={15}/></button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button className="button button-outline" onClick={() => api<{projects: Array<Record<string, unknown>>}>('/api/gallery').then(data => { setGames(data.projects.map(projectToGame)); notify('Gallery refreshed'); }).catch(() => notify('Could not refresh games'))}>Refresh <ArrowRight size={15}/></button>
+            <button className="button button-primary button-small" onClick={() => setPage('arcade')}>Open Full Arcade <ArrowRight size={14}/></button>
+          </div>
         </div>
         <div className="arcade-filters">
           {['ALL', 'ARCADE', 'STRATEGY', 'ACTION', 'RPG'].map(g => (
@@ -773,7 +810,7 @@ export default function App() {
         )}
         <div className="gallery-footer">
           <span><span className="live-dot"/> {displayGames.length} PUBLIC GAMES</span>
-          <button className="quiet-button" onClick={() => setPage(user ? 'profile' : 'login')}>Have an idea? Make it real <ArrowRight size={14}/></button>
+          <button className="quiet-button" onClick={() => setPage('arcade')}>Explore all in Roblox Arcade <ArrowRight size={14}/></button>
         </div>
       </section>
       <section className="how-section" id="how"><div className="how-title"><div className="eyebrow">FROM THOUGHT TO THUMBS-UP</div><h2>Three steps.<br/><em>One playable idea.</em></h2></div><div className="how-steps"><div className="how-step"><span className="step-index">01</span><div className="step-icon"><MessageSquare size={20}/></div><h3>Tell it what you imagine</h3><p>Start with a sentence, a sketch in your head, or a “what if…”</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">02</span><div className="step-icon peach-step"><Code2 size={20}/></div><h3>Make it yours</h3><p>See the code and the game side by side. Tweak anything you like.</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">03</span><div className="step-icon mint-step"><Rocket size={20}/></div><h3>Send it to a friend</h3><p>Share one link. Anyone can play it in their browser.</p></div></div></section>
