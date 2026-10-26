@@ -1,14 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
-import { Sparkles, Terminal, Globe2, Play, Cpu, Check, Layers, Zap } from 'lucide-react'
+import { useRef, useEffect } from 'react'
+import { Terminal, Layers, Zap, Play } from 'lucide-react'
 
 export default function StudioShowcase() {
-  const [activeTab, setActiveTab] = useState<'preview' | 'ai' | 'share'>('preview')
-  const [copied, setCopied] = useState(false)
   const miniCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  // Interactive mini canvas game inside the preview tab
+  // Interactive mini canvas game inside the preview
   useEffect(() => {
-    if (activeTab !== 'preview') return
     const canvas = miniCanvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -16,37 +13,37 @@ export default function StudioShowcase() {
 
     let animId: number
     const particles: Array<{ x: number; y: number; vx: number; vy: number; life: number; color: string }> = []
-    let mouse = { x: 180, y: 110 }
+    let mouse = { x: 190, y: 115 }
 
     const colors = ['#cbb3ff', '#9ce0c8', '#9ebff8', '#ffbba4']
 
     const render = () => {
-      ctx.fillStyle = 'rgba(18, 20, 26, 0.25)'
+      ctx.fillStyle = 'rgba(17, 18, 22, 0.28)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
       // Grid background
-      ctx.strokeStyle = 'rgba(203, 179, 255, 0.05)'
+      ctx.strokeStyle = 'rgba(203, 179, 255, 0.06)'
       ctx.lineWidth = 1
-      for (let x = 0; x < canvas.width; x += 24) {
+      for (let x = 0; x < canvas.width; x += 26) {
         ctx.beginPath()
         ctx.moveTo(x, 0)
         ctx.lineTo(x, canvas.height)
         ctx.stroke()
       }
-      for (let y = 0; y < canvas.height; y += 24) {
+      for (let y = 0; y < canvas.height; y += 26) {
         ctx.beginPath()
         ctx.moveTo(0, y)
         ctx.lineTo(canvas.width, y)
         ctx.stroke()
       }
 
-      // Spawn particles near mouse
-      if (Math.random() < 0.6) {
+      // Spawn thruster particles
+      if (Math.random() < 0.7) {
         particles.push({
-          x: mouse.x + (Math.random() - 0.5) * 8,
-          y: mouse.y + (Math.random() - 0.5) * 8,
-          vx: (Math.random() - 0.5) * 2,
-          vy: (Math.random() - 0.5) * 2,
+          x: mouse.x + (Math.random() - 0.5) * 6,
+          y: mouse.y + 10 + Math.random() * 4,
+          vx: (Math.random() - 0.5) * 1.5,
+          vy: 1.5 + Math.random() * 2,
           life: 1,
           color: colors[Math.floor(Math.random() * colors.length)]
         })
@@ -74,18 +71,18 @@ export default function StudioShowcase() {
         ctx.restore()
       }
 
-      // Draw player ship / reticle
+      // Draw player ship
       ctx.save()
       ctx.translate(mouse.x, mouse.y)
       ctx.beginPath()
-      ctx.moveTo(0, -12)
-      ctx.lineTo(10, 10)
-      ctx.lineTo(0, 6)
-      ctx.lineTo(-10, 10)
+      ctx.moveTo(0, -14)
+      ctx.lineTo(12, 10)
+      ctx.lineTo(0, 5)
+      ctx.lineTo(-12, 10)
       ctx.closePath()
       ctx.fillStyle = '#cbb3ff'
       ctx.shadowColor = '#cbb3ff'
-      ctx.shadowBlur = 12
+      ctx.shadowBlur = 14
       ctx.fill()
 
       ctx.strokeStyle = '#ffffff'
@@ -101,16 +98,16 @@ export default function StudioShowcase() {
     const onMouseMove = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect()
       mouse = {
-        x: Math.max(10, Math.min(canvas.width - 10, e.clientX - rect.left)),
-        y: Math.max(10, Math.min(canvas.height - 10, e.clientY - rect.top))
+        x: Math.max(12, Math.min(canvas.width - 12, e.clientX - rect.left)),
+        y: Math.max(12, Math.min(canvas.height - 12, e.clientY - rect.top))
       }
     }
 
     const onClick = () => {
-      // Burst
-      for (let i = 0; i < 18; i++) {
-        const ang = (i / 18) * Math.PI * 2
-        const spd = 2 + Math.random() * 3
+      // Particle burst
+      for (let i = 0; i < 20; i++) {
+        const ang = (i / 20) * Math.PI * 2
+        const spd = 2 + Math.random() * 3.5
         particles.push({
           x: mouse.x,
           y: mouse.y,
@@ -130,46 +127,14 @@ export default function StudioShowcase() {
       canvas.removeEventListener('mousemove', onMouseMove)
       canvas.removeEventListener('click', onClick)
     }
-  }, [activeTab])
-
-  const copyDemoLink = () => {
-    navigator.clipboard?.writeText('https://yulya.studio/play/@creator/neon-overdrive')
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  }, [])
 
   return (
     <section className="showcase-section" id="showcase">
       <div className="section-header-centered">
-        <div className="eyebrow"><Sparkles size={13} /> INSIDE THE WORKSPACE</div>
+        <div className="eyebrow"><Play size={13} /> INTERACTIVE 60FPS RUNTIME</div>
         <h2>A studio crafted for <em>pure momentum.</em></h2>
-        <p>No build config. No local dependencies. Just you, your ideas, and zero latency.</p>
-      </div>
-
-      <div className="showcase-tabs">
-        <button
-          className={`showcase-tab ${activeTab === 'preview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('preview')}
-        >
-          <Play size={14} />
-          <span>01. Interactive 60fps Runtime</span>
-        </button>
-
-        <button
-          className={`showcase-tab ${activeTab === 'ai' ? 'active' : ''}`}
-          onClick={() => setActiveTab('ai')}
-        >
-          <Cpu size={14} />
-          <span>02. Gemini AI Game Designer</span>
-        </button>
-
-        <button
-          className={`showcase-tab ${activeTab === 'share' ? 'active' : ''}`}
-          onClick={() => setActiveTab('share')}
-        >
-          <Globe2 size={14} />
-          <span>03. Instant Global Link</span>
-        </button>
+        <p>No build config. No local dependencies. Test your game loops with instant in-browser live reload.</p>
       </div>
 
       <div className="studio-window">
@@ -190,21 +155,20 @@ export default function StudioShowcase() {
 
           <div className="window-status-pill">
             <span className="live-dot" />
-            <span>Hot Reload Active</span>
+            <span>60 FPS Live Reload</span>
           </div>
         </div>
 
-        {/* Window Body */}
+        {/* Window Body: Dedicated to Interactive 60fps Runtime */}
         <div className="studio-window-body">
-          {activeTab === 'preview' && (
-            <div className="preview-split">
-              <div className="code-column">
-                <div className="code-toolbar">
-                  <span>TypeScript Game Loop</span>
-                  <span className="code-badge">zero-lag</span>
-                </div>
-                <pre className="code-block">
-                  <code>{`// Core game loop with live state injection
+          <div className="preview-split">
+            <div className="code-column">
+              <div className="code-toolbar">
+                <span>TypeScript Game Loop</span>
+                <span className="code-badge">zero-lag</span>
+              </div>
+              <pre className="code-block">
+                <code>{`// Core game loop with live state injection
 function update(delta: number) {
   player.velocity.x += input.axis.x * ACCEL;
   player.position.add(player.velocity);
@@ -218,79 +182,27 @@ function update(delta: number) {
   renderer.clear('#111216');
   renderer.drawSprite(player);
 }`}</code>
-                </pre>
-              </div>
+              </pre>
+            </div>
 
-              <div className="viewport-column">
-                <div className="viewport-toolbar">
-                  <span>Interactive Live Canvas Viewport</span>
-                  <span className="live-pill">Move & Click to Test</span>
-                </div>
-                <div className="mini-canvas-wrap">
-                  <canvas
-                    ref={miniCanvasRef}
-                    width={380}
-                    height={230}
-                    className="interactive-mini-canvas"
-                  />
-                  <div className="canvas-overlay-hint">
-                    ✦ Hover to steer • Click for particle burst
-                  </div>
+            <div className="viewport-column">
+              <div className="viewport-toolbar">
+                <span>Interactive Live Canvas Viewport</span>
+                <span className="live-pill">Move & Click to Test</span>
+              </div>
+              <div className="mini-canvas-wrap">
+                <canvas
+                  ref={miniCanvasRef}
+                  width={380}
+                  height={230}
+                  className="interactive-mini-canvas"
+                />
+                <div className="canvas-overlay-hint">
+                  ✦ Move cursor to steer • Click for particle burst
                 </div>
               </div>
             </div>
-          )}
-
-          {activeTab === 'ai' && (
-            <div className="ai-split">
-              <div className="ai-chat-simulation">
-                <div className="chat-bubble user-bubble">
-                  <span className="bubble-label">You</span>
-                  <p>Add a neon particle trail behind the spaceship and trigger retro 8-bit sound effects on collision.</p>
-                </div>
-
-                <div className="chat-bubble ai-bubble">
-                  <div className="ai-bubble-head">
-                    <Sparkles size={13} className="text-lilac" />
-                    <span className="bubble-label">Gemini 2.5 Copilot</span>
-                    <span className="ai-pill">24ms generated</span>
-                  </div>
-                  <p>I added the Web Audio synthesizer with an 8-bit noise envelope and attached dynamic particle emitters to the engine thrusters.</p>
-
-                  <div className="code-snippet-diff">
-                    <div className="diff-line diff-add">+ const synth = new SoundEnvelope(audioCtx, 'triangle');</div>
-                    <div className="diff-line diff-add">+ particles.emitThruster(ship.rearPosition, ship.heading);</div>
-                    <div className="diff-line diff-add">+ synth.playTone(320, 0.08);</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'share' && (
-            <div className="share-view">
-              <div className="share-card">
-                <div className="share-icon-wrap">
-                  <Globe2 size={36} className="text-mint" />
-                </div>
-                <h3>Published to the Global Arcade</h3>
-                <p>Anyone with this URL can open and play your game instantly in mobile Safari, Chrome, or Edge without downloading anything.</p>
-
-                <div className="share-url-box">
-                  <code>https://yulya.studio/play/@alex/neon-overdrive</code>
-                  <button className="button button-primary button-small" onClick={copyDemoLink}>
-                    {copied ? <><Check size={13} /> Copied</> : 'Copy Link'}
-                  </button>
-                </div>
-
-                <div className="share-badges">
-                  <span className="share-badge">✓ PWA Ready</span>
-                  <span className="share-badge">✓ Touch & Gamepad Controls</span>
-                  <span className="share-badge">✓ Web Audio Synthesizer</span>
-                </div>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -298,25 +210,24 @@ function update(delta: number) {
       <div className="bento-grid">
         <div className="bento-card bento-wide">
           <div className="bento-icon-wrap bg-lilac">
-            <Cpu size={22} />
+            <Zap size={22} />
           </div>
-          <h3>Gemini-Powered Natural Game Design</h3>
+          <h3>Zero-Latency In-Browser Engine</h3>
           <p>
-            Describe mechanics, physics changes, or complete stage designs in ordinary human words.
-            The AI assistant directly inspects and updates the TypeScript codebase with surgical diffs.
+            Instant hot reloading for TypeScript and Canvas 2D. Modify game mechanics, audio synthesis, and sprite physics with immediate 60fps visual feedback.
           </p>
-          <div className="bento-tag">AI Grounded directly in your source tree</div>
+          <div className="bento-tag">Instant live reload</div>
         </div>
 
         <div className="bento-card">
           <div className="bento-icon-wrap bg-mint">
-            <Zap size={22} />
+            <Play size={22} />
           </div>
-          <h3>Zero-Install Browser Sandbox</h3>
+          <h3>Pure Web Standards</h3>
           <p>
-            No Node.js setup, no native build dependencies, and zero configuration files. Start typing and test immediately at 60 FPS.
+            Built directly on HTML5 Canvas, WebGL, and Web Audio API. Zero native compile steps or heavy toolchains.
           </p>
-          <div className="bento-tag">Instant live reload</div>
+          <div className="bento-tag">Runs anywhere in the browser</div>
         </div>
 
         <div className="bento-card">
@@ -325,7 +236,7 @@ function update(delta: number) {
           </div>
           <h3>Full Source Code Ownership</h3>
           <p>
-            You own every byte of JavaScript, asset sprites, and logic. Export your project anytime as a standard HTML5 package.
+            You own every byte of code and logic. Inspect, edit, and export your creations at any time with no lock-in.
           </p>
           <div className="bento-tag">Zero vendor lock-in</div>
         </div>
