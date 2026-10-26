@@ -6612,3 +6612,19 @@ html {
   background: rgba(203, 179, 255, 0.2);
   color: #cbb3ff;
 }
+
+.sleek-hero-stage {
+  cursor: default;
+  transform-style: preserve-3d;
+}
+
+.hero-ambient-glow {
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(203, 179, 255, 0.16) 0%, rgba(156, 224, 200, 0.08) 50%, transparent 70%);
+  filter: blur(30px);
+  pointer-events: none;
+  z-index: 0;
+}

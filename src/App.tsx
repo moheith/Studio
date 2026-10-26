@@ -14,7 +14,7 @@ import ProfilePage from './pages/ProfilePage'
 import PublicProfilePage from './pages/PublicProfilePage'
 import StudioPage from './pages/StudioPage'
 import ArcadePage from './pages/ArcadePage'
-import Hero3DCanvas from './components/Hero3DCanvas'
+import HeroVisual from './components/HeroVisual'
 import StudioShowcase from './components/StudioShowcase'
 import type { Game, FileEntry, Page, User, ChatMessage } from './types'
 function projectToGame(value: Record<string, unknown>): Game {
@@ -767,7 +767,7 @@ export default function App() {
             <span><b>Zero installation required</b><br/>WebGL • Canvas 2D • Web Audio</span>
           </div>
         </div>
-        <Hero3DCanvas />
+        <HeroVisual />
       </section>
       <StudioShowcase />
       <section className="community-strip"><div className="strip-item"><span className="strip-icon violet"><Code2 size={17}/></span><span><b>Made in the browser</b><small>No setup, just make</small></span></div><div className="strip-divider"/><div className="strip-item"><span className="strip-icon orange"><Gamepad2 size={18}/></span><span><b>Made to be played</b><small>One link, any device</small></span></div><div className="strip-divider"/><div className="strip-item"><span className="strip-icon green"><Sparkles size={17}/></span><span><b>Made together</b><small>Play games you love</small></span></div><div className="strip-end">A little studio for big imagination <span>✳</span></div></section>
