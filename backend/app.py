@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -278,7 +279,18 @@ class ProjectStorage:
                 if old_path.exists(): new_path.parent.mkdir(parents=True, exist_ok=True); old_path.replace(new_path)
 
     def delete_project(self, project: dict[str, Any], files: list[dict[str, Any]]) -> None:
-        for file in files: self.delete(project, file["path"])
+        for file in files:
+            try: self.delete(project, file["path"])
+            except Exception: pass
+        if not self.s3:
+            for b in (self.private_bucket, self.public_bucket):
+                try:
+                    dir1 = (self.local_root / b / project["owner_id"] / project["id"]).resolve()
+                    if dir1.exists() and dir1.is_dir(): shutil.rmtree(dir1, ignore_errors=True)
+                    if project.get("username") and project.get("slug"):
+                        dir2 = (self.local_root / b / project["username"] / project["slug"]).resolve()
+                        if dir2.exists() and dir2.is_dir(): shutil.rmtree(dir2, ignore_errors=True)
+                except Exception: pass
 
     def read_for_worker(self, bucket: str, key: str) -> bytes | None:
         if not self.s3: return None
@@ -913,7 +925,20 @@ async def set_visibility(project_id: str, body: VisibilityBody, user: dict[str, 
 @app.delete("/api/projects/{project_id}")
 async def delete_project(project_id: str, user: dict[str, Any] = Depends(mutating_user)):
     project = await owned_project(user, project_id)
-    await store.collection("files").delete_many({"project_id": project_id}); await store.collection("projects").delete_one({"id": project_id}); return {"deleted": True}
+    try:
+        files = await file_index(project_id)
+        files_store.delete_project(project, files)
+    except Exception as exc:
+        logger.warning("Storage file deletion warning for %s: %s", project_id, exc)
+    del_files = await store.collection("files").delete_many({"project_id": project_id})
+    del_chats = await store.collection("conversations").delete_many({"project_id": project_id})
+    await store.collection("projects").delete_one({"id": project_id})
+    return {
+        "deleted": True,
+        "project_id": project_id,
+        "files_purged": del_files.deleted_count,
+        "conversations_purged": del_chats.deleted_count
+    }
 
 
 @app.get("/api/gallery")

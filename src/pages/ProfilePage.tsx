@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type * as React from 'react'
 import {
-  Activity, ArrowRight, ArrowUpRight, Check, Copy, Edit3, Flame,
-  Gamepad2, Globe, KeyRound, Lock, LogOut, Play, Plus, Search,
-  Share2, Sparkles, X, Zap
+  Activity, AlertTriangle, ArrowRight, ArrowUpRight, Check, Code2,
+  Copy, Edit3, Flame, Gamepad2, Globe, KeyRound, Lock, LogOut,
+  MoreVertical, Play, Plus, Search, Share2, Sparkles, Trash2, X, Zap
 } from 'lucide-react'
 import type { Game, User } from '../types'
 import { api } from '../api'
@@ -21,6 +21,7 @@ type ProfilePageProps = {
   onUsername: (name: string) => Promise<void>
   onUpdateUser?: (updated: User) => void
   onToggleVisibility?: (game: Game) => Promise<void>
+  onDeleteProject?: (projectId: string) => Promise<void>
   notify: (msg: string) => void
 }
 
@@ -70,6 +71,7 @@ export default function ProfilePage({
   onUsername,
   onUpdateUser,
   onToggleVisibility,
+  onDeleteProject,
   notify
 }: ProfilePageProps) {
   // Username claim state (fallback for accounts without username)
@@ -87,8 +89,21 @@ export default function ProfilePage({
   const [projectFilter, setProjectFilter] = useState<'all' | 'public' | 'private'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
+  // 3-dots Menu & Deletion state
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [projectToDelete, setProjectToDelete] = useState<Game | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
   // Toggling project visibility inline
   const [togglingId, setTogglingId] = useState<string | null>(null)
+
+  // Close 3-dots dropdown when clicking outside
+  useEffect(() => {
+    if (!openMenuId) return
+    const handleClose = () => setOpenMenuId(null)
+    window.addEventListener('click', handleClose)
+    return () => window.removeEventListener('click', handleClose)
+  }, [openMenuId])
 
   const displayName = user?.display_name || user?.username || (user?.email ? user.email.split('@')[0] : 'Creator')
   const bio = user?.bio || 'Creator and game designer in Yulya Studio.'
@@ -468,12 +483,14 @@ export default function ProfilePage({
           {filteredProjects.length > 0 ? (
             <div className="pro-project-grid">
               {filteredProjects.map((project) => {
+                const projectId = project.projectId || project.id || ''
                 const isPublic = project.visibility === 'public'
                 const plays = Number(project.plays) || 0
-                const isToggling = togglingId === (project.projectId || project.id)
+                const isToggling = togglingId === projectId
+                const isMenuOpen = openMenuId === projectId
 
                 return (
-                  <div className="pro-card" key={project.projectId || project.id}>
+                  <div className="pro-card" key={projectId}>
                     {/* Visual Thumbnail */}
                     <div
                       className="pro-card-thumbnail"
@@ -483,18 +500,111 @@ export default function ProfilePage({
                       <div className="pro-thumb-overlay" />
                       <div className="pro-thumb-glyph">{project.art || '✦'}</div>
 
-                      {/* Visibility Badge */}
+                      {/* Left: Visibility Badge */}
                       <span className={`pro-vis-badge ${isPublic ? 'badge-public' : 'badge-private'}`}>
                         {isPublic ? <Globe size={11} /> : <Lock size={11} />}
                         <span>{isPublic ? 'PUBLIC' : 'PRIVATE'}</span>
                       </span>
 
-                      {/* Plays Badge */}
-                      {isPublic && (
-                        <span className="pro-plays-pill">
-                          <Play size={10} fill="currentColor" /> {plays} plays
-                        </span>
-                      )}
+                      {/* Right: Plays Badge & 3-Dots Menu Button */}
+                      <div className="pro-thumb-top-right" onClick={(e) => e.stopPropagation()}>
+                        {isPublic && (
+                          <span className="pro-plays-pill">
+                            <Play size={10} fill="currentColor" /> {plays} plays
+                          </span>
+                        )}
+
+                        {/* 3-DOTS ACTION TRIGGER */}
+                        <div className="pro-card-menu-anchor">
+                          <button
+                            type="button"
+                            className={`pro-card-more-btn ${isMenuOpen ? 'active' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenMenuId(isMenuOpen ? null : projectId)
+                            }}
+                            aria-label="Project actions"
+                            title="Project options"
+                          >
+                            <MoreVertical size={16} />
+                          </button>
+
+                          {/* Floating 3-Dots Dropdown */}
+                          {isMenuOpen && (
+                            <div className="pro-card-dropdown animate-menu-scale" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                className="pro-dropdown-item"
+                                onClick={() => {
+                                  setOpenMenuId(null)
+                                  onOpen(project)
+                                }}
+                              >
+                                <Code2 size={13} className="text-lilac" />
+                                <span>Open in Studio</span>
+                              </button>
+
+                              {isPublic && (
+                                <>
+                                  <a
+                                    className="pro-dropdown-item"
+                                    href={`/${encodeURIComponent(user?.username || project.creator)}/${encodeURIComponent(project.id)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={() => setOpenMenuId(null)}
+                                  >
+                                    <Play size={13} className="text-emerald" />
+                                    <span>Play in Arcade</span>
+                                  </a>
+
+                                  <button
+                                    type="button"
+                                    className="pro-dropdown-item"
+                                    onClick={() => {
+                                      setOpenMenuId(null)
+                                      copyGameLink(project)
+                                    }}
+                                  >
+                                    <Copy size={13} className="text-cyan" />
+                                    <span>Copy Game Link</span>
+                                  </button>
+                                </>
+                              )}
+
+                              <button
+                                type="button"
+                                className="pro-dropdown-item"
+                                onClick={() => {
+                                  setOpenMenuId(null)
+                                  handleToggle(project)
+                                }}
+                              >
+                                {isPublic ? (
+                                  <Lock size={13} className="text-muted" />
+                                ) : (
+                                  <Globe size={13} className="text-emerald" />
+                                )}
+                                <span>{isPublic ? 'Make Private' : 'Publish to Arcade'}</span>
+                              </button>
+
+                              <div className="pro-dropdown-divider" />
+
+                              {/* DELETE OPTION */}
+                              <button
+                                type="button"
+                                className="pro-dropdown-item pro-dropdown-danger"
+                                onClick={() => {
+                                  setOpenMenuId(null)
+                                  setProjectToDelete(project)
+                                }}
+                              >
+                                <Trash2 size={13} />
+                                <span>Delete Project</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
 
                       {/* Hover Overlay with Open Studio */}
                       <div className="pro-thumb-hover">
@@ -738,6 +848,79 @@ export default function ProfilePage({
                 {savingProfile ? 'Saving…' : 'Save Changes'} <Check size={15} />
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. PERMANENT DELETE PROJECT CONFIRMATION MODAL */}
+      {projectToDelete && (
+        <div className="modal-backdrop" onClick={() => !deleting && setProjectToDelete(null)}>
+          <div className="modal-card pro-delete-modal" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="modal-close"
+              onClick={() => !deleting && setProjectToDelete(null)}
+              aria-label="Close modal"
+              disabled={deleting}
+            >
+              <X size={16} />
+            </button>
+
+            <div className="modal-icon danger-icon">
+              <Trash2 size={20} />
+            </div>
+
+            <h2>Delete Project?</h2>
+            <p>
+              Are you sure you want to permanently delete <b>&ldquo;{projectToDelete.title}&rdquo;</b>?
+            </p>
+
+            <div className="pro-delete-warning-box">
+              <AlertTriangle size={18} className="pro-delete-warning-icon" />
+              <div className="pro-delete-warning-text">
+                <b>Permanent Database Purge</b>
+                <span>
+                  This will completely remove this project from the database, purging all source code, assets, and AI chat conversation history. This action cannot be undone.
+                </span>
+              </div>
+            </div>
+
+            <div className="pro-delete-modal-actions">
+              <button
+                type="button"
+                className="button button-outline"
+                disabled={deleting}
+                onClick={() => setProjectToDelete(null)}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="button button-danger"
+                disabled={deleting}
+                onClick={async () => {
+                  const id = projectToDelete.projectId || projectToDelete.id
+                  if (!id) return
+                  setDeleting(true)
+                  try {
+                    if (onDeleteProject) {
+                      await onDeleteProject(id)
+                    } else {
+                      await api(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' })
+                      notify(`Project "${projectToDelete.title}" was deleted.`)
+                    }
+                    setProjectToDelete(null)
+                  } catch (err) {
+                    notify(err instanceof Error ? err.message : 'Could not delete project')
+                  } finally {
+                    setDeleting(false)
+                  }
+                }}
+              >
+                <Trash2 size={15} />
+                <span>{deleting ? 'Purging from database…' : 'Delete Project Permanently'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

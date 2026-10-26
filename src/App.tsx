@@ -418,6 +418,20 @@ export default function App() {
       notify(err instanceof Error ? err.message : 'Could not change visibility')
     }
   }
+  const deleteProject = async (projectId: string) => {
+    try {
+      await api(`/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' })
+      setProjects((current) => current.filter((p) => p.projectId !== projectId && p.id !== projectId))
+      if (currentProjectId === projectId) {
+        setCurrentProjectId('')
+        setCurrentGame(null)
+      }
+      notify('Project and all associated code & AI chat history were permanently deleted')
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not delete project')
+      throw err
+    }
+  }
   const saveKey = async () => {
     if (apiKey.trim().length < 12) throw new Error('Enter a valid Gemini API key')
     // The POST validates and stores the key, returning the model that passed.
@@ -703,6 +717,7 @@ export default function App() {
     }}
     onUpdateUser={(updated) => setUser(updated)}
     onToggleVisibility={toggleProjectVisibility}
+    onDeleteProject={deleteProject}
     notify={notify}
     />
     {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
