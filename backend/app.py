@@ -2135,7 +2135,17 @@ async def prepare_game_html(project: dict[str, Any], raw_html: str, base_href: s
     except Exception:
         pass
 
-    base_tag = f'<base href="{base_href}">\n{error_bridge}'
+    # Inject SEO / OpenGraph meta tags for game shares and Google indexing
+    game_title = project.get("title") or "Game"
+    game_desc = project.get("description") or "Play this game on Yulya Studio Arcade."
+    game_creator = project.get("username") or "creator"
+    seo_tags = (
+        f'<meta name="description" content="{game_desc}">\n'
+        f'<meta property="og:title" content="{game_title} by @{game_creator} — Yulya Studio">\n'
+        f'<meta property="og:description" content="{game_desc}">\n'
+        f'<meta property="og:type" content="game">\n'
+    )
+    base_tag = f'<base href="{base_href}">\n{seo_tags}{error_bridge}'
     existing_base = re.search(r"<base\b[^>]*>", html, flags=re.IGNORECASE)
     if existing_base:
         html = html[:existing_base.start()] + base_tag + html[existing_base.end():]
