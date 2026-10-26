@@ -60,7 +60,7 @@ ALLOWED_EXTENSIONS = {
     ".woff", ".woff2", ".ttf", ".otf",
     ".txt", ".csv", ".tsv", ".atlas", ".fnt", ".glb", ".gltf", ".obj", ".mtl"
 }
-RESERVED_NAMES = {"api", "auth", "studio", "profile", "settings", "assets", "static", "play", "admin", "health"}
+RESERVED_NAMES = {"api", "auth", "studio", "profile", "settings", "assets", "static", "play", "admin", "health", "setup-profile"}
 USERNAME_RE = re.compile(r"^[a-z0-9_]{3,24}$")
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$")
 PH = PasswordHasher()
@@ -383,6 +383,7 @@ def _public_user(doc: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": doc["id"],
         "username": doc.get("username"),
+        "display_name": doc.get("display_name"),
         "email": doc.get("email"),
         "avatar": doc.get("avatar"),
         "has_api_key": bool(doc.get("api_key_ciphertext")),
@@ -432,7 +433,7 @@ class RegisterBody(BaseModel): email: str = Field(min_length=5, max_length=254);
 class LoginBody(BaseModel): email: str; password: str
 class GoogleAuthBody(BaseModel): credential: str
 class VerifyBody(BaseModel): email: str; code: str = Field(min_length=6, max_length=6)
-class UsernameBody(BaseModel): username: str
+class UsernameBody(BaseModel): username: str; display_name: str | None = None
 class KeyBody(BaseModel): api_key: str = Field(min_length=12, max_length=256)
 class ProjectBody(BaseModel): title: str = Field(min_length=1, max_length=60); visibility: str = "private"
 class VisibilityBody(BaseModel): visibility: str
@@ -532,6 +533,8 @@ async def login(body: LoginBody, response: Response, request: Request):
     user = await store.collection("users").find_one({"email_norm": email})
     if user and (user.get("auth_provider") == "google" or (user.get("google_id") and not user.get("password_hash"))):
         raise HTTPException(400, "This account was registered with Google. Please use Continue with Google.")
+    if not user and await store.collection("email_codes").find_one({"email_norm": email}):
+        raise HTTPException(400, "Please verify your email before logging in. Check your inbox for the verification code.")
     try:
         if not user or not user.get("password_hash"): raise VerifyMismatchError()
         PH.verify(user["password_hash"], body.password)
@@ -569,15 +572,17 @@ async def google_auth(body: GoogleAuthBody, response: Response):
 
     google_id = payload.get("sub")
     picture = payload.get("picture")
+    display_name = payload.get("name")
 
     # 1. Look up existing Google user by google_id
     user = await store.collection("users").find_one({"google_id": google_id})
 
     if not user:
         # Check if an email-based account already exists with this email
-        # As requested: Keep email login and Google login separate!
         email_user = await store.collection("users").find_one({"email_norm": email})
         if email_user and (email_user.get("password_hash") or email_user.get("auth_provider") == "email"):
+            raise HTTPException(409, "An account with this email was registered using email and password. Please log in with your password.")
+        if await store.collection("email_codes").find_one({"email_norm": email}):
             raise HTTPException(409, "An account with this email was registered using email and password. Please log in with your password.")
 
         # Create new Google-authenticated user
@@ -588,16 +593,22 @@ async def google_auth(body: GoogleAuthBody, response: Response):
             "password_hash": None,
             "google_id": google_id,
             "avatar": picture,
+            "display_name": display_name,
             "auth_provider": "google",
             "created_at": _now(),
             "username": None,
         }
         await store.collection("users").insert_one(user)
     else:
-        # User already exists via Google, update avatar if missing
+        # User already exists via Google, update avatar or display_name if missing
+        updates = {}
         if picture and not user.get("avatar"):
-            await store.collection("users").update_one({"id": user["id"]}, {"$set": {"avatar": picture}})
-            user["avatar"] = picture
+            updates["avatar"] = picture
+        if display_name and not user.get("display_name"):
+            updates["display_name"] = display_name
+        if updates:
+            await store.collection("users").update_one({"id": user["id"]}, {"$set": updates})
+            user.update(updates)
 
     csrf = await issue_session(user, response)
     return {
@@ -670,9 +681,13 @@ async def set_username(body: UsernameBody, user: dict[str, Any] = Depends(mutati
     username = body.username.strip().lower()
     if not USERNAME_RE.fullmatch(username) or username in RESERVED_NAMES: raise HTTPException(400, "Use 3–24 lowercase letters, numbers, or underscores")
     if user.get("username") and user["username"] != username: raise HTTPException(409, "Usernames are immutable once chosen")
-    try: await store.collection("users").update_one({"id": user["id"]}, {"$set": {"username": username}})
+    update_fields: dict[str, Any] = {"username": username}
+    if body.display_name:
+        disp = body.display_name.strip()[:60]
+        if disp: update_fields["display_name"] = disp
+    try: await store.collection("users").update_one({"id": user["id"]}, {"$set": update_fields})
     except DuplicateKeyError: raise HTTPException(409, "That username is already taken")
-    return {"username": username}
+    return {"username": username, "display_name": update_fields.get("display_name", user.get("display_name"))}
 
 
 @app.get("/api/profile/waterfall")
@@ -2138,7 +2153,7 @@ async def editor_route(username: str, slug: str):
 
 @app.get("/{username}/{slug}", include_in_schema=False)
 async def named_public_game(username: str, slug: str):
-    reserved = {"api", "assets", "static", "favicon.ico", "robots.txt", "profile", "login", "register", "verify-email", "studio", "not-found"}
+    reserved = {"api", "assets", "static", "favicon.ico", "robots.txt", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
     if username.lower() == "api": raise HTTPException(404, "API route not found")
     if username.lower() in reserved: return frontend_file(f"{username}/{slug}")
     return await public_game_file(username, slug, "index.html")
@@ -2146,7 +2161,7 @@ async def named_public_game(username: str, slug: str):
 
 @app.get("/{username}/{slug}/{file_path:path}", include_in_schema=False)
 async def named_public_game_file(username: str, slug: str, file_path: str):
-    reserved = {"api", "assets", "static", "favicon.ico", "robots.txt", "profile", "login", "register", "verify-email", "studio", "not-found"}
+    reserved = {"api", "assets", "static", "favicon.ico", "robots.txt", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
     if username.lower() == "api": raise HTTPException(404, "API route not found")
     if username.lower() in reserved: return frontend_file(f"{username}/{slug}/{file_path}")
     return await public_game_file(username, slug, file_path)

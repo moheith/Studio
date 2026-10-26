@@ -43,7 +43,7 @@ export default function ProfilePage({ user, hasKey, projects, onHome, onArcade, 
   const [username, setUsername] = useState('')
   const [usernameError, setUsernameError] = useState('')
   const [savingUsername, setSavingUsername] = useState(false)
-  const displayName = user?.username || user?.email?.split('@')[0] || 'Creator'
+  const displayName = user?.display_name || user?.username || user?.email?.split('@')[0] || 'Creator'
   const avatar = user?.avatar
     ? <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
     : displayName.slice(0, 1).toUpperCase()

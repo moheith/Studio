@@ -6989,3 +6989,238 @@ html {
   margin-top: 10px;
   width: 100%;
 }
+
+
+/* Authentication Form & UI Polish */
+.auth-form-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.auth-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.5;
+  animation: auth-alert-fade-in 0.2s ease-out;
+}
+
+@keyframes auth-alert-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-alert-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #f87171;
+}
+
+.auth-alert-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.auth-alert-hint {
+  font-size: 11px;
+  color: #fecaca;
+  opacity: 0.9;
+}
+
+.auth-alert-action {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 4px 9px;
+  border: 1px solid rgba(203, 179, 255, 0.4);
+  border-radius: 6px;
+  background: rgba(203, 179, 255, 0.15);
+  color: #e9d5ff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.auth-alert-action:hover {
+  background: rgba(203, 179, 255, 0.25);
+  border-color: #cbb3ff;
+  color: #ffffff;
+}
+
+/* Password Toggle Field */
+.auth-password-wrap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.auth-password-wrap input {
+  padding-right: 40px !important;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  right: 10px;
+  height: 28px;
+  width: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #8c8896;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.auth-password-toggle:hover {
+  color: #e2dfe8;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Separator Polish */
+.auth-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 14px;
+  color: #7b7784;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-family: var(--mono);
+}
+
+.auth-separator span {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.auth-separator b {
+  font-weight: 500;
+  color: #8a8594;
+}
+
+/* Profile Onboarding / Setup Card */
+.setup-card {
+  width: min(100%, 460px);
+}
+
+.setup-user-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  margin: 18px 0 16px;
+  border: 1px solid rgba(203, 179, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(203, 179, 255, 0.05);
+}
+
+.setup-avatar-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid #cbb3ff;
+  box-shadow: 0 0 16px rgba(203, 179, 255, 0.25);
+  display: grid;
+  place-items: center;
+  background: #2b2238;
+  color: #cbb3ff;
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.setup-avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.setup-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.setup-preview-email {
+  font-size: 11.5px;
+  color: #9d99a6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.setup-preview-url {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #d1b8fc;
+}
+
+.setup-preview-url b {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.setup-username-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.setup-username-at {
+  position: absolute;
+  left: 12px;
+  color: #cbb3ff;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.setup-username-input-wrap input {
+  padding-left: 28px !important;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.setup-username-check {
+  position: absolute;
+  right: 12px;
+  color: #9ce0c8;
+}
+
+.setup-field-hint {
+  display: block;
+  margin-top: 5px;
+  color: #8c8896;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.setup-submit {
+  margin-top: 14px;
+}

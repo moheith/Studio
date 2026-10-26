@@ -17,8 +17,9 @@ declare global {
 }
 
 interface GoogleSignInButtonProps {
-  onLogin: (user: User, csrf: string) => void
+  onLogin: (user: User, csrf: string, needsUsername?: boolean) => void
   notify: (msg: string) => void
+  onError?: (msg: string) => void
   text?: 'signin' | 'signup' | 'continue'
   width?: number
 }
@@ -30,6 +31,7 @@ const GOOGLE_CLIENT_ID =
 export default function GoogleSignInButton({
   onLogin,
   notify,
+  onError,
   text = 'continue',
   width
 }: GoogleSignInButtonProps) {
@@ -47,7 +49,9 @@ export default function GoogleSignInButton({
             client_id: GOOGLE_CLIENT_ID,
             callback: async (response: { credential?: string }) => {
               if (!response.credential) {
-                notify('Google sign-in did not provide credentials')
+                const msg = 'Google sign-in did not provide credentials'
+                if (onError) onError(msg)
+                notify(msg)
                 return
               }
               setBusy(true)
@@ -59,9 +63,11 @@ export default function GoogleSignInButton({
                     body: JSON.stringify({ credential: response.credential })
                   }
                 )
-                onLogin(result.user, result.csrf_token)
+                onLogin(result.user, result.csrf_token, result.needs_username)
               } catch (err) {
-                notify(err instanceof Error ? err.message : 'Google authentication failed')
+                const msg = err instanceof Error ? err.message : 'Google authentication failed'
+                if (onError) onError(msg)
+                notify(msg)
               } finally {
                 setBusy(false)
               }
@@ -95,7 +101,7 @@ export default function GoogleSignInButton({
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [text, width, onLogin, notify])
+  }, [text, width, onLogin, notify, onError])
 
   const label =
     text === 'signup'

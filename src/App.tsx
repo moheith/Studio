@@ -14,6 +14,7 @@ import ProfilePage from './pages/ProfilePage'
 import PublicProfilePage from './pages/PublicProfilePage'
 import StudioPage from './pages/StudioPage'
 import ArcadePage from './pages/ArcadePage'
+import SetupProfilePage from './pages/SetupProfilePage'
 import HeroVisual from './components/HeroVisual'
 import StudioShowcase from './components/StudioShowcase'
 import ProfileMenu from './components/ProfileMenu'
@@ -52,7 +53,7 @@ const initialTree: FileEntry[] = []
 export default function App() {
   const pageFromPath = (): Page => {
     const route = window.location.pathname
-    const fixed = ({ '/': 'home', '/arcade': 'arcade', '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/profile': 'profile', '/studio': 'studio', '/not-found': 'not-found' }[route] as Page | undefined)
+    const fixed = ({ '/': 'home', '/arcade': 'arcade', '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/setup-profile': 'setup-profile', '/profile': 'profile', '/studio': 'studio', '/not-found': 'not-found' }[route] as Page | undefined)
     if (fixed) return fixed
     const parts = route.split('/').filter(Boolean)
     if (parts.length === 3 && parts[2] === 'edit') return 'studio'
@@ -61,7 +62,7 @@ export default function App() {
   }
   const [page, setPageState] = useState<Page>(pageFromPath)
   const setPage = (next: Page, pathOverride?: string) => {
-    const route: Record<Page, string> = { home: '/', arcade: '/arcade', login: '/login', register: '/register', 'verify-email': '/verify-email', profile: '/profile', studio: '/studio', 'not-found': '/not-found' }
+    const route: Record<Page, string> = { home: '/', arcade: '/arcade', login: '/login', register: '/register', 'verify-email': '/verify-email', 'setup-profile': '/setup-profile', profile: '/profile', studio: '/studio', 'not-found': '/not-found' }
     const path = pathOverride ?? (next === 'profile' && user?.username ? `/${encodeURIComponent(user.username)}` : next === 'studio' && currentGame && user?.username ? editorPath(user.username, currentGame.id) : route[next])
     // Dialogs belong to the page that opened them; never carry one across routes.
     setModal(null)
@@ -138,7 +139,7 @@ export default function App() {
     api<{ user: User; csrf_token: string; needs_username: boolean }>('/api/auth/me').then(async (session) => {
       setCsrfToken(session.csrf_token); setUser(session.user); setHasKey(Boolean((session.user as User & { has_api_key?: boolean }).has_api_key))
       if ((session.user as User & { has_api_key?: boolean }).has_api_key) api<{models: Array<{id: string; display_name: string}>}>('/api/models').then(result => { setModels(result.models); if (result.models[0]) setSelectedModel(result.models[0].id) }).catch(() => {})
-      if (session.needs_username) setPage('profile')
+      if (session.needs_username || !session.user?.username) setPage('setup-profile')
       else { const data = await api<{ projects: Array<Record<string, unknown>> }>('/api/projects').catch(() => ({ projects: [] })); setProjects(data.projects.map(projectToGame)) }
     }).catch(() => {}).finally(() => setSessionReady(true))
     api<{ projects: Array<Record<string, unknown>> }>('/api/gallery').then((data) => setGames(data.projects.map(projectToGame))).catch(() => {})
@@ -424,12 +425,13 @@ export default function App() {
     try { await api('/api/auth/logout', { method: 'POST', body: '{}' }) } catch { /* clear the local view even if the API is offline */ }
     setCsrfToken(''); setUser(null); setProjects([]); setHasKey(false); setModels([]); setSelectedModel(''); setPage('home'); notify('Signed out')
   }
-  const completeLogin = (nextUser: User, csrf: string) => {
+  const completeLogin = (nextUser: User, csrf: string, needsUsername?: boolean) => {
     setCsrfToken(csrf)
     setUser(nextUser)
     setHasKey(Boolean((nextUser as User & { has_api_key?: boolean }).has_api_key))
     api<{ projects: Array<Record<string, unknown>> }>('/api/projects').then(result => setProjects(result.projects.map(projectToGame))).catch(() => {})
     if ((nextUser as User & { has_api_key?: boolean }).has_api_key) api<{ models: Array<{ id: string; display_name: string }> }>('/api/models').then(result => { setModels(result.models); setSelectedModel(result.models[0]?.id ?? '') }).catch(() => {})
+    if (needsUsername || !nextUser.username) { setPage('setup-profile'); return }
     const returnTo = sessionStorage.getItem('yulya:return-to')
     if (returnTo) { sessionStorage.removeItem('yulya:return-to'); setPage('studio', returnTo) }
     else setPage('profile', nextUser.username ? `/${encodeURIComponent(nextUser.username)}` : '/profile')
@@ -637,9 +639,22 @@ export default function App() {
     if (sessionReady && !editorRoute()) { setPage(user ? 'profile' : 'home'); return null }
     return <main className="project-opening"><span className="key-spinner"/><b>Opening your project…</b><small>Loading your files and saved AI conversation.</small></main>
   }
-  if (page === 'login') return <LoginPage onBack={() => setPage('home')} onRegister={() => setPage('register')} onLogin={completeLogin} notify={notify} />
-  if (page === 'register') return <RegisterPage onBack={() => setPage('home')} onLogin={() => setPage('login')} onGoogleSuccess={completeLogin} onRegistered={(email) => { setVerificationEmail(email); sessionStorage.setItem('yulya-verification-email', email); setPage('verify-email') }} notify={notify} />
-  if (page === 'verify-email') return <VerifyEmailPage email={verificationEmail} onBack={() => setPage('register')} onLogin={(nextUser, csrf) => { sessionStorage.removeItem('yulya-verification-email'); completeLogin(nextUser, csrf) }} notify={notify} />
+  if (page === 'setup-profile' && user) return <>
+    <SetupProfilePage user={user} onComplete={(updatedUser) => { setUser(updatedUser); setPage('profile', `/${encodeURIComponent(updatedUser.username)}`) }} notify={notify} />
+    {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
+  </>
+  if (page === 'login') return <>
+    <LoginPage onBack={() => setPage('home')} onRegister={() => setPage('register')} onLogin={completeLogin} notify={notify} />
+    {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
+  </>
+  if (page === 'register') return <>
+    <RegisterPage onBack={() => setPage('home')} onLogin={() => setPage('login')} onGoogleSuccess={completeLogin} onRegistered={(email) => { setVerificationEmail(email); sessionStorage.setItem('yulya-verification-email', email); setPage('verify-email') }} notify={notify} />
+    {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
+  </>
+  if (page === 'verify-email') return <>
+    <VerifyEmailPage email={verificationEmail} onBack={() => setPage('register')} onLogin={(nextUser, csrf) => { sessionStorage.removeItem('yulya-verification-email'); completeLogin(nextUser, csrf) }} notify={notify} />
+    {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
+  </>
   if (page === 'profile') {
     const routeUsername = decodeURIComponent(window.location.pathname.split('/').filter(Boolean)[0] ?? '')
     const isOwnProfile = window.location.pathname === '/profile' || Boolean(user?.username && routeUsername.toLowerCase() === user.username.toLowerCase())
