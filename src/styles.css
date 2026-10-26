@@ -6564,3 +6564,51 @@ html {
     height: 350px;
   }
 }
+
+.hero-3d-glow {
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(203, 179, 255, 0.22) 0%, rgba(156, 224, 200, 0.12) 40%, transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero-3d-controls {
+  position: absolute;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(20, 22, 29, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 3px 6px;
+  z-index: 4;
+}
+
+.speed-pill {
+  border: none;
+  background: transparent;
+  color: #8c899c;
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.speed-pill:hover {
+  color: #ffffff;
+}
+
+.speed-pill.active {
+  background: rgba(203, 179, 255, 0.2);
+  color: #cbb3ff;
+}
