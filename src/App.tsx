@@ -19,6 +19,8 @@ import PublicProfilePage from './pages/PublicProfilePage'
 import StudioPage from './pages/StudioPage'
 import ArcadePage from './pages/ArcadePage'
 import DocsPage from './pages/DocsPage'
+import TermsPage from './pages/TermsPage'
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
 import SetupProfilePage from './pages/SetupProfilePage'
 import StudioBootLoader from './components/StudioBootLoader'
 import HeroVisual from './components/HeroVisual'
@@ -71,7 +73,7 @@ const initialTree: FileEntry[] = []
 export default function App() {
   const pageFromPath = (): Page => {
     const route = window.location.pathname
-    const fixed = ({ '/': 'home', '/arcade': 'arcade', '/docs': 'docs', '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/setup-profile': 'setup-profile', '/profile': 'profile', '/studio': 'studio', '/not-found': 'not-found' }[route] as Page | undefined)
+    const fixed = ({ '/': 'home', '/arcade': 'arcade', '/docs': 'docs', '/terms': 'terms', '/privacy': 'privacy', '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/setup-profile': 'setup-profile', '/profile': 'profile', '/studio': 'studio', '/not-found': 'not-found' }[route] as Page | undefined)
     if (fixed) return fixed
     const parts = route.split('/').filter(Boolean)
     if (parts.length === 3 && parts[2] === 'edit') return 'studio'
@@ -80,7 +82,7 @@ export default function App() {
   }
   const [page, setPageState] = useState<Page>(pageFromPath)
   const setPage = (next: Page, pathOverride?: string) => {
-    const route: Record<Page, string> = { home: '/', arcade: '/arcade', docs: '/docs', login: '/login', register: '/register', 'verify-email': '/verify-email', 'setup-profile': '/setup-profile', profile: '/profile', studio: '/studio', 'not-found': '/not-found' }
+    const route: Record<Page, string> = { home: '/', arcade: '/arcade', docs: '/docs', terms: '/terms', privacy: '/privacy', login: '/login', register: '/register', 'verify-email': '/verify-email', 'setup-profile': '/setup-profile', profile: '/profile', studio: '/studio', 'not-found': '/not-found' }
     const path = pathOverride ?? (next === 'profile' && user?.username ? `/${encodeURIComponent(user.username)}` : next === 'studio' && currentGame && user?.username ? editorPath(user.username, currentGame.id) : route[next])
     // Dialogs belong to the page that opened them; never carry one across routes.
     setModal(null)
@@ -164,6 +166,10 @@ export default function App() {
       document.title = user?.username
         ? `@${user.username} — Creator Profile | Yulya Studio`
         : 'My Studio Profile — Yulya Studio'
+    } else if (page === 'terms') {
+      document.title = 'Terms of Service & Conditions — Yulya Studio'
+    } else if (page === 'privacy') {
+      document.title = 'Privacy Policy & Data Transparency — Yulya Studio'
     } else if (page === 'login') {
       document.title = 'Sign In — Yulya Studio Game Maker'
     } else if (page === 'register') {
@@ -855,6 +861,36 @@ export default function App() {
     </>
   }
   if (page === 'not-found') return <main className="route-not-found"><span>404</span><h1>This page isn’t available</h1><p>The editor is private to its owner, or this link is incorrect.</p><button className="button button-primary" onClick={() => setPage(user ? 'profile' : 'home')}>Return to Yulya Studio</button></main>
+  if (page === 'terms') {
+    return (
+      <>
+        <TermsPage
+          user={user}
+          setPage={setPage}
+          onOpenStudio={() => openStudio()}
+          onLogin={completeLogin}
+          onLogout={logout}
+          notify={notify}
+        />
+        {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
+      </>
+    )
+  }
+  if (page === 'privacy') {
+    return (
+      <>
+        <PrivacyPolicyPage
+          user={user}
+          setPage={setPage}
+          onOpenStudio={() => openStudio()}
+          onLogin={completeLogin}
+          onLogout={logout}
+          notify={notify}
+        />
+        {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
+      </>
+    )
+  }
   if (page === 'docs') {
     return (
       <DocsPage
@@ -1014,7 +1050,26 @@ export default function App() {
       </section>
       <section className="how-section" id="how"><div className="how-title"><div className="eyebrow">FROM THOUGHT TO THUMBS-UP</div><h2>Three steps.<br/><em>One playable idea.</em></h2></div><div className="how-steps"><div className="how-step"><span className="step-index">01</span><div className="step-icon"><MessageSquare size={20}/></div><h3>Tell it what you imagine</h3><p>Start with a sentence, a sketch in your head, or a “what if…”</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">02</span><div className="step-icon peach-step"><Code2 size={20}/></div><h3>Make it yours</h3><p>See the code and the game side by side. Tweak anything you like.</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">03</span><div className="step-icon mint-step"><Rocket size={20}/></div><h3>Send it to a friend</h3><p>Share one link. Anyone can play it in their browser.</p></div></div></section>
       <section className="cta-section" id="community"><div className="cta-spark">✳</div><div><div className="eyebrow">YOUR TURN, CREATOR</div><h2>What will you make<br/>people <em>feel?</em></h2></div><button className="button button-light" onClick={() => setPage(user ? 'profile' : 'login')}>{user ? 'Open your studio' : 'Let’s find out'} <ArrowRight size={16}/></button><span className="cta-orbit cta-orbit-a"/><span className="cta-orbit cta-orbit-b"/></section>
-    </main><footer className="footer"><a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span></a><span>A tiny studio for curious minds.</span><a href="/docs" onClick={(e) => { e.preventDefault(); setPage('docs') }} className="footer-doc-link">Documentation</a><span>Made with care <span className="footer-heart">♥</span></span></footer>
+    </main>
+    <footer className="footer">
+      <div className="footer-left">
+        <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+          <span className="brand-mark">✳</span>
+          <span>yulya<span className="brand-light">studio</span></span>
+        </a>
+        <span className="footer-tagline">A high-performance browser studio for curious minds.</span>
+      </div>
+      <div className="footer-links">
+        <a href="/arcade" onClick={(e) => { e.preventDefault(); setPage('arcade') }}>Arcade</a>
+        <a href="/docs" onClick={(e) => { e.preventDefault(); setPage('docs') }}>Documentation</a>
+        <a href="/terms" onClick={(e) => { e.preventDefault(); setPage('terms') }}>Terms of Service</a>
+        <a href="/privacy" onClick={(e) => { e.preventDefault(); setPage('privacy') }}>Privacy Policy</a>
+      </div>
+      <div className="footer-right">
+        <span>&copy; {new Date().getFullYear()} Yulya Studio. All rights reserved.</span>
+        <span>Made with care <span className="footer-heart">♥</span></span>
+      </div>
+    </footer>
     {modal === 'game' && currentGame && (
       <GameModal
         game={currentGame}

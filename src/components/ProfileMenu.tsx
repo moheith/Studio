@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   User as UserIcon, LogIn, UserPlus, LogOut,
-  Sparkles, Gamepad2, ArrowRight, Code2, BookOpen
+  Sparkles, Gamepad2, ArrowRight, Code2, BookOpen, Scale, Shield
 } from 'lucide-react'
 import GoogleSignInButton from './GoogleSignInButton'
 import type { User, Page } from '../types'
@@ -138,6 +138,18 @@ export default function ProfileMenu({
                   <span>Documentation & Guides</span>
                   <ArrowRight size={13} className="item-arrow" />
                 </button>
+
+                <button className="popover-item" onClick={() => navigateTo('terms')}>
+                  <Scale size={15} className="text-peach" />
+                  <span>Terms of Service</span>
+                  <ArrowRight size={13} className="item-arrow" />
+                </button>
+
+                <button className="popover-item" onClick={() => navigateTo('privacy')}>
+                  <Shield size={15} className="text-mint" />
+                  <span>Privacy Policy</span>
+                  <ArrowRight size={13} className="item-arrow" />
+                </button>
               </div>
 
               <div className="popover-divider" />
@@ -212,6 +224,12 @@ export default function ProfileMenu({
                 <span>Play games as guest in Arcade</span>
                 <ArrowRight size={12} className="item-arrow" />
               </button>
+
+              <div className="popover-legal-row">
+                <button type="button" onClick={() => navigateTo('terms')}>Terms of Service</button>
+                <span>&bull;</span>
+                <button type="button" onClick={() => navigateTo('privacy')}>Privacy Policy</button>
+              </div>
             </div>
           )}
         </div>

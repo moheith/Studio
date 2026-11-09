@@ -3,6 +3,8 @@ User-agent: *
 Allow: /
 Allow: /arcade
 Allow: /docs
+Allow: /terms
+Allow: /privacy
 Allow: /login
 Allow: /register
 Disallow: /api/

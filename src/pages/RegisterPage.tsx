@@ -142,7 +142,14 @@ export default function RegisterPage({
             </button>
           </p>
 
-          <div className="auth-legal">We’ll email you a 6-digit verification code.</div>
+          <div className="auth-legal">
+            By creating an account, you agree to our{' '}
+            <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+            {' '}and{' '}
+            <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+            <br />
+            We’ll email you a 6-digit verification code.
+          </div>
         </form>
       </div>
     </AuthLayout>

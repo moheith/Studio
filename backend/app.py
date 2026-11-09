@@ -63,7 +63,7 @@ ALLOWED_EXTENSIONS = {
     ".woff", ".woff2", ".ttf", ".otf",
     ".txt", ".csv", ".tsv", ".atlas", ".fnt", ".glb", ".gltf", ".obj", ".mtl"
 }
-RESERVED_NAMES = {"api", "auth", "studio", "profile", "settings", "assets", "static", "play", "admin", "health", "setup-profile", "docs"}
+RESERVED_NAMES = {"api", "auth", "studio", "profile", "settings", "assets", "static", "play", "admin", "health", "setup-profile", "docs", "terms", "privacy", "legal"}
 USERNAME_RE = re.compile(r"^[a-z0-9_]{3,24}$")
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$")
 PH = PasswordHasher()
@@ -2360,6 +2360,8 @@ User-agent: *
 Allow: /
 Allow: /arcade
 Allow: /docs
+Allow: /terms
+Allow: /privacy
 Allow: /login
 Allow: /register
 Disallow: /api/
@@ -2391,6 +2393,16 @@ async def sitemap_xml():
     <loc>{base_url}/docs</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
+  </url>""",
+        f"""  <url>
+    <loc>{base_url}/terms</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>""",
+        f"""  <url>
+    <loc>{base_url}/privacy</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
   </url>""",
         f"""  <url>
     <loc>{base_url}/login</loc>
@@ -2430,7 +2442,7 @@ async def sitemap_xml():
 
 @app.get("/{username}/{slug}", include_in_schema=False)
 async def named_public_game(username: str, slug: str):
-    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "arcade", "docs", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
+    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "arcade", "docs", "terms", "privacy", "legal", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
     if username.lower() == "api": raise HTTPException(404, "API route not found")
     if username.lower() in reserved: return frontend_file(f"{username}/{slug}")
     return await public_game_file(username, slug, "index.html")
@@ -2438,7 +2450,7 @@ async def named_public_game(username: str, slug: str):
 
 @app.get("/{username}/{slug}/{file_path:path}", include_in_schema=False)
 async def named_public_game_file(username: str, slug: str, file_path: str):
-    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "arcade", "docs", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
+    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "arcade", "docs", "terms", "privacy", "legal", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
     if username.lower() == "api": raise HTTPException(404, "API route not found")
     if username.lower() in reserved: return frontend_file(f"{username}/{slug}/{file_path}")
     return await public_game_file(username, slug, file_path)
