@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import Editor from '@monaco-editor/react'
 import {
-  AlertTriangle, ArrowUp, ArrowUpRight, Bell, Braces, Brain, Camera, Check, ChevronDown, ChevronRight, CircleHelp,
+  AlertTriangle, ArrowUp, ArrowUpRight, Bell, BookOpen, Braces, Brain, Camera, Check, ChevronDown, ChevronRight, CircleHelp,
   Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, GitBranch, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, Radio, RefreshCw,
@@ -1690,6 +1690,10 @@ export default function StudioPage(p: StudioProps) {
                   <RefreshCw size={13} />
                   <span>Reload Project Files</span>
                 </button>
+                <button onClick={() => { p.setPage('docs'); setTopMenuOpen(false) }}>
+                  <BookOpen size={13} />
+                  <span>Documentation & Guides</span>
+                </button>
                 <button onClick={() => { p.notify('Shortcuts: Ctrl/Cmd+S saves; Enter sends to AI; Shift+Enter adds line.'); setTopMenuOpen(false) }}>
                   <CircleHelp size={13} />
                   <span>Editor Help & Shortcuts</span>
@@ -1721,6 +1725,7 @@ export default function StudioPage(p: StudioProps) {
                 onGoProfile={() => p.setPage('profile')}
                 onOpenSettings={() => p.setModal('api-key')}
                 onOpenArcade={() => window.open('/arcade', '_blank')}
+                onOpenDocs={() => p.setPage('docs')}
                 onDownloadZip={p.onDownloadZip}
                 onNotify={p.notify}
               />
@@ -1810,6 +1815,7 @@ export default function StudioPage(p: StudioProps) {
                   onGoProfile={() => p.setPage('profile')}
                   onOpenSettings={() => p.setModal('api-key')}
                   onOpenArcade={() => window.open('/arcade', '_blank')}
+                  onOpenDocs={() => p.setPage('docs')}
                   onDownloadZip={p.onDownloadZip}
                   onNotify={p.notify}
                 />
@@ -3776,6 +3782,7 @@ function IdeProfileMenu({
   onGoProfile,
   onOpenSettings,
   onOpenArcade,
+  onOpenDocs,
   onDownloadZip,
   onNotify
 }: {
@@ -3785,6 +3792,7 @@ function IdeProfileMenu({
   onGoProfile: () => void
   onOpenSettings: () => void
   onOpenArcade: () => void
+  onOpenDocs?: () => void
   onDownloadZip?: () => void
   onNotify: (msg: string) => void
 }) {
@@ -3860,6 +3868,23 @@ function IdeProfileMenu({
             <small>Play community games in new tab</small>
           </div>
         </button>
+
+        {onOpenDocs && (
+          <button
+            type="button"
+            className="vsc-popover-item"
+            onClick={() => {
+              onClose()
+              onOpenDocs()
+            }}
+          >
+            <BookOpen size={15} />
+            <div className="vsc-popover-item-text">
+              <span>Documentation & Guides</span>
+              <small>Explore A to Z studio features & guides</small>
+            </div>
+          </button>
+        )}
 
         {onDownloadZip && (
           <button

@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react'
 import {
   Play, Search, Plus, ArrowLeft,
-  Gamepad2, X, Filter, Compass, Sparkles
+  Gamepad2, X, Filter, Compass, Sparkles, BookOpen
 } from 'lucide-react'
-import type { Game, User } from '../types'
+import type { Game, User, Page } from '../types'
 import ProfileMenu from '../components/ProfileMenu'
 
 interface ArcadePageProps {
@@ -12,7 +12,7 @@ interface ArcadePageProps {
   onSelectGame: (game: Game) => void
   onTrackPlay?: (username: string, slug: string) => void
   onOpenStudio: (game?: Game) => void
-  setPage: (page: 'home' | 'arcade' | 'studio' | 'login' | 'register' | 'profile') => void
+  setPage: (page: Page) => void
   notify: (msg: string) => void
   onLogin?: (user: User, csrf: string) => void
   modal: string | null
@@ -97,6 +97,10 @@ export default function ArcadePage({
             <button className="roblox-nav-link" onClick={() => onOpenStudio()}>
               <Plus size={14} />
               <span>Create</span>
+            </button>
+            <button className="roblox-nav-link" onClick={() => setPage('docs')}>
+              <BookOpen size={14} />
+              <span>Docs</span>
             </button>
           </nav>
         </div>

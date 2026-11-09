@@ -81,4 +81,4 @@ export type User = {
   tokens?: UserTokens
   created_at?: number
 }
-export type Page = 'home' | 'arcade' | 'studio' | 'login' | 'register' | 'verify-email' | 'setup-profile' | 'profile' | 'not-found'
+export type Page = 'home' | 'arcade' | 'docs' | 'studio' | 'login' | 'register' | 'verify-email' | 'setup-profile' | 'profile' | 'not-found'

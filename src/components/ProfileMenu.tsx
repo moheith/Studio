@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   User as UserIcon, LogIn, UserPlus, LogOut,
-  Sparkles, Gamepad2, ArrowRight, Code2
+  Sparkles, Gamepad2, ArrowRight, Code2, BookOpen
 } from 'lucide-react'
 import GoogleSignInButton from './GoogleSignInButton'
 import type { User, Page } from '../types'
@@ -132,6 +132,12 @@ export default function ProfileMenu({
                   <span>Roblox Arcade</span>
                   <ArrowRight size={13} className="item-arrow" />
                 </button>
+
+                <button className="popover-item" onClick={() => navigateTo('docs')}>
+                  <BookOpen size={15} className="text-cyan" />
+                  <span>Documentation & Guides</span>
+                  <ArrowRight size={13} className="item-arrow" />
+                </button>
               </div>
 
               <div className="popover-divider" />
@@ -175,6 +181,12 @@ export default function ProfileMenu({
                   <span>Create Account</span>
                 </button>
               </div>
+
+              <button className="popover-item docs-guest-link" onClick={() => navigateTo('docs')}>
+                <BookOpen size={15} className="text-cyan" />
+                <span>Documentation & Guides</span>
+                <ArrowRight size={13} className="item-arrow" />
+              </button>
 
               {onLogin && (
                 <div className="popover-google-btn-wrap">
