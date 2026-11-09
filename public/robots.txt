@@ -2,6 +2,7 @@
 User-agent: *
 Allow: /
 Allow: /arcade
+Allow: /docs
 Allow: /login
 Allow: /register
 Disallow: /api/
@@ -11,3 +12,4 @@ Disallow: /verify-email
 # Host & Sitemap
 Host: https://studio.yulya.me
 Sitemap: https://studio.yulya.me/sitemap.xml
+

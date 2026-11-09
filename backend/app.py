@@ -2355,7 +2355,22 @@ async def editor_route(username: str, slug: str):
 
 @app.get("/robots.txt", include_in_schema=False)
 async def robots_txt():
-    return frontend_file("robots.txt")
+    content = """# Yulya Studio Search Crawler Instructions
+User-agent: *
+Allow: /
+Allow: /arcade
+Allow: /docs
+Allow: /login
+Allow: /register
+Disallow: /api/
+Disallow: /setup-profile
+Disallow: /verify-email
+
+# Host & Sitemap
+Host: https://studio.yulya.me
+Sitemap: https://studio.yulya.me/sitemap.xml
+"""
+    return Response(content=content, media_type="text/plain")
 
 
 @app.get("/sitemap.xml", include_in_schema=False)

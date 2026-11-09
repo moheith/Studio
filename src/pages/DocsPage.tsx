@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type * as React from 'react'
 import {
   BookOpen, Search, Code2, Terminal, Gamepad2, Sparkles, Cpu, KeyRound,
@@ -310,10 +310,31 @@ export default function DocsPage({
   onLogout,
   notify
 }: DocsPageProps) {
-  const [activeTopicId, setActiveTopicId] = useState<string>('overview')
+  const [activeTopicId, setActiveTopicId] = useState<string>(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.replace('#', '').trim()
+      const found = DOC_TOPICS.find(t => t.id === hash || t.subsections.some(s => s.id === hash))
+      if (found) return found.id
+    }
+    return 'overview'
+  })
   const [searchQuery, setSearchQuery] = useState('')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null)
+
+  // Listen for hash changes (e.g. browser back/forward or direct link navigation)
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.replace('#', '').trim()
+      if (!hash) return
+      const found = DOC_TOPICS.find(t => t.id === hash || t.subsections.some(s => s.id === hash))
+      if (found) {
+        setActiveTopicId(found.id)
+      }
+    }
+    window.addEventListener('hashchange', handleHash)
+    return () => window.removeEventListener('hashchange', handleHash)
+  }, [])
 
   // Filter topics based on search
   const filteredTopics = useMemo(() => {
@@ -363,6 +384,9 @@ export default function DocsPage({
   const selectTopic = (id: string) => {
     setActiveTopicId(id)
     setMobileMenuOpen(false)
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `#${id}`)
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
