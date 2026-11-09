@@ -254,7 +254,7 @@ export default function App() {
       } else {
         setSaveState('Local preview')
       }
-    }, 1500)
+    }, 600)
   }
   const handleNewProject = async () => {
     if (!user) { setPage('login'); setModal(null); return }

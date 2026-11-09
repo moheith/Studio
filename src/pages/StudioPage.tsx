@@ -9,6 +9,7 @@ import {
   Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, StretchHorizontal, Tablet, Terminal, Trash2, Upload, User as UserIcon, X, XCircle, Zap,
   Gamepad2, LogOut
 } from 'lucide-react'
+import { saveFile } from '../api'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
 type StudioProps = {
@@ -609,12 +610,19 @@ export default function StudioPage(p: StudioProps) {
                   const drawX = (480 - drawW) / 2
                   const drawY = (270 - drawH) / 2
                   ctx.drawImage(img, drawX, drawY, drawW, drawH)
-                  const webpUrl = canvas.toDataURL('image/webp', 0.82)
-                  void updateThumbnailFn(projId, webpUrl)
+                  let finalUrl = canvas.toDataURL('image/jpeg', 0.85)
+                  try {
+                    const webpTest = canvas.toDataURL('image/webp', 0.85)
+                    if (webpTest.startsWith('data:image/webp')) finalUrl = webpTest
+                  } catch (e) {}
+                  void updateThumbnailFn(projId, finalUrl)
                 }
               } catch {
                 p.notify('Could not process cover snapshot')
               }
+            }
+            img.onerror = () => {
+              p.notify('Could not decode game snapshot image')
             }
             img.src = rawUrl
           }
@@ -677,11 +685,25 @@ export default function StudioPage(p: StudioProps) {
     p.notify('AI Playtest stopped — Manual control restored')
   }
 
-  const snapCover = () => {
+  const snapCover = async () => {
     if (!p.currentProjectId) {
       p.notify('Open a project before taking a snapshot')
       return
     }
+    // 1. If there are unsaved changes in the editor, flush them to the server first
+    if (p.dirtyFiles && p.dirtyFiles.size > 0 && p.code[p.activeFile] !== undefined) {
+      try {
+        await saveFile(p.currentProjectId, p.activeFile, p.code[p.activeFile])
+        if (p.setDirtyFiles) {
+          p.setDirtyFiles(prev => {
+            const next = new Set(prev)
+            next.delete(p.activeFile)
+            return next
+          })
+        }
+      } catch (e) {}
+    }
+
     setIsSnapping(true)
     pendingSnapshotRef.current = true
     p.notify('📸 Capturing cover from game preview…')
@@ -690,13 +712,49 @@ export default function StudioPage(p: StudioProps) {
       reqId: Date.now().toString()
     }, '*')
 
+    // 2. Direct parent fallback if the frame doesn't respond or if postMessage is delayed
     window.setTimeout(() => {
       if (pendingSnapshotRef.current) {
+        try {
+          const doc = previewIframeRef.current?.contentDocument || previewIframeRef.current?.contentWindow?.document
+          if (doc && p.onUpdateThumbnail) {
+            const canvases = doc.querySelectorAll('canvas')
+            for (let i = 0; i < canvases.length; i++) {
+              const c = canvases[i]
+              if (c.width > 20 || c.clientWidth > 20) {
+                const off = document.createElement('canvas')
+                off.width = 480; off.height = 270;
+                const octx = off.getContext('2d')
+                if (octx) {
+                  octx.fillStyle = '#101114'
+                  octx.fillRect(0, 0, 480, 270)
+                  const sw = c.width || c.clientWidth || 480
+                  const sh = c.height || c.clientHeight || 270
+                  const sc = Math.max(480 / sw, 270 / sh)
+                  const dw = sw * sc, dh = sh * sc
+                  octx.drawImage(c, (480 - dw) / 2, (270 - dh) / 2, dw, dh)
+                  let dUrl = off.toDataURL('image/jpeg', 0.85)
+                  try {
+                    const wp = off.toDataURL('image/webp', 0.85)
+                    if (wp.startsWith('data:image/webp')) dUrl = wp
+                  } catch (e) {}
+                  if (dUrl && dUrl.length > 500) {
+                    pendingSnapshotRef.current = false
+                    setIsSnapping(false)
+                    void p.onUpdateThumbnail(p.currentProjectId, dUrl)
+                    return
+                  }
+                }
+              }
+            }
+          }
+        } catch (dirErr) {}
+
         pendingSnapshotRef.current = false
         setIsSnapping(false)
         p.notify('Preview frame did not respond in time')
       }
-    }, 4500)
+    }, 3000)
   }
 
   // Handle agent SSE game actions relayed via window events
@@ -2490,7 +2548,21 @@ export default function StudioPage(p: StudioProps) {
                   <button
                     className="device-btn"
                     title="Reload Preview"
-                    onClick={() => p.setPreviewKey(k => k + 1)}
+                    onClick={async () => {
+                      if (p.currentProjectId && p.dirtyFiles && p.dirtyFiles.size > 0 && p.code[p.activeFile] !== undefined) {
+                        try {
+                          await saveFile(p.currentProjectId, p.activeFile, p.code[p.activeFile])
+                          if (p.setDirtyFiles) {
+                            p.setDirtyFiles(prev => {
+                              const next = new Set(prev)
+                              next.delete(p.activeFile)
+                              return next
+                            })
+                          }
+                        } catch (e) {}
+                      }
+                      p.setPreviewKey(k => k + 1)
+                    }}
                   >
                     <RefreshCw size={13} />
                   </button>
