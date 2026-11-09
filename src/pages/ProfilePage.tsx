@@ -24,6 +24,7 @@ type ProfilePageProps = {
   onDeleteProject?: (projectId: string) => Promise<void>
   onUpdateProjectDetails?: (projectId: string, details: { title: string; description: string; genre: string }) => Promise<void>
   onDownloadZip?: (project: Game) => Promise<void> | void
+  onTrackPlay?: (username: string, slug: string) => void
   notify: (msg: string) => void
 }
 
@@ -76,6 +77,7 @@ export default function ProfilePage({
   onDeleteProject,
   onUpdateProjectDetails,
   onDownloadZip,
+  onTrackPlay,
   notify
 }: ProfilePageProps) {
   // Username claim state (fallback for accounts without username)
@@ -501,7 +503,7 @@ export default function ProfilePage({
                 const isMenuOpen = openMenuId === projectId
 
                 return (
-                  <div className="pro-card" key={projectId}>
+                  <div className={`pro-card ${isMenuOpen ? 'menu-active' : ''}`} key={projectId}>
                     {/* Visual Thumbnail */}
                     <div
                       className="pro-card-thumbnail"
@@ -554,6 +556,21 @@ export default function ProfilePage({
                                 className="pro-dropdown-item"
                                 onClick={() => {
                                   setOpenMenuId(null)
+                                  setEditingProject(project)
+                                  setEditTitle(project.title)
+                                  setEditDesc(project.description || '')
+                                  setEditGenre(project.genre || 'ARCADE')
+                                }}
+                              >
+                                <Pencil size={13} className="text-lilac" />
+                                <span>Edit Game Profile</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                className="pro-dropdown-item"
+                                onClick={() => {
+                                  setOpenMenuId(null)
                                   onOpen(project)
                                 }}
                               >
@@ -568,7 +585,10 @@ export default function ProfilePage({
                                     href={`/${encodeURIComponent(user?.username || project.creator)}/${encodeURIComponent(project.id)}`}
                                     target="_blank"
                                     rel="noreferrer"
-                                    onClick={() => setOpenMenuId(null)}
+                                    onClick={() => {
+                                      if (onTrackPlay) onTrackPlay(user?.username || project.creator, project.id)
+                                      setOpenMenuId(null)
+                                    }}
                                   >
                                     <Play size={13} className="text-emerald" />
                                     <span>Play in Arcade</span>
@@ -602,21 +622,6 @@ export default function ProfilePage({
                                   <Globe size={13} className="text-emerald" />
                                 )}
                                 <span>{isPublic ? 'Make Private' : 'Publish to Arcade'}</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                className="pro-dropdown-item"
-                                onClick={() => {
-                                  setOpenMenuId(null)
-                                  setEditingProject(project)
-                                  setEditTitle(project.title)
-                                  setEditDesc(project.description || '')
-                                  setEditGenre(project.genre || 'ARCADE')
-                                }}
-                              >
-                                <Pencil size={13} className="text-lilac" />
-                                <span>Edit Details</span>
                               </button>
 
                               {onDownloadZip && (
@@ -660,9 +665,25 @@ export default function ProfilePage({
 
                     {/* Meta info */}
                     <div className="pro-card-details">
-                      <div className="pro-card-header" onClick={() => onOpen(project)}>
-                        <h3>{project.title}</h3>
-                        <p>{project.description || 'Browser game created in Yulya Studio.'}</p>
+                      <div className="pro-card-header">
+                        <div className="pro-card-title-row">
+                          <h3 onClick={() => onOpen(project)} className="pro-card-title-link">{project.title}</h3>
+                          <button
+                            type="button"
+                            className="pro-card-mini-edit"
+                            title="Edit Game Profile (Name, Description, Genre)"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditingProject(project)
+                              setEditTitle(project.title)
+                              setEditDesc(project.description || '')
+                              setEditGenre(project.genre || 'ARCADE')
+                            }}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                        </div>
+                        <p onClick={() => onOpen(project)}>{project.description || 'Browser game created in Yulya Studio.'}</p>
                       </div>
 
                       {/* Footer Actions */}
@@ -684,6 +705,9 @@ export default function ProfilePage({
                               target="_blank"
                               rel="noreferrer"
                               title="Play live in browser"
+                              onClick={() => {
+                                if (onTrackPlay) onTrackPlay(user?.username || project.creator, project.id)
+                              }}
                             >
                               Play <ArrowUpRight size={12} />
                             </a>
@@ -973,18 +997,19 @@ export default function ProfilePage({
 
       {/* EDIT PROJECT DETAILS MODAL */}
       {editingProject && (
-        <div className="pro-delete-modal-backdrop" onClick={() => !savingDetails && setEditingProject(null)}>
+        <div className="modal-backdrop pro-modal-backdrop" onClick={() => !savingDetails && setEditingProject(null)}>
           <div className="pro-details-modal-card animate-menu-scale" onClick={(e) => e.stopPropagation()}>
             <div className="pro-details-modal-header">
               <div className="pro-details-modal-badge">
                 <Pencil size={14} />
-                <span>EDIT GAME INFO</span>
+                <span>EDIT GAME PROFILE</span>
               </div>
               <button
                 type="button"
                 className="pro-details-modal-close"
                 disabled={savingDetails}
                 onClick={() => setEditingProject(null)}
+                aria-label="Close edit modal"
               >
                 <X size={15} />
               </button>
@@ -1015,7 +1040,7 @@ export default function ProfilePage({
               className="pro-details-modal-form"
             >
               <label className="pro-field-label">
-                <span>Game Title</span>
+                <span>Game Name / Title</span>
                 <input
                   type="text"
                   className="pro-input"
@@ -1029,7 +1054,7 @@ export default function ProfilePage({
 
               <label className="pro-field-label">
                 <div className="pro-field-header">
-                  <span>Description</span>
+                  <span>Game Description</span>
                   <small className="pro-field-counter">{editDesc.length}/500</small>
                 </div>
                 <textarea
@@ -1074,7 +1099,7 @@ export default function ProfilePage({
                   disabled={savingDetails || !editTitle.trim()}
                 >
                   <Check size={14} />
-                  <span>{savingDetails ? 'Saving Changes…' : 'Save Details'}</span>
+                  <span>{savingDetails ? 'Saving Game Profile…' : 'Save Game Profile'}</span>
                 </button>
               </div>
             </form>

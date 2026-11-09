@@ -828,7 +828,10 @@ async def models(user: dict[str, Any] = Depends(current_user)):
 
 
 async def owned_project(user: dict[str, Any], project_id: str) -> dict[str, Any]:
-    project = await store.collection("projects").find_one({"id": project_id, "owner_id": user["id"]})
+    project = await store.collection("projects").find_one({
+        "$or": [{"id": project_id}, {"slug": project_id.lower()}],
+        "owner_id": user["id"]
+    })
     if not project: raise HTTPException(404, "Project not found")
     return project
 
@@ -974,7 +977,7 @@ async def update_project_details(project_id: str, body: ProjectDetailsBody, user
         "genre": new_genre,
         "updated_at": _now()
     }
-    await store.collection("projects").update_one({"id": project_id}, {"$set": update_data})
+    await store.collection("projects").update_one({"_id": project["_id"]}, {"$set": update_data})
     updated = {**project, **update_data}
     return {"project": {k: v for k, v in updated.items() if k != "_id"}}
 
@@ -987,14 +990,14 @@ async def update_project_thumbnail(project_id: str, body: ProjectThumbnailBody, 
         raise HTTPException(400, "Invalid thumbnail format. WebP or JPEG data URL required.")
     if len(thumb) > 180000:
         raise HTTPException(413, "Thumbnail size must be under 120 KiB.")
-    await store.collection("projects").update_one({"id": project_id}, {"$set": {"thumbnail": thumb, "updated_at": _now()}})
+    await store.collection("projects").update_one({"_id": project["_id"]}, {"$set": {"thumbnail": thumb, "updated_at": _now()}})
     return {"success": True, "thumbnail": thumb}
 
 
 @app.delete("/api/projects/{project_id}/thumbnail")
 async def delete_project_thumbnail(project_id: str, user: dict[str, Any] = Depends(mutating_user)):
     project = await owned_project(user, project_id)
-    await store.collection("projects").update_one({"id": project_id}, {"$unset": {"thumbnail": ""}, "$set": {"updated_at": _now()}})
+    await store.collection("projects").update_one({"_id": project["_id"]}, {"$unset": {"thumbnail": ""}, "$set": {"updated_at": _now()}})
     return {"success": True}
 
 
@@ -1002,7 +1005,7 @@ async def delete_project_thumbnail(project_id: str, user: dict[str, Any] = Depen
 async def export_project_zip(project_id: str, user: dict[str, Any] = Depends(current_user)):
     # Strictly for project owner
     project = await owned_project(user, project_id)
-    rows = await store.collection("files").find({"project_id": project_id}).to_list(500)
+    rows = await store.collection("files").find({"project_id": project["id"]}).to_list(500)
     if not rows:
         raise HTTPException(404, "No files found for this project")
     
@@ -1980,6 +1983,15 @@ async def prepare_game_html(project: dict[str, Any], raw_html: str, base_href: s
         "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js\"></script>\n"
         "<script>\n"
         "(function() {\n"
+        "  try {\n"
+        "    var _origGetContext = HTMLCanvasElement.prototype.getContext;\n"
+        "    HTMLCanvasElement.prototype.getContext = function(type, attribs) {\n"
+        "      if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') {\n"
+        "        attribs = Object.assign({}, attribs, { preserveDrawingBuffer: true });\n"
+        "      }\n"
+        "      return _origGetContext.call(this, type, attribs);\n"
+        "    };\n"
+        "  } catch(glErr) {}\n"
         "  window.addEventListener('error', function(e) {\n"
         "    try {\n"
         "      var loc = e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ':' + e.colno + ')' : '';\n"
@@ -2151,19 +2163,44 @@ async def prepare_game_html(project: dict[str, Any], raw_html: str, base_href: s
         "          }, '*');\n"
         "        } catch(postErr) {}\n"
         "      }\n"
+        "      function getSafeBg() {\n"
+        "        var bg = '#0e0f14';\n"
+        "        try {\n"
+        "          var comp = window.getComputedStyle(document.body).backgroundColor;\n"
+        "          if (comp && comp !== 'transparent' && comp !== 'rgba(0, 0, 0, 0)') bg = comp;\n"
+        "        } catch(e) {}\n"
+        "        return bg;\n"
+        "      }\n"
+        "      function exportCanvas(c) {\n"
+        "        try {\n"
+        "          var cw = c.width || window.innerWidth;\n"
+        "          var ch = c.height || window.innerHeight;\n"
+        "          var off = document.createElement('canvas');\n"
+        "          off.width = cw; off.height = ch;\n"
+        "          var octx = off.getContext('2d');\n"
+        "          if (octx) {\n"
+        "            octx.fillStyle = getSafeBg();\n"
+        "            octx.fillRect(0, 0, cw, ch);\n"
+        "            octx.drawImage(c, 0, 0);\n"
+        "            return off.toDataURL('image/png');\n"
+        "          }\n"
+        "          return c.toDataURL('image/png');\n"
+        "        } catch(e) {\n"
+        "          try { return c.toDataURL('image/png'); } catch(e2) { return ''; }\n"
+        "        }\n"
+        "      }\n"
         "      var canvases = document.querySelectorAll('canvas');\n"
         "      var canvas = null;\n"
         "      for (var ci = 0; ci < canvases.length; ci++) {\n"
-        "        if (canvases[ci].width > 50 && canvases[ci].height > 50) { canvas = canvases[ci]; break; }\n"
+        "        if (canvases[ci].width > 20 && canvases[ci].height > 20) { canvas = canvases[ci]; break; }\n"
         "      }\n"
         "      if (!canvas && canvases.length > 0) canvas = canvases[0];\n"
-        "      var dataUrl = '';\n"
         "      if (canvas) {\n"
-        "        try { dataUrl = canvas.toDataURL('image/jpeg', 0.82); } catch(err) {}\n"
-        "      }\n"
-        "      if (dataUrl && dataUrl.length > 200) {\n"
-        "        sendCapture(dataUrl, true, canvas.width, canvas.height);\n"
-        "        return;\n"
+        "        var dUrl = exportCanvas(canvas);\n"
+        "        if (dUrl && dUrl.length > 200) {\n"
+        "          sendCapture(dUrl, true, canvas.width, canvas.height);\n"
+        "          return;\n"
+        "        }\n"
         "      }\n"
         "      function captureDom() {\n"
         "        if (typeof window.html2canvas === 'function') {\n"
@@ -2172,22 +2209,16 @@ async def prepare_game_html(project: dict[str, Any], raw_html: str, base_href: s
         "            useCORS: true,\n"
         "            allowTaint: true,\n"
         "            scale: 1,\n"
-        "            backgroundColor: '#0a0a0f'\n"
+        "            backgroundColor: getSafeBg()\n"
         "          }).then(function(renderedCanvas) {\n"
         "            var domDataUrl = '';\n"
-        "            try { domDataUrl = renderedCanvas.toDataURL('image/jpeg', 0.82); } catch(e) {}\n"
+        "            try { domDataUrl = renderedCanvas.toDataURL('image/png'); } catch(e) {}\n"
         "            sendCapture(domDataUrl, true, renderedCanvas.width, renderedCanvas.height);\n"
         "          }).catch(function() {\n"
         "            sendCapture('', false, window.innerWidth, window.innerHeight);\n"
         "          });\n"
         "        } else {\n"
-        "          setTimeout(function() {\n"
-        "            if (typeof window.html2canvas === 'function') {\n"
-        "              captureDom();\n"
-        "            } else {\n"
-        "              sendCapture('', false, window.innerWidth, window.innerHeight);\n"
-        "            }\n"
-        "          }, 350);\n"
+        "          sendCapture('', false, window.innerWidth, window.innerHeight);\n"
         "        }\n"
         "      }\n"
         "      captureDom();\n"
@@ -2252,13 +2283,6 @@ async def public_game_file(username: str, slug: str, file_path: str = "index.htm
     rel = files_store._relative(file_path or "index.html")
     content = await project_file_content(project, rel)
     if rel == "index.html":
-        try:
-            await store.collection("projects").update_one(
-                {"_id": project["_id"]},
-                {"$inc": {"plays": 1}}
-            )
-        except Exception:
-            pass
         base_href = f"/{project['username']}/{project['slug']}/"
         html = await prepare_game_html(project, content.decode("utf-8", "replace"), base_href)
         content = html.encode("utf-8")

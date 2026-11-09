@@ -7695,10 +7695,14 @@ html {
   border-radius: 16px;
   background: rgba(20, 21, 26, 0.7);
   backdrop-filter: blur(12px);
-  overflow: hidden;
+  position: relative;
   display: flex;
   flex-direction: column;
   transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.pro-card.menu-active {
+  z-index: 50 !important;
 }
 
 .pro-card:hover {
@@ -7716,6 +7720,8 @@ html {
   display: grid;
   place-items: center;
   cursor: pointer;
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
   overflow: hidden;
   user-select: none;
 }
@@ -7817,6 +7823,52 @@ html {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+.pro-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pro-card-title-link {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: #ffffff;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  transition: color 0.15s ease;
+}
+
+.pro-card-title-link:hover {
+  color: #cbb3ff;
+}
+
+.pro-card-mini-edit {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #c084fc;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  flex-shrink: 0;
+}
+
+.pro-card-mini-edit:hover {
+  background: rgba(168, 85, 247, 0.22);
+  border-color: rgba(168, 85, 247, 0.5);
+  color: #ffffff;
+  transform: scale(1.06);
 }
 
 .pro-card-header h3 {
@@ -8051,7 +8103,7 @@ html {
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 6;
+  z-index: 12;
 }
 
 .pro-card-menu-anchor {
@@ -8086,15 +8138,15 @@ html {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  min-width: 175px;
+  min-width: 185px;
   padding: 6px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(20, 21, 27, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(20, 21, 27, 0.98);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  z-index: 50;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  z-index: 100;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -8686,39 +8738,27 @@ html {
   transform: scale(1.05);
 }
 
-.snapshot-btn {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 5px !important;
-  padding: 0 8px !important;
-  color: #c084fc !important;
-  background: rgba(168, 85, 247, 0.1) !important;
-  border: 1px solid rgba(168, 85, 247, 0.25) !important;
-  border-radius: 6px !important;
-  font-size: 11px !important;
-  font-weight: 500 !important;
-  cursor: pointer !important;
-  transition: all 0.15s ease !important;
+.device-btn.snapshot-btn {
+  color: #c084fc;
 }
 
-.snapshot-btn:hover:not(:disabled) {
-  background: rgba(168, 85, 247, 0.22) !important;
-  border-color: #a855f7 !important;
-  color: #f3e8ff !important;
+.device-btn.snapshot-btn:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.22);
+  color: #f3e8ff;
 }
 
-.snapshot-btn:disabled {
+.device-btn.snapshot-btn:disabled {
   opacity: 0.6;
-  cursor: wait !important;
-}
-
-.snapshot-btn-text {
-  font-size: 11px;
+  cursor: wait;
 }
 
 /* ==========================================================================
    Edit Game Details Modal
    ========================================================================== */
+.modal-backdrop.pro-modal-backdrop {
+  z-index: 1050 !important;
+}
+
 .pro-details-modal-card {
   width: 100%;
   max-width: 520px;

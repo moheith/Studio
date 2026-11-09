@@ -845,6 +845,7 @@ export default function App() {
     onDeleteProject={deleteProject}
     onUpdateProjectDetails={handleUpdateProjectDetails}
     onDownloadZip={handleDownloadZip}
+    onTrackPlay={handleTrackPlay}
     notify={notify}
     />
     {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}

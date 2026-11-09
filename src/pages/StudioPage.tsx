@@ -599,8 +599,17 @@ export default function StudioPage(p: StudioProps) {
                 canvas.height = 270
                 const ctx = canvas.getContext('2d')
                 if (ctx) {
-                  ctx.drawImage(img, 0, 0, 480, 270)
-                  const webpUrl = canvas.toDataURL('image/webp', 0.72)
+                  ctx.fillStyle = '#0f1015'
+                  ctx.fillRect(0, 0, 480, 270)
+                  const srcW = img.naturalWidth || img.width || 480
+                  const srcH = img.naturalHeight || img.height || 270
+                  const scale = Math.max(480 / srcW, 270 / srcH)
+                  const drawW = srcW * scale
+                  const drawH = srcH * scale
+                  const drawX = (480 - drawW) / 2
+                  const drawY = (270 - drawH) / 2
+                  ctx.drawImage(img, drawX, drawY, drawW, drawH)
+                  const webpUrl = canvas.toDataURL('image/webp', 0.82)
                   void updateThumbnailFn(projId, webpUrl)
                 }
               } catch {
@@ -609,16 +618,17 @@ export default function StudioPage(p: StudioProps) {
             }
             img.src = rawUrl
           }
+        } else {
+          setInspectionPill({
+            visible: true,
+            open: true,
+            dataUrl: event.data.dataUrl,
+            width: event.data.width || 1280,
+            height: event.data.height || 720,
+            errorCount: gameErrorCountRef.current,
+            time: new Date().toLocaleTimeString()
+          })
         }
-        setInspectionPill({
-          visible: true,
-          open: true,
-          dataUrl: event.data.dataUrl,
-          width: event.data.width || 1280,
-          height: event.data.height || 720,
-          errorCount: gameErrorCountRef.current,
-          time: new Date().toLocaleTimeString()
-        })
       } else if (event.data && event.data.type === 'yulya:input-held-released') {
         if (event.data.key) {
           const k = String(event.data.key).toUpperCase()
@@ -2479,13 +2489,14 @@ export default function StudioPage(p: StudioProps) {
                     <RefreshCw size={13} />
                   </button>
                   <button
-                    className="device-btn snapshot-btn"
-                    title="Snap Game Cover (Lightweight 480×270 WebP thumbnail for Arcade & Profile)"
+                    type="button"
+                    className={`device-btn snapshot-btn ${isSnapping ? 'active' : ''}`}
+                    title="Capture Game Snapshot (Lightweight 480×270 cover for Arcade & Profile)"
                     onClick={snapCover}
                     disabled={isSnapping}
+                    aria-label="Capture Game Snapshot"
                   >
                     <Camera size={13} />
-                    <span className="snapshot-btn-text">{isSnapping ? 'Snapping…' : 'Snap Cover'}</span>
                   </button>
                   <button
                     className="device-btn"
