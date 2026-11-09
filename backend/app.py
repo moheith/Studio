@@ -2360,15 +2360,51 @@ Allow: /terms
 Allow: /privacy
 Allow: /login
 Allow: /register
+Allow: /llms.txt
+Allow: /llms-full.txt
 Disallow: /api/
 Disallow: /setup-profile
 Disallow: /verify-email
+
+# AI Agents & LLM Web Crawlers
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
 
 # Host & Sitemap
 Host: https://studio.yulya.me
 Sitemap: https://studio.yulya.me/sitemap.xml
 """
     return Response(content=content, media_type="text/plain")
+
+
+@app.get("/llms.txt", include_in_schema=False)
+async def llms_txt():
+    p = os.path.join(STATIC_DIR, "llms.txt")
+    if os.path.exists(p):
+        with open(p, "r", encoding="utf-8") as f:
+            return Response(content=f.read(), media_type="text/plain")
+    return Response(content="# Yulya Studio\nhttps://studio.yulya.me", media_type="text/plain")
+
+
+@app.get("/llms-full.txt", include_in_schema=False)
+async def llms_full_txt():
+    p = os.path.join(STATIC_DIR, "llms-full.txt")
+    if os.path.exists(p):
+        with open(p, "r", encoding="utf-8") as f:
+            return Response(content=f.read(), media_type="text/plain")
+    return Response(content="# Yulya Studio Documentation\nhttps://studio.yulya.me/docs", media_type="text/plain")
 
 
 @app.get("/sitemap.xml", include_in_schema=False)
@@ -2438,7 +2474,7 @@ async def sitemap_xml():
 
 @app.get("/{username}/{slug}", include_in_schema=False)
 async def named_public_game(username: str, slug: str):
-    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "arcade", "docs", "terms", "privacy", "legal", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
+    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "llms.txt", "llms-full.txt", "arcade", "docs", "terms", "privacy", "legal", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
     if username.lower() == "api": raise HTTPException(404, "API route not found")
     if username.lower() in reserved: return frontend_file(f"{username}/{slug}")
     return await public_game_file(username, slug, "index.html")
@@ -2446,7 +2482,7 @@ async def named_public_game(username: str, slug: str):
 
 @app.get("/{username}/{slug}/{file_path:path}", include_in_schema=False)
 async def named_public_game_file(username: str, slug: str, file_path: str):
-    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "arcade", "docs", "terms", "privacy", "legal", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
+    reserved = {"api", "assets", "static", "favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "llms.txt", "llms-full.txt", "arcade", "docs", "terms", "privacy", "legal", "profile", "login", "register", "verify-email", "setup-profile", "studio", "not-found"}
     if username.lower() == "api": raise HTTPException(404, "API route not found")
     if username.lower() in reserved: return frontend_file(f"{username}/{slug}/{file_path}")
     return await public_game_file(username, slug, file_path)
@@ -2455,7 +2491,7 @@ async def named_public_game_file(username: str, slug: str, file_path: str):
 @app.get("/{username}", include_in_schema=False)
 async def named_profile(username: str):
     if username.lower() == "api": raise HTTPException(404, "API route not found")
-    if username.lower() in {"favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml"}: return frontend_file(username)
+    if username.lower() in {"favicon.ico", "favicon.svg", "robots.txt", "sitemap.xml", "llms.txt", "llms-full.txt"}: return frontend_file(username)
     return frontend_file()
 
 

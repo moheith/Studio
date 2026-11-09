@@ -1,0 +1,30 @@
+# Yulya Studio
+
+> Next-generation browser-native game engine, Monaco code IDE, live game host, and community online games arcade powered by Gemini AI.
+
+URL: https://studio.yulya.me
+Docs: https://studio.yulya.me/docs
+Arcade: https://studio.yulya.me/arcade
+Full LLM Documentation: https://studio.yulya.me/llms-full.txt
+
+## What is Yulya Studio?
+Yulya Studio is an all-in-one web platform where creators can build, prompt, test, play, and publish real web games (HTML5, Canvas 2D, WebGL, Three.js) directly inside their browser with zero local installation or build steps.
+
+## Core Pillars & Capabilities
+- **Browser-Native Monaco IDE**: Full desktop-grade VS Code experience in the browser with multi-file explorer, folder hierarchy, syntax highlighting, and keyboard shortcuts.
+- **Gemini AI Copilot**: Natural-language game designer and coding assistant that creates mechanics, fixes bugs, and directly writes/edits code files.
+- **Autonomous AI Playtest**: Visual agent that observes the game screen, identifies buttons and targets, and simulates mouse clicks and keyboard inputs to verify gameplay.
+- **Full-Screen Live Snapshots**: Built-in camera tool that captures 16:9 HD visual preview covers from live game DOM and WebGL canvases with instant replacement.
+- **Community Arcade & Instant Hosting**: Publish public games in one click. Every game gets an isolated live sandbox and a unique URL (`https://studio.yulya.me/@username/game-slug`).
+- **Owner-Only ZIP Export**: Creators can package and download their entire project source code as a clean `.zip` file for desktop distribution or Steam/itch.io packaging.
+- **Live Play Tracking**: Player counts increment strictly on actual game launch/play clicks with anti-bot protection.
+- **Zero-Knowledge Security**: User Gemini API keys are encrypted client-to-server with AES-256-GCM and never shared or logged.
+
+## Key Links & Documentation
+- [Full A to Z Documentation](https://studio.yulya.me/llms-full.txt): Comprehensive platform documentation, guides, APIs, and troubleshooting.
+- [5-Minute Quickstart](https://studio.yulya.me/docs#quickstart): Step-by-step tutorial from signup to publishing a live game.
+- [Studio IDE Guide](https://studio.yulya.me/docs#studio-ide): How to use Monaco, files, folders, and keyboard shortcuts.
+- [Gemini Copilot Guide](https://studio.yulya.me/docs#copilot): Prompting, multi-turn chat, and auto-edits.
+- [Arcade & Publishing](https://studio.yulya.me/docs#arcade-publishing): How visibility, play counts, and sharing work.
+- [Terms of Service](https://studio.yulya.me/terms): User rights, IP ownership (creators retain 100% code ownership), and acceptable use.
+- [Privacy Policy](https://studio.yulya.me/privacy): Security, encryption, and GDPR/CCPA compliance.

@@ -7,11 +7,30 @@ Allow: /terms
 Allow: /privacy
 Allow: /login
 Allow: /register
+Allow: /llms.txt
+Allow: /llms-full.txt
 Disallow: /api/
 Disallow: /setup-profile
 Disallow: /verify-email
 
+# AI Agents & LLM Web Crawlers
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
 # Host & Sitemap
 Host: https://studio.yulya.me
 Sitemap: https://studio.yulya.me/sitemap.xml
+
 

@@ -1,0 +1,156 @@
+# Yulya Studio — Comprehensive A to Z Documentation & Guide
+
+> This document is designed for AI models, developer agents, and creators seeking full A to Z technical and operational knowledge about Yulya Studio (https://studio.yulya.me).
+
+---
+
+## 1. Platform Overview
+
+### What is Yulya Studio?
+Yulya Studio is a next-generation, browser-native game engine, code IDE, and online games arcade powered by Gemini AI. It enables anyone—from beginners to experienced game engineers—to build, prompt, test, play, and publish real web games (HTML5, Canvas 2D, WebGL, Three.js, CSS animations) entirely in the browser with zero local installation, configuration, or build tooling.
+
+### Key Value Propositions
+- **Zero-Setup Studio**: Open the browser, write code in a VS Code-grade Monaco editor, and see live results instantly.
+- **Gemini AI Copilot**: Direct AI integration that writes full game loops, adds features, debugs errors, and edits project files automatically.
+- **Autonomous AI Playtest**: An in-browser agent that watches the game screen, locates interactive elements, and simulates inputs to test gameplay without manual effort.
+- **High-Fidelity Preview Capture**: Built-in Camera snapshot tool that converts live DOM and WebGL canvases into 480×270 16:9 game covers.
+- **Community Arcade**: One-click publishing to a public catalog where anyone can discover, play, and share games.
+- **Creator Ownership**: 100% of game code and assets belong to the creator. Owners can download their complete project as a `.zip` archive at any time.
+
+---
+
+## 2. 5-Minute Quickstart Guide
+
+### Step 1: Create an Account & Claim Username
+1. Visit https://studio.yulya.me and click **Sign Up** or **Sign in with Google**.
+2. If signing up with email, verify the 6-digit confirmation code.
+3. Choose a unique, permanent `@username`. Your public profile will be hosted at `https://studio.yulya.me/@username`.
+
+### Step 2: Connect Gemini API Key
+1. Yulya Studio uses your personal Google Gemini API key to power the AI Copilot.
+2. Obtain a free API key at https://aistudio.google.com/app/apikey.
+3. Open the **API Key** dialog in Yulya Studio and paste your key.
+4. The key is encrypted client-side using AES-256-GCM before transmission and stored in a zero-knowledge enclave.
+
+### Step 3: Create a Project
+1. From the Creator Profile or Studio header, click **New Project**.
+2. Enter a game title and select default visibility (**Public** or **Private**).
+3. The studio automatically generates a starter HTML/CSS/JS game template with an isolated preview environment.
+
+### Step 4: Prompt the AI Copilot & Write Code
+1. Open the **Copilot** panel on the right side of the IDE.
+2. Type your mechanic or game idea, for example:
+   - *"Turn this into a neon space shooter where asteroids split when hit by lasers."*
+   - *"Add a score HUD, sound effects with Web Audio API, and particle explosions."*
+3. The AI streams code solutions and writes updates directly into your project files.
+
+### Step 5: Snap a Cover & Publish to Arcade
+1. In the Preview panel, play your game until an exciting action frame appears.
+2. Click the **Camera icon** in the top preview toolbar.
+3. A visual shutter flash confirms the capture; the screenshot is automatically cropped and saved as the game's official 16:9 catalog cover.
+4. Click **Publish** to make your game live in the Community Arcade!
+
+---
+
+## 3. The Studio IDE (Monaco Editor & File System)
+
+### Editor Capabilities
+- **Monaco Editor Engine**: Powered by the same editor engine as VS Code, including multi-cursor editing, bracket colorization, code folding, find & replace, and auto-indentation.
+- **Language Support**: Syntax highlighting and IntelliSense for HTML, CSS, JavaScript, TypeScript, JSON, GLSL, and Markdown.
+- **Multi-File Explorer**: Create nested folders, rename files, drag-and-drop to organize, and delete files with live confirmation.
+- **Dirty File Tracking & Autosave**: Edited files display a dirty state indicator. Changes autosave with debounce and immediately flush to the server when running or previewing.
+
+### Keyboard Shortcuts
+- `Ctrl + S` / `Cmd + S`: Save active file immediately.
+- `Ctrl + Enter` / `Cmd + Enter`: Send prompt in Copilot chat.
+- `Shift + Enter`: Insert newline in Copilot chat input.
+- `Alt + Z`: Toggle word wrap in Monaco.
+- `Ctrl + P` / `Cmd + P`: Quick file search in project explorer.
+
+---
+
+## 4. The Gemini AI Copilot
+
+### How the Copilot Works
+- **Multi-Turn Context**: The Copilot maintains conversation history, code file context, project structure, and active runtime errors.
+- **Direct File Editing**: The AI can create new files (`player.js`, `sound.js`) and modify existing code files without manual copy-pasting.
+- **Model Selector**: Switch between Gemini 2.5 Flash, Gemini Pro, and specialized preview models depending on speed or complex architectural needs.
+- **Error Awareness**: When the game preview throws a JavaScript error or unhandled promise rejection, the Studio logs it and provides an option for the Copilot to auto-fix the error.
+
+---
+
+## 5. Autonomous AI Playtest Engine
+
+### Overview
+Yulya Studio features an autonomous AI playtest agent designed to test games without human hands:
+- **Vision & Capture**: Captures real-time frames from the isolated preview iframe using a high-performance memory bridge.
+- **Target Localization**: Scans the DOM and canvas coordinates to detect interactive buttons, menus, and on-screen controls.
+- **Virtual Input Simulation**: Dispatches synthetic `mousedown`, `mouseup`, `click`, and `keydown`/`keyup` events with realistic hold durations.
+- **Visual Cursor HUD**: A visible purple AI cursor and key indicators display live on the preview screen so developers can see the AI play their game in real time.
+
+---
+
+## 6. Game Preview & Snapshot Cover Engine
+
+### Live Preview Sandbox
+- Games run in an isolated, sandboxed `<iframe>` with `allow-scripts`, `allow-modals`, `allow-pointer-lock`, and `allow-forms`.
+- The preview supports desktop (16:9 HD 1280×720), tablet (768×1024), mobile (375×667), and flexible responsive viewports.
+
+### How Snapshot Cover Capture Works
+1. **Camera Button**: Located in the top preview toolbar (`<Camera />`).
+2. **DOM Games Capture**: For HTML/CSS/DOM games, the studio leverages `html2canvas` on `document.body`, capturing all backgrounds, typography, buttons, and animations.
+3. **Canvas & WebGL Capture**: Injected WebGL hooks enforce `{ preserveDrawingBuffer: true }`, ensuring 3D Three.js and 2D Canvas games never return black or blank frames.
+4. **Instant Replacement**: Clicking the Camera button again captures whatever is currently visible on screen and immediately replaces the previous thumbnail across the entire platform.
+5. **Mini-Preview Indicator**: A mini 16:9 thumbnail preview badge sits next to the Camera button, allowing creators to inspect the captured cover in full resolution.
+
+---
+
+## 7. The Community Arcade & Live Hosting
+
+### Public Games
+- Games marked as **Public** automatically appear in the Community Arcade catalog.
+- Each game receives a canonical, shareable URL: `https://studio.yulya.me/@username/game-slug`.
+- Anyone on the internet can play without logging in.
+
+### Player Count & Play Tracking
+- Player counts increment **strictly when a player launches the game** (clicks Play on the arcade card or opens the dedicated play view).
+- Refreshing the page or editing code in the Studio does **not** artificially inflate player counts.
+
+---
+
+## 8. Exporting & Ownership
+
+### 100% Code & Asset Ownership
+- Creators retain 100% intellectual property ownership of all game code, audio, and graphics they create on Yulya Studio.
+
+### Owner-Only .ZIP Download
+- Project owners can package their entire project into a standard `.zip` file from their Creator Profile (via the 3-dots menu).
+- The exported archive contains clean, vanilla HTML/CSS/JS files ready to run locally, upload to itch.io, or package for Steam via Electron/Tauri.
+- Non-owners and visitors cannot download raw project source archives.
+
+---
+
+## 9. Security & Privacy Architecture
+
+- **Zero-Knowledge API Keys**: Google Gemini API keys are encrypted client-to-server with AES-256-GCM. Keys are never logged, exposed to other users, or saved in plaintext.
+- **Isolated Workers**: Game runtime scripts run within a hardened sandbox to prevent DOM escape or unauthorized cross-origin access.
+- **CSRF & Rate Limiting**: All mutation endpoints (creating projects, updating details, saving thumbnails, tracking plays) are protected by CSRF tokens and strict IP rate limits.
+
+---
+
+## 10. Frequently Asked Questions (FAQ)
+
+### Can I build 3D games with Three.js or Babylon.js?
+Yes. You can import any external library via `<script src="https://cdnjs.cloudflare.com/..."></script>` in `index.html` or ES module imports. WebGL contexts are automatically preserved for crisp snapshot captures.
+
+### How do I take a snapshot of my game?
+Run your game in the Studio preview panel. When the screen looks great, click the **Camera icon** in the top preview toolbar. It captures the entire preview screen and saves it as your game's cover. If you click it again, it replaces the old one.
+
+### Can anyone edit or delete my game?
+No. Only the project owner (the creator who created it while logged in) can edit files, change game details, delete the project, or download the `.zip` archive.
+
+### Why is my game's player count not increasing when I test it in Studio?
+Player counts only count real gameplay sessions launched from the Arcade or Public Game View. Studio testing and code refreshes do not count to prevent artificial skewing.
+
+### Is Yulya Studio free to use?
+Yes! Yulya Studio is free to use. You simply connect your free Google Gemini API key to power the AI Copilot.
