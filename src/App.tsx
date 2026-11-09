@@ -482,9 +482,10 @@ export default function App() {
   const handleUpdateThumbnail = async (projectId: string, thumbnailDataUrl: string) => {
     try {
       await saveProjectThumbnail(projectId, thumbnailDataUrl)
-      setProjects(prev => prev.map(p => (p.projectId === projectId || p.id === projectId) ? { ...p, thumbnail: thumbnailDataUrl } : p))
-      setGames(prev => prev.map(g => (g.projectId === projectId || g.id === projectId) ? { ...g, thumbnail: thumbnailDataUrl } : g))
-      if (currentGame && (currentGame.projectId === projectId || currentGame.id === projectId)) {
+      const pIdLow = projectId.toLowerCase()
+      setProjects(prev => prev.map(p => (p.projectId === projectId || p.id === projectId || p.id.toLowerCase() === pIdLow || (p.projectId && p.projectId.toLowerCase() === pIdLow)) ? { ...p, thumbnail: thumbnailDataUrl } : p))
+      setGames(prev => prev.map(g => (g.projectId === projectId || g.id === projectId || g.id.toLowerCase() === pIdLow || (g.projectId && g.projectId.toLowerCase() === pIdLow)) ? { ...g, thumbnail: thumbnailDataUrl } : g))
+      if (currentGame && (currentGame.projectId === projectId || currentGame.id === projectId || currentGame.id.toLowerCase() === pIdLow || (currentGame.projectId && currentGame.projectId.toLowerCase() === pIdLow))) {
         setCurrentGame(prev => prev ? { ...prev, thumbnail: thumbnailDataUrl } : prev)
       }
       notify('📸 Cover snapshot saved')

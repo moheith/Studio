@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import Editor from '@monaco-editor/react'
+import html2canvas from 'html2canvas'
 import {
   AlertTriangle, ArrowUp, ArrowUpRight, Bell, BookOpen, Braces, Brain, Camera, Check, ChevronDown, ChevronRight, CircleHelp,
   Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
@@ -375,6 +376,9 @@ export default function StudioPage(p: StudioProps) {
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
   const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({})
   const [isSnapping, setIsSnapping] = useState(false)
+  const [lastSnapshot, setLastSnapshot] = useState<string | null>(null)
+  const [shutterFlash, setShutterFlash] = useState(false)
+  const [showCoverModal, setShowCoverModal] = useState(false)
   const pendingSnapshotRef = useRef(false)
 
   const formatDuration = (sec: number | null | undefined): string => {
@@ -590,41 +594,11 @@ export default function StudioPage(p: StudioProps) {
           setIsSnapping(false)
           const rawUrl = event.data.dataUrl
           const updateThumbnailFn = p.onUpdateThumbnail
-          const projId = p.currentProjectId
-          if (rawUrl && projId && updateThumbnailFn) {
-            const img = new Image()
-            img.onload = () => {
-              try {
-                const canvas = document.createElement('canvas')
-                canvas.width = 480
-                canvas.height = 270
-                const ctx = canvas.getContext('2d')
-                if (ctx) {
-                  ctx.fillStyle = '#0f1015'
-                  ctx.fillRect(0, 0, 480, 270)
-                  const srcW = img.naturalWidth || img.width || 480
-                  const srcH = img.naturalHeight || img.height || 270
-                  const scale = Math.max(480 / srcW, 270 / srcH)
-                  const drawW = srcW * scale
-                  const drawH = srcH * scale
-                  const drawX = (480 - drawW) / 2
-                  const drawY = (270 - drawH) / 2
-                  ctx.drawImage(img, drawX, drawY, drawW, drawH)
-                  let finalUrl = canvas.toDataURL('image/jpeg', 0.85)
-                  try {
-                    const webpTest = canvas.toDataURL('image/webp', 0.85)
-                    if (webpTest.startsWith('data:image/webp')) finalUrl = webpTest
-                  } catch (e) {}
-                  void updateThumbnailFn(projId, finalUrl)
-                }
-              } catch {
-                p.notify('Could not process cover snapshot')
-              }
-            }
-            img.onerror = () => {
-              p.notify('Could not decode game snapshot image')
-            }
-            img.src = rawUrl
+          const targetId = p.currentProjectId || p.currentGame?.projectId || p.currentGame?.id
+          if (rawUrl && rawUrl.length > 500 && targetId && updateThumbnailFn) {
+            void updateThumbnailFn(targetId, rawUrl)
+            setLastSnapshot(rawUrl)
+            p.notify('📸 Game preview cover updated!')
           }
         } else {
           setInspectionPill({
@@ -685,8 +659,96 @@ export default function StudioPage(p: StudioProps) {
     p.notify('AI Playtest stopped — Manual control restored')
   }
 
+  const captureLivePreview = async (): Promise<string | null> => {
+    const iframe = previewIframeRef.current
+    if (!iframe) return null
+    const doc = iframe.contentDocument || iframe.contentWindow?.document
+    if (!doc) return null
+
+    // Helper: resize and compress source canvas to standard 16:9 480×270 JPEG/WebP
+    const createThumbnail = (source: HTMLCanvasElement): string | null => {
+      try {
+        const off = document.createElement('canvas')
+        off.width = 480
+        off.height = 270
+        const octx = off.getContext('2d')
+        if (!octx) return null
+
+        octx.fillStyle = '#101114'
+        octx.fillRect(0, 0, 480, 270)
+        const sw = source.width || 480
+        const sh = source.height || 270
+        const scale = Math.max(480 / sw, 270 / sh)
+        const dw = sw * scale
+        const dh = sh * scale
+        const dx = (480 - dw) / 2
+        const dy = (270 - dh) / 2
+        octx.drawImage(source, dx, dy, dw, dh)
+
+        let dUrl = off.toDataURL('image/jpeg', 0.85)
+        try {
+          const wp = off.toDataURL('image/webp', 0.85)
+          if (wp && wp.startsWith('data:image/webp')) dUrl = wp
+        } catch (e) {}
+
+        if (dUrl && dUrl.length > 500) return dUrl
+      } catch (e) {}
+      return null
+    }
+
+    // Strategy 1: Check active visible <canvas> elements (for 2D canvas, WebGL Three.js, Phaser, Pixi, etc.)
+    try {
+      const canvases = doc.querySelectorAll('canvas')
+      for (let i = 0; i < canvases.length; i++) {
+        const c = canvases[i]
+        const cw = c.width || c.clientWidth
+        const ch = c.height || c.clientHeight
+        if (cw > 20 && ch > 20) {
+          const dUrl = createThumbnail(c)
+          if (dUrl) return dUrl
+        }
+      }
+    } catch (e) {}
+
+    // Strategy 2: If no canvas or DOM-based game (like Little Star), use html2canvas to capture document.body
+    if (doc.body) {
+      try {
+        const body = doc.body
+        const win = iframe.contentWindow || window
+        const compBg = win.getComputedStyle ? win.getComputedStyle(body).backgroundColor : '#101114'
+        const safeBg = (compBg && compBg !== 'transparent' && compBg !== 'rgba(0, 0, 0, 0)') ? compBg : '#101114'
+        const w = Math.max(body.scrollWidth || 0, body.clientWidth || 0, doc.documentElement?.clientWidth || 0, 480)
+        const h = Math.max(body.scrollHeight || 0, body.clientHeight || 0, doc.documentElement?.clientHeight || 0, 270)
+
+        const captured = await html2canvas(body, {
+          backgroundColor: safeBg,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          scale: 1,
+          width: w,
+          height: h,
+          windowWidth: win.innerWidth || w,
+          windowHeight: win.innerHeight || h,
+          scrollX: 0,
+          scrollY: 0,
+        })
+
+        if (captured && captured.width > 20 && captured.height > 20) {
+          const dUrl = createThumbnail(captured)
+          if (dUrl) return dUrl
+        }
+      } catch (err) {
+        console.warn('html2canvas capture warning:', err)
+      }
+    }
+
+    return null
+  }
+
   const snapCover = async () => {
-    if (!p.currentProjectId) {
+    const targetId = p.currentProjectId || p.currentGame?.projectId || p.currentGame?.id
+    if (!targetId) {
       p.notify('Open a project before taking a snapshot')
       return
     }
@@ -705,57 +767,38 @@ export default function StudioPage(p: StudioProps) {
     }
 
     setIsSnapping(true)
-    pendingSnapshotRef.current = true
+    setShutterFlash(true)
+    setTimeout(() => setShutterFlash(false), 220)
     p.notify('📸 Capturing cover from game preview…')
-    previewIframeRef.current?.contentWindow?.postMessage({
-      type: 'yulya:capture-screen',
-      reqId: Date.now().toString()
-    }, '*')
 
-    // 2. Direct parent fallback if the frame doesn't respond or if postMessage is delayed
-    window.setTimeout(() => {
+    try {
+      const snapUrl = await captureLivePreview()
+      if (snapUrl && p.onUpdateThumbnail) {
+        await p.onUpdateThumbnail(targetId, snapUrl)
+        setLastSnapshot(snapUrl)
+        p.notify('📸 Game preview cover updated!')
+        return
+      }
+
+      // If direct capture returned null, trigger postMessage to iframe as backup
+      pendingSnapshotRef.current = true
+      previewIframeRef.current?.contentWindow?.postMessage({
+        type: 'yulya:capture-screen',
+        reqId: Date.now().toString()
+      }, '*')
+
+      await new Promise(resolve => setTimeout(resolve, 1500))
       if (pendingSnapshotRef.current) {
-        try {
-          const doc = previewIframeRef.current?.contentDocument || previewIframeRef.current?.contentWindow?.document
-          if (doc && p.onUpdateThumbnail) {
-            const canvases = doc.querySelectorAll('canvas')
-            for (let i = 0; i < canvases.length; i++) {
-              const c = canvases[i]
-              if (c.width > 20 || c.clientWidth > 20) {
-                const off = document.createElement('canvas')
-                off.width = 480; off.height = 270;
-                const octx = off.getContext('2d')
-                if (octx) {
-                  octx.fillStyle = '#101114'
-                  octx.fillRect(0, 0, 480, 270)
-                  const sw = c.width || c.clientWidth || 480
-                  const sh = c.height || c.clientHeight || 270
-                  const sc = Math.max(480 / sw, 270 / sh)
-                  const dw = sw * sc, dh = sh * sc
-                  octx.drawImage(c, (480 - dw) / 2, (270 - dh) / 2, dw, dh)
-                  let dUrl = off.toDataURL('image/jpeg', 0.85)
-                  try {
-                    const wp = off.toDataURL('image/webp', 0.85)
-                    if (wp.startsWith('data:image/webp')) dUrl = wp
-                  } catch (e) {}
-                  if (dUrl && dUrl.length > 500) {
-                    pendingSnapshotRef.current = false
-                    setIsSnapping(false)
-                    void p.onUpdateThumbnail(p.currentProjectId, dUrl)
-                    return
-                  }
-                }
-              }
-            }
-          }
-        } catch (dirErr) {}
-
         pendingSnapshotRef.current = false
-        setIsSnapping(false)
         p.notify('Preview frame did not respond in time')
       }
-    }, 3000)
+    } catch (err) {
+      p.notify('Could not capture preview snapshot')
+    } finally {
+      setIsSnapping(false)
+    }
   }
+
 
   // Handle agent SSE game actions relayed via window events
   useEffect(() => {
@@ -2569,13 +2612,22 @@ export default function StudioPage(p: StudioProps) {
                   <button
                     type="button"
                     className={`device-btn snapshot-btn ${isSnapping ? 'active' : ''}`}
-                    title="Capture Game Snapshot (Lightweight 480×270 cover for Arcade & Profile)"
+                    title="Capture Game Snapshot (Full-screen preview cover for Arcade & Profile)"
                     onClick={snapCover}
                     disabled={isSnapping}
                     aria-label="Capture Game Snapshot"
                   >
                     <Camera size={13} />
                   </button>
+                  {(lastSnapshot || p.currentGame?.thumbnail) && (
+                    <div
+                      className="current-thumb-mini-preview"
+                      title="Current Game Cover Snapshot — Click to view full preview"
+                      onClick={() => setShowCoverModal(true)}
+                    >
+                      <img src={lastSnapshot || p.currentGame?.thumbnail} alt="Cover preview" />
+                    </div>
+                  )}
                   <button
                     className="device-btn"
                     title="Open in New Tab"
@@ -2637,6 +2689,7 @@ export default function StudioPage(p: StudioProps) {
 
                 return (
                   <div className="vsc-preview-stage" ref={previewWrapRef}>
+                    {shutterFlash && <div className="preview-shutter-flash" />}
                     {device === 'responsive' || !currentSpec ? (
                       <div className="preview-viewport-container device-responsive">
                         {p.previewUrl ? (
@@ -3827,6 +3880,50 @@ export default function StudioPage(p: StudioProps) {
                 }}
               >
                 {isSavingWaterfall ? 'Saving to Profile…' : 'Save Waterfall to Profile'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCoverModal && (
+        <div className="vsc-modal-overlay" onClick={() => setShowCoverModal(false)}>
+          <div className="vsc-modal-box cover-preview-dialog" onClick={e => e.stopPropagation()}>
+            <div className="vsc-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Camera size={16} className="text-lilac" />
+                <h3>Game Cover Preview</h3>
+              </div>
+              <button className="vsc-modal-close" onClick={() => setShowCoverModal(false)}>
+                <X size={15} />
+              </button>
+            </div>
+            <div className="cover-preview-dialog-body" style={{ padding: '16px' }}>
+              <div className="cover-preview-img-wrap">
+                <img src={lastSnapshot || p.currentGame?.thumbnail || ''} alt="Current game snapshot" />
+              </div>
+              <p className="cover-preview-dialog-note">
+                This full-screen screenshot is used across the Arcade catalog, your Creator Profile, and game cards. Click the <strong>Camera button</strong> anytime in the Studio to re-capture and replace it.
+              </p>
+            </div>
+            <div className="vsc-modal-footer">
+              <button
+                type="button"
+                className="vsc-btn vsc-btn-secondary"
+                onClick={() => {
+                  setShowCoverModal(false)
+                  void snapCover()
+                }}
+              >
+                <Camera size={13} />
+                <span>Re-capture Now</span>
+              </button>
+              <button
+                type="button"
+                className="vsc-btn vsc-btn-primary"
+                onClick={() => setShowCoverModal(false)}
+              >
+                Close
               </button>
             </div>
           </div>

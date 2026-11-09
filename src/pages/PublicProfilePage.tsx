@@ -47,7 +47,8 @@ export default function PublicProfilePage({
               art: (project.art as string) || '✦',
               plays: String(project.plays ?? 0),
               description: String(project.description ?? 'A game made in Yulya Studio.'),
-              visibility: 'public'
+              visibility: 'public',
+              thumbnail: project.thumbnail ? String(project.thumbnail) : undefined
             }
           })
         )
@@ -176,8 +177,14 @@ export default function PublicProfilePage({
                 href={`/${encodeURIComponent(creator.username)}/${encodeURIComponent(game.id)}`}
               >
                 <div className="game-art" style={{ '--game-color': game.color } as React.CSSProperties}>
-                  <div className="game-art-stars">✦　·　✧</div>
-                  <div className="game-art-object">{game.art}</div>
+                  {game.thumbnail ? (
+                    <img src={game.thumbnail} alt={game.title} className="game-art-cover-img" />
+                  ) : (
+                    <>
+                      <div className="game-art-stars">✦　·　✧</div>
+                      <div className="game-art-object">{game.art}</div>
+                    </>
+                  )}
                   <span className="art-play">
                     <Play size={14} fill="currentColor" />
                   </span>
