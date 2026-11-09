@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import Editor from '@monaco-editor/react'
 import {
-  AlertTriangle, ArrowUp, ArrowUpRight, Bell, Braces, Brain, Check, ChevronDown, ChevronRight, CircleHelp,
+  AlertTriangle, ArrowUp, ArrowUpRight, Bell, Braces, Brain, Camera, Check, ChevronDown, ChevronRight, CircleHelp,
   Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
   FolderMinus, FolderInput, FolderOpen, FolderPlus, GitBranch, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, Radio, RefreshCw,
@@ -64,6 +64,9 @@ type StudioProps = {
   useWaterfall?: boolean
   setUseWaterfall?: (v: boolean) => void
   updateWaterfall?: (models: string[]) => Promise<void>
+  onUpdateThumbnail?: (projectId: string, thumbnail: string) => Promise<void>
+  onDownloadZip?: () => Promise<void> | void
+  onUpdateProjectDetails?: (projectId: string, details: { title: string; description: string; genre: string }) => Promise<void>
 }
 
 type ActivityTab = 'explorer' | 'search' | 'assets'
@@ -370,6 +373,8 @@ export default function StudioPage(p: StudioProps) {
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null)
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
   const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({})
+  const [isSnapping, setIsSnapping] = useState(false)
+  const pendingSnapshotRef = useRef(false)
 
   const formatDuration = (sec: number | null | undefined): string => {
     if (sec === null || sec === undefined) return '0s'
@@ -579,6 +584,32 @@ export default function StudioPage(p: StudioProps) {
           }
         ])
       } else if (event.data && event.data.type === 'yulya:screen-captured') {
+        if (pendingSnapshotRef.current) {
+          pendingSnapshotRef.current = false
+          setIsSnapping(false)
+          const rawUrl = event.data.dataUrl
+          const updateThumbnailFn = p.onUpdateThumbnail
+          const projId = p.currentProjectId
+          if (rawUrl && projId && updateThumbnailFn) {
+            const img = new Image()
+            img.onload = () => {
+              try {
+                const canvas = document.createElement('canvas')
+                canvas.width = 480
+                canvas.height = 270
+                const ctx = canvas.getContext('2d')
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0, 480, 270)
+                  const webpUrl = canvas.toDataURL('image/webp', 0.72)
+                  void updateThumbnailFn(projId, webpUrl)
+                }
+              } catch {
+                p.notify('Could not process cover snapshot')
+              }
+            }
+            img.src = rawUrl
+          }
+        }
         setInspectionPill({
           visible: true,
           open: true,
@@ -634,6 +665,28 @@ export default function StudioPage(p: StudioProps) {
     }
     setInspectionPill(null)
     p.notify('AI Playtest stopped — Manual control restored')
+  }
+
+  const snapCover = () => {
+    if (!p.currentProjectId) {
+      p.notify('Open a project before taking a snapshot')
+      return
+    }
+    setIsSnapping(true)
+    pendingSnapshotRef.current = true
+    p.notify('📸 Capturing cover from game preview…')
+    previewIframeRef.current?.contentWindow?.postMessage({
+      type: 'yulya:capture-screen',
+      reqId: Date.now().toString()
+    }, '*')
+
+    window.setTimeout(() => {
+      if (pendingSnapshotRef.current) {
+        pendingSnapshotRef.current = false
+        setIsSnapping(false)
+        p.notify('Preview frame did not respond in time')
+      }
+    }, 4500)
   }
 
   // Handle agent SSE game actions relayed via window events
@@ -1617,6 +1670,12 @@ export default function StudioPage(p: StudioProps) {
                   <Braces size={13} />
                   <span>Format Active File</span>
                 </button>
+                {p.onDownloadZip && (
+                  <button onClick={() => { p.onDownloadZip?.(); setTopMenuOpen(false) }}>
+                    <Download size={13} />
+                    <span>Export Game (.zip)</span>
+                  </button>
+                )}
                 <button onClick={() => { p.onReloadFiles(); setTopMenuOpen(false) }}>
                   <RefreshCw size={13} />
                   <span>Reload Project Files</span>
@@ -1652,6 +1711,7 @@ export default function StudioPage(p: StudioProps) {
                 onGoProfile={() => p.setPage('profile')}
                 onOpenSettings={() => p.setModal('api-key')}
                 onOpenArcade={() => window.open('/arcade', '_blank')}
+                onDownloadZip={p.onDownloadZip}
                 onNotify={p.notify}
               />
             )}
@@ -1740,6 +1800,7 @@ export default function StudioPage(p: StudioProps) {
                   onGoProfile={() => p.setPage('profile')}
                   onOpenSettings={() => p.setModal('api-key')}
                   onOpenArcade={() => window.open('/arcade', '_blank')}
+                  onDownloadZip={p.onDownloadZip}
                   onNotify={p.notify}
                 />
               )}
@@ -2416,6 +2477,15 @@ export default function StudioPage(p: StudioProps) {
                     onClick={() => p.setPreviewKey(k => k + 1)}
                   >
                     <RefreshCw size={13} />
+                  </button>
+                  <button
+                    className="device-btn snapshot-btn"
+                    title="Snap Game Cover (Lightweight 480×270 WebP thumbnail for Arcade & Profile)"
+                    onClick={snapCover}
+                    disabled={isSnapping}
+                  >
+                    <Camera size={13} />
+                    <span className="snapshot-btn-text">{isSnapping ? 'Snapping…' : 'Snap Cover'}</span>
                   </button>
                   <button
                     className="device-btn"
@@ -3695,6 +3765,7 @@ function IdeProfileMenu({
   onGoProfile,
   onOpenSettings,
   onOpenArcade,
+  onDownloadZip,
   onNotify
 }: {
   user: User | null
@@ -3703,6 +3774,7 @@ function IdeProfileMenu({
   onGoProfile: () => void
   onOpenSettings: () => void
   onOpenArcade: () => void
+  onDownloadZip?: () => void
   onNotify: (msg: string) => void
 }) {
   const initial = user?.display_name?.[0]?.toUpperCase() || user?.username?.[0]?.toUpperCase() || 'Y'
@@ -3777,6 +3849,23 @@ function IdeProfileMenu({
             <small>Play community games in new tab</small>
           </div>
         </button>
+
+        {onDownloadZip && (
+          <button
+            type="button"
+            className="vsc-popover-item"
+            onClick={() => {
+              onClose()
+              onDownloadZip()
+            }}
+          >
+            <Download size={15} />
+            <div className="vsc-popover-item-text">
+              <span>Export Game (.zip)</span>
+              <small>Download project files archive</small>
+            </div>
+          </button>
+        )}
 
         <button
           type="button"

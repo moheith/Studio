@@ -6,7 +6,11 @@ ArrowRight, ArrowUpRight, Check, Code2, Gamepad2,
   Play, Rocket, Sparkles,
   X, Zap,
 } from 'lucide-react'
-import { api, deleteFile, getFile, saveFile, setCsrfToken, streamSse, uploadAsset } from './api'
+import {
+  api, deleteFile, downloadProjectZip, getFile, saveFile,
+  saveProjectThumbnail, setCsrfToken, streamSse, trackGamePlay,
+  updateProjectDetails, uploadAsset
+} from './api'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
@@ -23,7 +27,19 @@ import type { Game, FileEntry, Page, User, ChatMessage } from './types'
 function projectToGame(value: Record<string, unknown>): Game {
   const id = String(value.slug ?? value.id ?? 'project')
   const username = String(value.username ?? 'creator')
-  return { id, projectId: String(value.id ?? ''), title: String(value.title ?? id), creator: username, genre: 'WEB GAME', color: '#c7a6ff', art: '✦', plays: String(value.plays ?? 0), description: String(value.description ?? 'A game made in Yulya Studio.'), visibility: value.visibility === 'public' ? 'public' : 'private' }
+  return {
+    id,
+    projectId: String(value.id ?? ''),
+    title: String(value.title ?? id),
+    creator: username,
+    genre: String(value.genre ?? 'ARCADE'),
+    color: '#c7a6ff',
+    art: String(value.art ?? '✦'),
+    plays: String(value.plays ?? 0),
+    description: String(value.description ?? 'A game made in Yulya Studio.'),
+    visibility: value.visibility === 'public' ? 'public' : 'private',
+    thumbnail: value.thumbnail ? String(value.thumbnail) : undefined
+  }
 }
 function publicGameUrl(username: string, slug: string) {
   const origin = (import.meta.env.VITE_API_ORIGIN || window.location.origin).replace(/\/$/, '')
@@ -439,6 +455,58 @@ export default function App() {
       notify(err instanceof Error ? err.message : 'Could not change visibility')
     }
   }
+
+  const handleUpdateProjectDetails = async (projectId: string, details: { title: string; description: string; genre: string }) => {
+    try {
+      const res = await updateProjectDetails(projectId, details)
+      const updated = projectToGame(res.project)
+      setProjects(prev => prev.map(p => (p.projectId === projectId || p.id === projectId) ? updated : p))
+      setGames(prev => prev.map(g => (g.projectId === projectId || g.id === projectId) ? updated : g))
+      if (currentGame && (currentGame.projectId === projectId || currentGame.id === projectId)) {
+        setCurrentGame(updated)
+      }
+      notify('Game details updated')
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not update project details')
+      throw err
+    }
+  }
+
+  const handleUpdateThumbnail = async (projectId: string, thumbnailDataUrl: string) => {
+    try {
+      await saveProjectThumbnail(projectId, thumbnailDataUrl)
+      setProjects(prev => prev.map(p => (p.projectId === projectId || p.id === projectId) ? { ...p, thumbnail: thumbnailDataUrl } : p))
+      setGames(prev => prev.map(g => (g.projectId === projectId || g.id === projectId) ? { ...g, thumbnail: thumbnailDataUrl } : g))
+      if (currentGame && (currentGame.projectId === projectId || currentGame.id === projectId)) {
+        setCurrentGame(prev => prev ? { ...prev, thumbnail: thumbnailDataUrl } : prev)
+      }
+      notify('📸 Cover snapshot saved')
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not save cover snapshot')
+      throw err
+    }
+  }
+
+  const handleTrackPlay = (username: string, slug: string) => {
+    trackGamePlay(username, slug).then(newPlays => {
+      if (newPlays > 0) {
+        setGames(prev => prev.map(g => (g.creator.toLowerCase() === username.toLowerCase() && g.id.toLowerCase() === slug.toLowerCase()) ? { ...g, plays: String(newPlays) } : g))
+        setProjects(prev => prev.map(p => (p.creator.toLowerCase() === username.toLowerCase() && p.id.toLowerCase() === slug.toLowerCase()) ? { ...p, plays: String(newPlays) } : p))
+      }
+    }).catch(() => {})
+  }
+
+  const handleDownloadZip = async (project: Game) => {
+    const id = project.projectId || project.id
+    if (!id) return
+    try {
+      notify('Packaging project into .zip…')
+      await downloadProjectZip(id, project.title || project.id)
+      notify('Game .zip downloaded')
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not download ZIP archive')
+    }
+  }
   const deleteProject = async (projectId: string) => {
     try {
       await api(`/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' })
@@ -775,6 +843,8 @@ export default function App() {
     onUpdateUser={(updated) => setUser(updated)}
     onToggleVisibility={toggleProjectVisibility}
     onDeleteProject={deleteProject}
+    onUpdateProjectDetails={handleUpdateProjectDetails}
+    onDownloadZip={handleDownloadZip}
     notify={notify}
     />
     {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
@@ -789,7 +859,12 @@ export default function App() {
         <ArcadePage
           user={user}
           games={games}
-          onSelectGame={(game) => { setCurrentGame(game); setModal('game') }}
+          onSelectGame={(game) => {
+            setCurrentGame(game)
+            handleTrackPlay(game.creator, game.id)
+            setModal('game')
+          }}
+          onTrackPlay={handleTrackPlay}
           onOpenStudio={(game) => openStudio(game)}
           setPage={setPage}
           onLogin={completeLogin}
@@ -804,8 +879,10 @@ export default function App() {
             game={currentGame}
             close={() => setModal(null)}
             play={() => {
-              if (currentGame.visibility === 'public') window.open(publicGameUrl(currentGame.creator, currentGame.id), '_blank', 'noopener,noreferrer')
-              else notify('This project is private')
+              if (currentGame.visibility === 'public') {
+                handleTrackPlay(currentGame.creator, currentGame.id)
+                window.open(publicGameUrl(currentGame.creator, currentGame.id), '_blank', 'noopener,noreferrer')
+              } else notify('This project is private')
               setModal(null)
             }}
           />
@@ -826,6 +903,9 @@ export default function App() {
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
     notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, renameProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
     isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles, updateWaterfall,
+    onUpdateThumbnail: handleUpdateThumbnail,
+    onDownloadZip: () => { if (currentGame) void handleDownloadZip(currentGame) },
+    onUpdateProjectDetails: handleUpdateProjectDetails,
   }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={() => addFile()}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
   const filteredGames = selectedGenre === 'ALL' ? games : games.filter(g => g.genre.toUpperCase() === selectedGenre.toUpperCase())
@@ -920,7 +1000,19 @@ export default function App() {
       <section className="how-section" id="how"><div className="how-title"><div className="eyebrow">FROM THOUGHT TO THUMBS-UP</div><h2>Three steps.<br/><em>One playable idea.</em></h2></div><div className="how-steps"><div className="how-step"><span className="step-index">01</span><div className="step-icon"><MessageSquare size={20}/></div><h3>Tell it what you imagine</h3><p>Start with a sentence, a sketch in your head, or a “what if…”</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">02</span><div className="step-icon peach-step"><Code2 size={20}/></div><h3>Make it yours</h3><p>See the code and the game side by side. Tweak anything you like.</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">03</span><div className="step-icon mint-step"><Rocket size={20}/></div><h3>Send it to a friend</h3><p>Share one link. Anyone can play it in their browser.</p></div></div></section>
       <section className="cta-section" id="community"><div className="cta-spark">✳</div><div><div className="eyebrow">YOUR TURN, CREATOR</div><h2>What will you make<br/>people <em>feel?</em></h2></div><button className="button button-light" onClick={() => setPage(user ? 'profile' : 'login')}>{user ? 'Open your studio' : 'Let’s find out'} <ArrowRight size={16}/></button><span className="cta-orbit cta-orbit-a"/><span className="cta-orbit cta-orbit-b"/></section>
     </main><footer className="footer"><a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span></a><span>A tiny studio for curious minds.</span><span>Made with care <span className="footer-heart">♥</span></span></footer>
-    {modal === 'game' && currentGame && <GameModal game={currentGame} close={() => setModal(null)} play={() => { if (currentGame.visibility === 'public') window.open(publicGameUrl(currentGame.creator, currentGame.id), '_blank', 'noopener,noreferrer'); else notify('This project is private'); setModal(null) }} />}
+    {modal === 'game' && currentGame && (
+      <GameModal
+        game={currentGame}
+        close={() => setModal(null)}
+        play={() => {
+          if (currentGame.visibility === 'public') {
+            handleTrackPlay(currentGame.creator, currentGame.id)
+            window.open(publicGameUrl(currentGame.creator, currentGame.id), '_blank', 'noopener,noreferrer')
+          } else notify('This project is private')
+          setModal(null)
+        }}
+      />
+    )}
     {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
     {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
     {toast && <div className="toast"><Check size={15}/>{toast}</div>}
@@ -928,7 +1020,34 @@ export default function App() {
 }
 
 function GameCard({ game, index, onClick }: { game: Game; index: number; onClick: () => void }) {
-  return <article className={`game-card card-${index}`} onClick={onClick} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}><div className="game-art" style={{ '--game-color': game.color } as React.CSSProperties}><div className="game-art-stars">✦　·　✧</div><div className="game-art-object">{game.art}</div><span className="art-play"><Play size={14} fill="currentColor"/></span><span className="art-index">0{index + 1}</span></div><div className="game-card-info"><div><div className="game-genre">{game.genre}</div><h3>{game.title}</h3><p>{game.description}</p></div><div className="card-meta"><span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span><span>by <b>{game.creator}</b></span><span className="play-count"><Play size={11} fill="currentColor"/> {game.plays}</span></div></div></article>
+  return (
+    <article className={`game-card card-${index}`} onClick={onClick} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
+      <div className="game-art" style={{ '--game-color': game.color } as React.CSSProperties}>
+        {game.thumbnail ? (
+          <img src={game.thumbnail} alt={game.title} className="game-art-cover-img" />
+        ) : (
+          <>
+            <div className="game-art-stars">✦　·　✧</div>
+            <div className="game-art-object">{game.art}</div>
+          </>
+        )}
+        <span className="art-play"><Play size={14} fill="currentColor"/></span>
+        <span className="art-index">0{index + 1}</span>
+      </div>
+      <div className="game-card-info">
+        <div>
+          <div className="game-genre">{game.genre}</div>
+          <h3>{game.title}</h3>
+          <p>{game.description}</p>
+        </div>
+        <div className="card-meta">
+          <span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span>
+          <span>by <b>{game.creator}</b></span>
+          <span className="play-count"><Play size={11} fill="currentColor"/> {game.plays}</span>
+        </div>
+      </div>
+    </article>
+  )
 }
 
 function NewProjectModal({ name, setName, visibility, setVisibility, close, create }: { name: string; setName: (s: string) => void; visibility: 'private' | 'public'; setVisibility: (v: 'private' | 'public') => void; close: () => void; create: () => void }) {
@@ -947,6 +1066,44 @@ function KeyModal({ value, setValue, close, save, remove, hasKey }: { value: str
   return <Modal close={close}><div className="modal-icon key-modal-icon"><Zap size={18}/></div><div className="eyebrow">BRING YOUR OWN KEY</div><h2>{hasKey ? 'Replace your Gemini key.' : 'Connect your Gemini key.'}</h2><p>Your key lets the coding assistant work for you. It’s encrypted and never shown again.</p><label>Google AI Studio API key<input autoFocus type="password" value={value} onChange={(e) => { setValue(e.target.value); setError('') }} placeholder="Paste your API key" autoComplete="off" disabled={checking}/></label><a className="key-help" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Get a key from Google AI Studio <ArrowUpRight size={12}/></a>{checking && <div className="key-status" role="status" aria-live="polite"><span className="key-spinner"/>Checking your key with Google…</div>}{error && <div className="key-error" role="alert">{error}</div>}<button className="button button-primary modal-submit" onClick={verify} disabled={checking || !value.trim()}>{checking ? 'Verifying key…' : 'Verify and connect'} {!checking && <ArrowRight size={15}/>}</button>{hasKey && <button className="quiet-button" onClick={remove} disabled={checking}>Remove connected key</button>}</Modal>
 }
 function GameModal({ game, close, play }: { game: Game; close: () => void; play: () => void }) {
-  return <Modal close={close} wide><div className="game-modal-art" style={{ '--game-color': game.color } as React.CSSProperties}><span>{game.art}</span><div className="game-art-stars">✦　·　✧</div></div><div className="game-modal-content"><div className="game-genre">{game.genre}</div><h2>{game.title}</h2><p>{game.description}</p><div className="game-modal-meta"><span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span><span>by <b>{game.creator}</b></span><span className="play-count"><Play size={11} fill="currentColor"/> {game.plays} plays</span></div><div className="modal-game-preview"><div className="preview-placeholder"><span>{game.art}</span><p>Open the game on its isolated play origin.</p></div><button className="button button-primary" onClick={play}><Play size={15} fill="currentColor"/> Play game</button></div></div></Modal>
+  return (
+    <Modal close={close} wide>
+      <div className="game-modal-art" style={{ '--game-color': game.color } as React.CSSProperties}>
+        {game.thumbnail ? (
+          <img src={game.thumbnail} alt={game.title} className="game-modal-cover-img" />
+        ) : (
+          <>
+            <span>{game.art}</span>
+            <div className="game-art-stars">✦　·　✧</div>
+          </>
+        )}
+      </div>
+      <div className="game-modal-content">
+        <div className="game-genre">{game.genre}</div>
+        <h2>{game.title}</h2>
+        <p>{game.description}</p>
+        <div className="game-modal-meta">
+          <span className="creator-avatar" style={{ background: game.color }}>{game.creator[0]}</span>
+          <span>by <b>{game.creator}</b></span>
+          <span className="play-count"><Play size={11} fill="currentColor"/> {game.plays} plays</span>
+        </div>
+        <div className="modal-game-preview">
+          <div className="preview-placeholder">
+            {game.thumbnail ? (
+              <img src={game.thumbnail} alt={game.title} className="modal-preview-thumb" />
+            ) : (
+              <>
+                <span>{game.art}</span>
+                <p>Open the game on its isolated play origin.</p>
+              </>
+            )}
+          </div>
+          <button className="button button-primary" onClick={play}>
+            <Play size={15} fill="currentColor"/> Play game
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
 }
 function Modal({ children, close, wide = false }: { children: React.ReactNode; close: () => void; wide?: boolean }) { return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}><div className={`modal-card ${wide ? 'modal-wide' : ''}`}><button className="modal-close" onClick={close} aria-label="Close"><X size={17}/></button>{children}</div></div> }

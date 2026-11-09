@@ -2,8 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import type * as React from 'react'
 import {
   Activity, AlertTriangle, ArrowRight, ArrowUpRight, Check, Code2,
-  Copy, Edit3, Flame, Gamepad2, Globe, KeyRound, Lock, LogOut,
-  MoreVertical, Play, Plus, Search, Share2, Sparkles, Trash2, X, Zap
+  Copy, Download, Edit3, Flame, Gamepad2, Globe, KeyRound, Lock, LogOut,
+  MoreVertical, Pencil, Play, Plus, Search, Share2, Sparkles, Trash2, X, Zap
 } from 'lucide-react'
 import type { Game, User } from '../types'
 import { api } from '../api'
@@ -22,6 +22,8 @@ type ProfilePageProps = {
   onUpdateUser?: (updated: User) => void
   onToggleVisibility?: (game: Game) => Promise<void>
   onDeleteProject?: (projectId: string) => Promise<void>
+  onUpdateProjectDetails?: (projectId: string, details: { title: string; description: string; genre: string }) => Promise<void>
+  onDownloadZip?: (project: Game) => Promise<void> | void
   notify: (msg: string) => void
 }
 
@@ -72,6 +74,8 @@ export default function ProfilePage({
   onUpdateUser,
   onToggleVisibility,
   onDeleteProject,
+  onUpdateProjectDetails,
+  onDownloadZip,
   notify
 }: ProfilePageProps) {
   // Username claim state (fallback for accounts without username)
@@ -84,6 +88,13 @@ export default function ProfilePage({
   const [editDisplayName, setEditDisplayName] = useState(user?.display_name || user?.username || '')
   const [editBio, setEditBio] = useState(user?.bio || '')
   const [savingProfile, setSavingProfile] = useState(false)
+
+  // Edit Project Details Modal
+  const [editingProject, setEditingProject] = useState<Game | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+  const [editGenre, setEditGenre] = useState('ARCADE')
+  const [savingDetails, setSavingDetails] = useState(false)
 
   // Projects filter & search
   const [projectFilter, setProjectFilter] = useState<'all' | 'public' | 'private'>('all')
@@ -497,8 +508,14 @@ export default function ProfilePage({
                       style={{ '--game-color': project.color || '#cbb3ff' } as React.CSSProperties}
                       onClick={() => onOpen(project)}
                     >
-                      <div className="pro-thumb-overlay" />
-                      <div className="pro-thumb-glyph">{project.art || '✦'}</div>
+                      {project.thumbnail ? (
+                        <img src={project.thumbnail} alt={project.title} className="pro-thumb-cover-img" />
+                      ) : (
+                        <>
+                          <div className="pro-thumb-overlay" />
+                          <div className="pro-thumb-glyph">{project.art || '✦'}</div>
+                        </>
+                      )}
 
                       {/* Left: Visibility Badge */}
                       <span className={`pro-vis-badge ${isPublic ? 'badge-public' : 'badge-private'}`}>
@@ -586,6 +603,35 @@ export default function ProfilePage({
                                 )}
                                 <span>{isPublic ? 'Make Private' : 'Publish to Arcade'}</span>
                               </button>
+
+                              <button
+                                type="button"
+                                className="pro-dropdown-item"
+                                onClick={() => {
+                                  setOpenMenuId(null)
+                                  setEditingProject(project)
+                                  setEditTitle(project.title)
+                                  setEditDesc(project.description || '')
+                                  setEditGenre(project.genre || 'ARCADE')
+                                }}
+                              >
+                                <Pencil size={13} className="text-lilac" />
+                                <span>Edit Details</span>
+                              </button>
+
+                              {onDownloadZip && (
+                                <button
+                                  type="button"
+                                  className="pro-dropdown-item"
+                                  onClick={() => {
+                                    setOpenMenuId(null)
+                                    onDownloadZip(project)
+                                  }}
+                                >
+                                  <Download size={13} className="text-cyan" />
+                                  <span>Download ZIP (.zip)</span>
+                                </button>
+                              )}
 
                               <div className="pro-dropdown-divider" />
 
@@ -921,6 +967,117 @@ export default function ProfilePage({
                 <span>{deleting ? 'Purging from database…' : 'Delete Project Permanently'}</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT PROJECT DETAILS MODAL */}
+      {editingProject && (
+        <div className="pro-delete-modal-backdrop" onClick={() => !savingDetails && setEditingProject(null)}>
+          <div className="pro-details-modal-card animate-menu-scale" onClick={(e) => e.stopPropagation()}>
+            <div className="pro-details-modal-header">
+              <div className="pro-details-modal-badge">
+                <Pencil size={14} />
+                <span>EDIT GAME INFO</span>
+              </div>
+              <button
+                type="button"
+                className="pro-details-modal-close"
+                disabled={savingDetails}
+                onClick={() => setEditingProject(null)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                if (!editTitle.trim()) return
+                const id = editingProject.projectId || editingProject.id
+                if (!id) return
+                setSavingDetails(true)
+                try {
+                  if (onUpdateProjectDetails) {
+                    await onUpdateProjectDetails(id, {
+                      title: editTitle.trim(),
+                      description: editDesc.trim(),
+                      genre: editGenre
+                    })
+                  }
+                  setEditingProject(null)
+                } catch {
+                  // notify handled in parent
+                } finally {
+                  setSavingDetails(false)
+                }
+              }}
+              className="pro-details-modal-form"
+            >
+              <label className="pro-field-label">
+                <span>Game Title</span>
+                <input
+                  type="text"
+                  className="pro-input"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="e.g. Cyber Runner 2099"
+                  maxLength={100}
+                  required
+                />
+              </label>
+
+              <label className="pro-field-label">
+                <div className="pro-field-header">
+                  <span>Description</span>
+                  <small className="pro-field-counter">{editDesc.length}/500</small>
+                </div>
+                <textarea
+                  className="pro-textarea"
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  placeholder="A short sentence or mechanics summary for your game..."
+                  maxLength={500}
+                  rows={3}
+                />
+              </label>
+
+              <div className="pro-field-label">
+                <span>Genre Category</span>
+                <div className="pro-genre-pills">
+                  {['ARCADE', 'ACTION', 'PUZZLE', 'PLATFORMER', 'SHOOTER', 'RACING', 'RPG', 'CASUAL', 'STRATEGY', 'RETRO'].map((g) => (
+                    <button
+                      type="button"
+                      key={g}
+                      className={`pro-genre-pill ${editGenre.toUpperCase() === g ? 'active' : ''}`}
+                      onClick={() => setEditGenre(g)}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pro-delete-modal-actions">
+                <button
+                  type="button"
+                  className="button button-outline"
+                  disabled={savingDetails}
+                  onClick={() => setEditingProject(null)}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="button button-primary"
+                  disabled={savingDetails || !editTitle.trim()}
+                >
+                  <Check size={14} />
+                  <span>{savingDetails ? 'Saving Changes…' : 'Save Details'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

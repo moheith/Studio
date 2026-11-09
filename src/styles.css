@@ -8656,3 +8656,193 @@ html {
   color: #e5e0ee;
   border-color: rgba(255, 255, 255, 0.2);
 }
+
+/* ==========================================================================
+   Game Thumbnail & Cover Image Styles
+   ========================================================================== */
+.pro-thumb-cover-img,
+.roblox-thumb-cover-img,
+.game-art-cover-img,
+.game-modal-cover-img,
+.modal-preview-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: inherit;
+}
+
+.spotlight-poster-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+  filter: blur(1px) brightness(0.85);
+  transform: scale(1.02);
+  transition: transform 0.4s ease;
+}
+
+.roblox-spotlight-hero:hover .spotlight-poster-img {
+  transform: scale(1.05);
+}
+
+.snapshot-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 0 8px !important;
+  color: #c084fc !important;
+  background: rgba(168, 85, 247, 0.1) !important;
+  border: 1px solid rgba(168, 85, 247, 0.25) !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.snapshot-btn:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.22) !important;
+  border-color: #a855f7 !important;
+  color: #f3e8ff !important;
+}
+
+.snapshot-btn:disabled {
+  opacity: 0.6;
+  cursor: wait !important;
+}
+
+.snapshot-btn-text {
+  font-size: 11px;
+}
+
+/* ==========================================================================
+   Edit Game Details Modal
+   ========================================================================== */
+.pro-details-modal-card {
+  width: 100%;
+  max-width: 520px;
+  background: #17181e;
+  border: 1px solid #2d2f3a;
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  padding: 24px;
+  color: #f1edfa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.pro-details-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.pro-details-modal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #c084fc;
+}
+
+.pro-details-modal-close {
+  background: transparent;
+  border: 0;
+  color: #8f8a9a;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+}
+
+.pro-details-modal-close:hover {
+  color: #fff;
+  background: #252733;
+}
+
+.pro-details-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pro-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #aba6b6;
+}
+
+.pro-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pro-field-counter {
+  font-size: 10.5px;
+  color: #7a7585;
+}
+
+.pro-input,
+.pro-textarea {
+  width: 100%;
+  background: #111216;
+  border: 1px solid #2d2f3a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #f3effa;
+  font-size: 13.5px;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.pro-input:focus,
+.pro-textarea:focus {
+  outline: none;
+  border-color: #a855f7;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+}
+
+.pro-textarea {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+}
+
+.pro-genre-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pro-genre-pill {
+  border: 1px solid #2d2f3a;
+  background: #121318;
+  color: #9f9aa9;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pro-genre-pill:hover {
+  border-color: #4b4e5f;
+  color: #e5e0f0;
+}
+
+.pro-genre-pill.active {
+  background: rgba(168, 85, 247, 0.18);
+  border-color: #a855f7;
+  color: #d8b4fe;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.25);
+}

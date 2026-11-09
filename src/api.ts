@@ -81,3 +81,55 @@ export async function* streamSse(path: string, body: unknown, signal?: AbortSign
     if (done) break
   }
 }
+
+export async function downloadProjectZip(projectId: string, fallbackSlug = 'game') {
+  const response = await fetch(`${API_ORIGIN}/api/projects/${encodeURIComponent(projectId)}/export`, {
+    credentials: 'include'
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new Error(payload?.detail || 'Could not download project ZIP archive')
+  }
+  const blob = await response.blob()
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cleanName = (fallbackSlug || 'game').replace(/[^a-zA-Z0-9_-]/g, '-')
+  a.download = `${cleanName}.zip`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(url)
+}
+
+export async function trackGamePlay(username: string, slug: string): Promise<number> {
+  try {
+    const res = await api<{ plays: number }>(`/api/games/${encodeURIComponent(username)}/${encodeURIComponent(slug)}/play`, {
+      method: 'POST',
+      body: '{}'
+    })
+    return res.plays
+  } catch {
+    return 0
+  }
+}
+
+export async function updateProjectDetails(projectId: string, details: { title: string; description: string; genre: string }) {
+  return api<{ project: Record<string, unknown> }>(`/api/projects/${encodeURIComponent(projectId)}/details`, {
+    method: 'PATCH',
+    body: JSON.stringify(details)
+  })
+}
+
+export async function saveProjectThumbnail(projectId: string, thumbnail: string) {
+  return api<{ success: boolean; thumbnail: string }>(`/api/projects/${encodeURIComponent(projectId)}/thumbnail`, {
+    method: 'POST',
+    body: JSON.stringify({ thumbnail })
+  })
+}
+
+export async function deleteProjectThumbnail(projectId: string) {
+  return api<{ success: boolean }>(`/api/projects/${encodeURIComponent(projectId)}/thumbnail`, {
+    method: 'DELETE'
+  })
+}

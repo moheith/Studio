@@ -9,6 +9,7 @@ export type Game = {
   description: string
   projectId?: string
   visibility?: 'private' | 'public'
+  thumbnail?: string
 }
 
 export type FileEntry = { name: string; kind: 'file' | 'folder'; language?: string }

@@ -10,6 +10,7 @@ interface ArcadePageProps {
   user: User | null
   games: Game[]
   onSelectGame: (game: Game) => void
+  onTrackPlay?: (username: string, slug: string) => void
   onOpenStudio: (game?: Game) => void
   setPage: (page: 'home' | 'arcade' | 'studio' | 'login' | 'register' | 'profile') => void
   notify: (msg: string) => void
@@ -24,6 +25,7 @@ export default function ArcadePage({
   user,
   games,
   onSelectGame,
+  onTrackPlay,
   onOpenStudio,
   setPage,
   onLogin,
@@ -33,6 +35,13 @@ export default function ArcadePage({
   const [selectedGenre, setSelectedGenre] = useState('ALL')
   const [selectedSort, setSelectedSort] = useState<'PLAYS' | 'NEWEST' | 'TITLE'>('PLAYS')
   const [featuredIndex, setFeaturedIndex] = useState(0)
+
+  const handleGameClick = (game: Game) => {
+    if (onTrackPlay) {
+      onTrackPlay(game.creator, game.id)
+    }
+    onSelectGame(game)
+  }
 
   // Dynamically extract genres only from real games
   const availableGenres = useMemo(() => {
@@ -151,7 +160,11 @@ export default function ArcadePage({
               className="spotlight-poster-bg"
               style={{ '--spotlight-color': featuredGame.color } as React.CSSProperties}
             >
-              <div className="spotlight-emoji-backdrop">{featuredGame.art}</div>
+              {featuredGame.thumbnail ? (
+                <img src={featuredGame.thumbnail} alt={featuredGame.title} className="spotlight-poster-img" />
+              ) : (
+                <div className="spotlight-emoji-backdrop">{featuredGame.art}</div>
+              )}
               <div className="spotlight-gradient-overlay" />
             </div>
 
@@ -175,7 +188,7 @@ export default function ArcadePage({
               <div className="spotlight-cta-row">
                 <button
                   className="roblox-play-btn-large"
-                  onClick={() => onSelectGame(featuredGame)}
+                  onClick={() => handleGameClick(featuredGame)}
                 >
                   <Play size={20} fill="currentColor" />
                   <span>Play Experience</span>
@@ -237,7 +250,7 @@ export default function ArcadePage({
                 <RobloxGameCard
                   key={game.projectId ?? game.id}
                   game={game}
-                  onClick={() => onSelectGame(game)}
+                  onClick={() => handleGameClick(game)}
                 />
               ))}
             </div>
@@ -306,8 +319,14 @@ function RobloxGameCard({
         className="roblox-card-thumb"
         style={{ '--thumb-color': game.color } as React.CSSProperties}
       >
-        <div className="thumb-art-emoji">{game.art}</div>
-        <div className="thumb-stars-watermark">✦ · ✧</div>
+        {game.thumbnail ? (
+          <img src={game.thumbnail} alt={game.title} className="roblox-thumb-cover-img" />
+        ) : (
+          <>
+            <div className="thumb-art-emoji">{game.art}</div>
+            <div className="thumb-stars-watermark">✦ · ✧</div>
+          </>
+        )}
 
         {/* Real Genre Badge */}
         <span className="thumb-badge">{game.genre}</span>

@@ -5,6 +5,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import io
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ import secrets
 import shutil
 import time
 import uuid
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -451,6 +453,12 @@ class UsernameBody(BaseModel): username: str; display_name: str | None = None
 class ProfileUpdateBody(BaseModel): display_name: str | None = None; bio: str | None = None
 class KeyBody(BaseModel): api_key: str = Field(min_length=12, max_length=256)
 class ProjectBody(BaseModel): title: str = Field(min_length=1, max_length=60); visibility: str = "private"
+class ProjectDetailsBody(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=500)
+    genre: str = Field(default="ARCADE", max_length=40)
+class ProjectThumbnailBody(BaseModel):
+    thumbnail: str = Field(max_length=180000)
 class VisibilityBody(BaseModel): visibility: str
 class FileBody(BaseModel): content: str = Field(max_length=5 * 1024 * 1024)
 class ChatBody(BaseModel): prompt: str = Field(min_length=1, max_length=12000); model: str | None = None; antigravity: bool | None = False; waterfall: bool | None = True
@@ -857,7 +865,7 @@ async def create_project(body: ProjectBody, user: dict[str, Any] = Depends(mutat
     if body.visibility not in {"private", "public"}: raise HTTPException(400, "Visibility must be private or public")
     await rate_limit("create-project", user["id"], 5)
     if await store.collection("projects").find_one({"username": user["username"], "slug": slug}): raise HTTPException(409, "A project with that URL already exists")
-    project = {"id": uuid.uuid4().hex, "owner_id": user["id"], "username": user["username"], "slug": slug, "title": body.title.strip(), "visibility": body.visibility, "created_at": _now(), "updated_at": _now(), "description": "", "plays": 0}
+    project = {"id": uuid.uuid4().hex, "owner_id": user["id"], "username": user["username"], "slug": slug, "title": body.title.strip(), "visibility": body.visibility, "genre": "ARCADE", "thumbnail": None, "created_at": _now(), "updated_at": _now(), "description": "", "plays": 0}
     await store.collection("projects").insert_one(project)
     for path, content in starter_files(project["title"]).items():
         encoded = content.encode()
@@ -952,6 +960,74 @@ async def set_visibility(project_id: str, body: VisibilityBody, user: dict[str, 
     if body.visibility == "public" and not any(x["path"] == "index.html" for x in rows): raise HTTPException(400, "Add index.html before making this game public")
     await store.collection("projects").update_one({"id": project_id}, {"$set": {"visibility": body.visibility, "updated_at": _now()}})
     return {"visibility": body.visibility, "url": f"{API_ORIGIN}/api/games/{project['username']}/{project['slug']}/index.html" if body.visibility == "public" else None}
+
+
+@app.patch("/api/projects/{project_id}/details")
+async def update_project_details(project_id: str, body: ProjectDetailsBody, user: dict[str, Any] = Depends(mutating_user)):
+    project = await owned_project(user, project_id)
+    new_title = body.title.strip()
+    new_desc = body.description.strip()
+    new_genre = body.genre.strip().upper() or "ARCADE"
+    update_data = {
+        "title": new_title,
+        "description": new_desc,
+        "genre": new_genre,
+        "updated_at": _now()
+    }
+    await store.collection("projects").update_one({"id": project_id}, {"$set": update_data})
+    updated = {**project, **update_data}
+    return {"project": {k: v for k, v in updated.items() if k != "_id"}}
+
+
+@app.post("/api/projects/{project_id}/thumbnail")
+async def update_project_thumbnail(project_id: str, body: ProjectThumbnailBody, user: dict[str, Any] = Depends(mutating_user)):
+    project = await owned_project(user, project_id)
+    thumb = body.thumbnail.strip()
+    if not (thumb.startswith("data:image/webp;base64,") or thumb.startswith("data:image/jpeg;base64,") or thumb.startswith("data:image/png;base64,")):
+        raise HTTPException(400, "Invalid thumbnail format. WebP or JPEG data URL required.")
+    if len(thumb) > 180000:
+        raise HTTPException(413, "Thumbnail size must be under 120 KiB.")
+    await store.collection("projects").update_one({"id": project_id}, {"$set": {"thumbnail": thumb, "updated_at": _now()}})
+    return {"success": True, "thumbnail": thumb}
+
+
+@app.delete("/api/projects/{project_id}/thumbnail")
+async def delete_project_thumbnail(project_id: str, user: dict[str, Any] = Depends(mutating_user)):
+    project = await owned_project(user, project_id)
+    await store.collection("projects").update_one({"id": project_id}, {"$unset": {"thumbnail": ""}, "$set": {"updated_at": _now()}})
+    return {"success": True}
+
+
+@app.get("/api/projects/{project_id}/export")
+async def export_project_zip(project_id: str, user: dict[str, Any] = Depends(current_user)):
+    # Strictly for project owner
+    project = await owned_project(user, project_id)
+    rows = await store.collection("files").find({"project_id": project_id}).to_list(500)
+    if not rows:
+        raise HTTPException(404, "No files found for this project")
+    
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in rows:
+            path = f["path"].lstrip("/")
+            content_bytes = f.get("content")
+            if not isinstance(content_bytes, (bytes, bytearray)):
+                try:
+                    content_bytes = await project_file_content(project, path)
+                except Exception:
+                    content_bytes = b""
+            zf.writestr(path, bytes(content_bytes))
+    zip_buffer.seek(0)
+    safe_slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", project.get("slug") or project.get("title") or "game").strip("-")
+    filename = f"{safe_slug}.zip"
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache"
+        }
+    )
 
 
 @app.delete("/api/projects/{project_id}")
@@ -2155,6 +2231,18 @@ async def prepare_game_html(project: dict[str, Any], raw_html: str, base_href: s
     return html
 
 
+@app.post("/api/games/{username}/{slug}/play")
+async def register_game_play(username: str, slug: str):
+    res = await store.collection("projects").find_one_and_update(
+        {"username": username.lower(), "slug": slug.lower(), "visibility": "public"},
+        {"$inc": {"plays": 1}},
+        return_document=ReturnDocument.AFTER
+    )
+    if not res:
+        raise HTTPException(404, "Game not found")
+    return {"plays": res.get("plays", 1)}
+
+
 @app.get("/api/games/{username}/{slug}/{file_path:path}")
 @app.get("/api/games/{username}/{slug}")
 @app.get("/api/games/{username}/{slug}/")
@@ -2164,6 +2252,13 @@ async def public_game_file(username: str, slug: str, file_path: str = "index.htm
     rel = files_store._relative(file_path or "index.html")
     content = await project_file_content(project, rel)
     if rel == "index.html":
+        try:
+            await store.collection("projects").update_one(
+                {"_id": project["_id"]},
+                {"$inc": {"plays": 1}}
+            )
+        except Exception:
+            pass
         base_href = f"/{project['username']}/{project['slug']}/"
         html = await prepare_game_html(project, content.decode("utf-8", "replace"), base_href)
         content = html.encode("utf-8")
