@@ -2,8 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import type * as React from 'react'
 import {
   Activity, AlertTriangle, ArrowRight, ArrowUpRight, Check, Code2,
-  Copy, Download, Edit3, Flame, Gamepad2, Globe, KeyRound, Lock, LogOut,
-  MoreVertical, Pencil, Play, Plus, Search, Share2, Sparkles, Trash2, X, Zap
+  Copy, Download, Edit3, Flame, Gamepad2, Globe, KeyRound, Layers, Lock, LogOut,
+  MoreVertical, Pencil, Play, Plus, Search, Settings, Share2, Sparkles, Trash2, X, Zap
 } from 'lucide-react'
 import type { Game, User } from '../types'
 import { api } from '../api'
@@ -14,6 +14,8 @@ type ProfilePageProps = {
   projects: Game[]
   onHome: () => void
   onArcade: () => void
+  onTemplates?: () => void
+  onSettings?: () => void
   onCreate: () => void
   onOpen: (game: Game) => void
   onKey: () => void
@@ -22,7 +24,7 @@ type ProfilePageProps = {
   onUpdateUser?: (updated: User) => void
   onToggleVisibility?: (game: Game) => Promise<void>
   onDeleteProject?: (projectId: string) => Promise<void>
-  onUpdateProjectDetails?: (projectId: string, details: { title: string; description: string; genre: string }) => Promise<void>
+  onUpdateProjectDetails?: (projectId: string, details: { title: string; description: string; genre: string; allow_remix?: boolean }) => Promise<void>
   onDownloadZip?: (project: Game) => Promise<void> | void
   onTrackPlay?: (username: string, slug: string) => void
   notify: (msg: string) => void
@@ -67,6 +69,8 @@ export default function ProfilePage({
   projects,
   onHome,
   onArcade,
+  onTemplates,
+  onSettings,
   onCreate,
   onOpen,
   onKey,
@@ -96,6 +100,7 @@ export default function ProfilePage({
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
   const [editGenre, setEditGenre] = useState('ARCADE')
+  const [editAllowRemix, setEditAllowRemix] = useState(false)
   const [savingDetails, setSavingDetails] = useState(false)
 
   // Projects filter & search
@@ -239,6 +244,16 @@ export default function ProfilePage({
           <button className="quiet-button" onClick={onArcade}>
             <Gamepad2 size={15} /> Arcade
           </button>
+          {onTemplates && (
+            <button className="quiet-button" onClick={onTemplates}>
+              <Layers size={15} /> Templates
+            </button>
+          )}
+          {onSettings && (
+            <button className="quiet-button" onClick={onSettings}>
+              <Settings size={15} /> Security
+            </button>
+          )}
           <button className="creator-signout" onClick={onLogout}>
             <LogOut size={14} /> Sign out
           </button>
@@ -314,7 +329,7 @@ export default function ProfilePage({
               <div className="pro-title-line">
                 <h1>{displayName}</h1>
                 <span className="pro-tier-pill">
-                  <Sparkles size={11} /> PRO
+                  <Sparkles size={11} /> CREATOR
                 </span>
               </div>
 
@@ -560,6 +575,7 @@ export default function ProfilePage({
                                   setEditTitle(project.title)
                                   setEditDesc(project.description || '')
                                   setEditGenre(project.genre || 'ARCADE')
+                                  setEditAllowRemix(Boolean(project.allow_remix))
                                 }}
                               >
                                 <Pencil size={13} className="text-lilac" />
@@ -678,6 +694,7 @@ export default function ProfilePage({
                               setEditTitle(project.title)
                               setEditDesc(project.description || '')
                               setEditGenre(project.genre || 'ARCADE')
+                              setEditAllowRemix(Boolean(project.allow_remix))
                             }}
                           >
                             <Pencil size={12} />
@@ -1027,7 +1044,8 @@ export default function ProfilePage({
                     await onUpdateProjectDetails(id, {
                       title: editTitle.trim(),
                       description: editDesc.trim(),
-                      genre: editGenre
+                      genre: editGenre,
+                      allow_remix: editAllowRemix,
                     })
                   }
                   setEditingProject(null)
@@ -1070,7 +1088,7 @@ export default function ProfilePage({
               <div className="pro-field-label">
                 <span>Genre Category</span>
                 <div className="pro-genre-pills">
-                  {['ARCADE', 'ACTION', 'PUZZLE', 'PLATFORMER', 'SHOOTER', 'RACING', 'RPG', 'CASUAL', 'STRATEGY', 'RETRO'].map((g) => (
+                  {['ARCADE', 'ACTION', 'PUZZLE', 'PLATFORMER', 'SHOOTER', 'RACING', 'RPG', 'CASUAL', 'STRATEGY', 'RETRO', 'WEB APP', 'TOOL', '3D'].map((g) => (
                     <button
                       type="button"
                       key={g}
@@ -1082,6 +1100,15 @@ export default function ProfilePage({
                   ))}
                 </div>
               </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#cbd5e1', cursor: 'pointer', padding: '6px 2px' }}>
+                <input
+                  type="checkbox"
+                  checked={editAllowRemix}
+                  onChange={(e) => setEditAllowRemix(e.target.checked)}
+                />
+                <span>Allow others to Remix / Fork this public project into their Studio</span>
+              </label>
 
               <div className="pro-delete-modal-actions">
                 <button

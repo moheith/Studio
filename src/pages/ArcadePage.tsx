@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import {
-  Play, Search, Plus, ArrowLeft,
+  Play, Search, Plus, ArrowLeft, Layers, Heart,
   Gamepad2, X, Filter, Compass, Sparkles, BookOpen
 } from 'lucide-react'
 import type { Game, User, Page } from '../types'
@@ -12,6 +12,7 @@ interface ArcadePageProps {
   onSelectGame: (game: Game) => void
   onTrackPlay?: (username: string, slug: string) => void
   onOpenStudio: (game?: Game) => void
+  onLogout: () => void
   setPage: (page: Page) => void
   notify: (msg: string) => void
   onLogin?: (user: User, csrf: string) => void
@@ -25,8 +26,8 @@ export default function ArcadePage({
   user,
   games,
   onSelectGame,
-  onTrackPlay,
   onOpenStudio,
+  onLogout,
   setPage,
   onLogin,
   notify
@@ -36,10 +37,8 @@ export default function ArcadePage({
   const [selectedSort, setSelectedSort] = useState<'PLAYS' | 'NEWEST' | 'TITLE'>('PLAYS')
   const [featuredIndex, setFeaturedIndex] = useState(0)
 
+  // Play tracking happens strictly once on the PlayGamePage launch (fixes BUG-03 3x inflation)
   const handleGameClick = (game: Game) => {
-    if (onTrackPlay) {
-      onTrackPlay(game.creator, game.id)
-    }
     onSelectGame(game)
   }
 
@@ -94,6 +93,10 @@ export default function ArcadePage({
               <Compass size={14} />
               <span>Discover</span>
             </button>
+            <button className="roblox-nav-link" onClick={() => setPage('templates')}>
+              <Layers size={14} />
+              <span>Templates</span>
+            </button>
             <button className="roblox-nav-link" onClick={() => onOpenStudio()}>
               <Plus size={14} />
               <span>Create</span>
@@ -132,7 +135,7 @@ export default function ArcadePage({
             setPage={setPage as any}
             onLogin={onLogin}
             notify={notify}
-            onLogout={() => { setPage('home') }}
+            onLogout={onLogout}
             onOpenStudio={() => onOpenStudio()}
           />
         </div>
@@ -352,8 +355,13 @@ function RobloxGameCard({
       <div className="roblox-card-info">
         <h4 className="roblox-card-title">{game.title}</h4>
 
-        <div className="roblox-card-metrics">
+        <div className="roblox-card-metrics" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="metric-creator">by @{game.creator}</span>
+          {typeof game.likes_count === 'number' && game.likes_count > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: '#f472b6' }}>
+              <Heart size={11} fill="currentColor" /> {game.likes_count}
+            </span>
+          )}
         </div>
       </div>
     </article>

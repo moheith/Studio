@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  User as UserIcon, LogIn, UserPlus, LogOut,
+  User as UserIcon, LogIn, UserPlus, LogOut, Settings, Layers,
   Sparkles, Gamepad2, ArrowRight, Code2, BookOpen, Scale, Shield
 } from 'lucide-react'
 import GoogleSignInButton from './GoogleSignInButton'
@@ -129,7 +129,19 @@ export default function ProfileMenu({
 
                 <button className="popover-item" onClick={() => navigateTo('arcade')}>
                   <Gamepad2 size={15} className="text-peach" />
-                  <span>Roblox Arcade</span>
+                  <span>Yulya Arcade</span>
+                  <ArrowRight size={13} className="item-arrow" />
+                </button>
+
+                <button className="popover-item" onClick={() => navigateTo('templates')}>
+                  <Layers size={15} className="text-lilac" />
+                  <span>Starter Templates</span>
+                  <ArrowRight size={13} className="item-arrow" />
+                </button>
+
+                <button className="popover-item" onClick={() => navigateTo('settings')}>
+                  <Settings size={15} className="text-mint" />
+                  <span>Account &amp; Security</span>
                   <ArrowRight size={13} className="item-arrow" />
                 </button>
 

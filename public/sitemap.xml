@@ -11,12 +11,22 @@
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://studio.yulya.me/login</loc>
+    <loc>https://studio.yulya.me/templates</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://studio.yulya.me/docs</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://studio.yulya.me/terms</loc>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://studio.yulya.me/register</loc>
+    <loc>https://studio.yulya.me/privacy</loc>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>

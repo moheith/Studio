@@ -17,4 +17,4 @@ COPY backend ./backend
 COPY --from=frontend-build /workspace/dist ./dist
 
 EXPOSE 10000
-CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-10000} --proxy-headers --forwarded-allow-ips='*'"]

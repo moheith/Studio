@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import Editor from '@monaco-editor/react'
-import html2canvas from 'html2canvas'
+import { domToJpeg } from 'modern-screenshot'
 import {
   AlertTriangle, ArrowUp, ArrowUpRight, Bell, BookOpen, Braces, Brain, Camera, Check, ChevronDown, ChevronRight, CircleHelp,
-  Code2, Copy, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
-  FolderMinus, FolderInput, FolderOpen, FolderPlus, GitBranch, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
+  Code2, Command, Copy, Crosshair, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
+  FolderMinus, FolderInput, FolderOpen, FolderPlus, Gauge, GitBranch, Globe, History, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, Radio, RefreshCw,
-  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, StretchHorizontal, Tablet, Terminal, Trash2, Upload, User as UserIcon, X, XCircle, Zap,
+  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, StretchHorizontal, Tablet, Terminal, Trash2, Upload, User as UserIcon, Wand2, X, XCircle, Zap,
   Gamepad2, LogOut
 } from 'lucide-react'
-import { saveFile } from '../api'
+import { saveFile, submitAiToolResult } from '../api'
+import AssetPreview, { isPreviewableBinaryAsset } from '../components/AssetPreview'
+import AiAssetModal from '../components/AiAssetModal'
+import CheckpointDiffModal from '../components/CheckpointDiffModal'
+import CommandPalette from '../components/CommandPalette'
+import { bundleProjectToHtml, projectNeedsTranspile } from '../lib/esbuildBundler'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
 type StudioProps = {
@@ -69,6 +74,9 @@ type StudioProps = {
   onUpdateThumbnail?: (projectId: string, thumbnail: string) => Promise<void>
   onDownloadZip?: () => Promise<void> | void
   onUpdateProjectDetails?: (projectId: string, details: { title: string; description: string; genre: string }) => Promise<void>
+  playOrigin?: string
+  aiMode?: 'build' | 'plan'
+  setAiMode?: (mode: 'build' | 'plan') => void
 }
 
 type ActivityTab = 'explorer' | 'search' | 'assets'
@@ -395,10 +403,81 @@ export default function StudioPage(p: StudioProps) {
   const [customWaterfall, setCustomWaterfall] = useState<string[]>(
     p.user?.waterfall && p.user.waterfall.length > 0
       ? p.user.waterfall
-      : ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite']
+      : ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']
   )
   const [selectedNewFallback, setSelectedNewFallback] = useState('')
   const [isSavingWaterfall, setIsSavingWaterfall] = useState(false)
+
+  // Pro IDE features: Command Palette, Checkpoints Diff, AI Asset Studio, Click-to-Edit Picker, Live Perf HUD, esbuild-wasm
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [checkpointsOpen, setCheckpointsOpen] = useState(false)
+  const [aiAssetOpen, setAiAssetOpen] = useState(false)
+  const [pickerActive, setPickerActive] = useState(false)
+  const [perfHudActive, setPerfHudActive] = useState(false)
+  const [perfStats, setPerfStats] = useState<{ fps: number; memMb: number | null; domNodes: number } | null>(null)
+  const [compiledSrcDoc, setCompiledSrcDoc] = useState<string | null>(null)
+  const [esbuildStatus, setEsbuildStatus] = useState<string>('')
+  const pendingVisionCallIdRef = useRef<string | null>(null)
+  const propsRef = useRef(p)
+  propsRef.current = p
+
+  const targetPreviewOrigin = useMemo(() => {
+    try {
+      if (p.previewUrl) return new URL(p.previewUrl, window.location.origin).origin
+    } catch {}
+    return (p.playOrigin || window.location.origin).replace(/\/$/, '')
+  }, [p.previewUrl, p.playOrigin])
+
+  const postToPreview = (payload: Record<string, unknown>) => {
+    const win = previewIframeRef.current?.contentWindow
+    if (!win) return
+    // When using isolated PLAY_ORIGIN iframe, strictly bind targetOrigin; srcDoc uses opaque origin
+    const dest = compiledSrcDoc ? '*' : targetPreviewOrigin
+    try { win.postMessage(payload, dest) } catch {}
+  }
+
+  // Global Ctrl+K / Ctrl+P Command Palette shortcut
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'k' || e.key.toLowerCase() === 'p')) {
+        e.preventDefault()
+        setPaletteOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // In-browser esbuild-wasm bundler for TypeScript / JSX / TSX projects (lazy-loaded only when needed)
+  useEffect(() => {
+    if (!projectNeedsTranspile(p.code)) {
+      setCompiledSrcDoc(null)
+      setEsbuildStatus('')
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      setEsbuildStatus('Bundling TS/JSX…')
+      bundleProjectToHtml(p.code).then((res) => {
+        if (cancelled) return
+        if (res.ok) {
+          setCompiledSrcDoc(res.html)
+          setEsbuildStatus(`esbuild ${res.buildMs}ms`)
+        } else {
+          setEsbuildStatus('Build error')
+          setTermHistory((prev) => [
+            ...prev,
+            { id: Date.now().toString(), type: 'error', text: `[esbuild-wasm] ${res.error}`, time: new Date().toLocaleTimeString() },
+          ])
+          p.setTerminalOpen(true)
+        }
+      })
+    }, 350)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [p.code, p.previewKey])
 
   useEffect(() => {
     if (p.user?.waterfall && p.user.waterfall.length > 0) {
@@ -560,45 +639,82 @@ export default function StudioPage(p: StudioProps) {
     }
   }, [])
 
-  // Capture game runtime errors, logs, and screen captures from preview iframe via postMessage bridge
+  // Capture game runtime errors, logs, screen captures, element picks, REPL results & perf telemetry with strict origin + source checks (SEC-01 & BUG-09)
   useEffect(() => {
     const handleGameMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'yulya:game-error') {
+      const iframeWin = previewIframeRef.current?.contentWindow
+      if (!iframeWin || event.source !== iframeWin) return
+      const curProps = propsRef.current
+      let expectedOrigin = (curProps.playOrigin || window.location.origin).replace(/\/$/, '')
+      try {
+        if (curProps.previewUrl) expectedOrigin = new URL(curProps.previewUrl, window.location.origin).origin
+      } catch {}
+      // Allow opaque 'null' origin ONLY when rendering local srcDoc esbuild output
+      if (event.origin !== expectedOrigin && !(event.origin === 'null' && compiledSrcDoc)) return
+      if (!event.data || typeof event.data !== 'object') return
+
+      if (event.data.type === 'yulya:game-error') {
         gameErrorCountRef.current += 1
         const errorText = `[Game Runtime Error] ${event.data.message || 'Script execution failed'}`
         setTermHistory(prev => [
           ...prev,
-          {
-            id: Date.now().toString(),
-            type: 'error',
-            text: errorText,
-            time: new Date().toLocaleTimeString()
-          }
+          { id: Date.now().toString(), type: 'error', text: errorText, time: new Date().toLocaleTimeString() }
         ])
-        p.setTerminalOpen(true)
-        p.notify(`Game Error: ${event.data.message || 'Script error'}`)
-      } else if (event.data && event.data.type === 'yulya:game-log') {
+        curProps.setTerminalOpen(true)
+        curProps.notify(`Game Error: ${event.data.message || 'Script error'}`)
+      } else if (event.data.type === 'yulya:game-log') {
         const logText = `[Game ${event.data.level || 'info'}] ${event.data.message || ''}`
         setTermHistory(prev => [
           ...prev,
           {
             id: Date.now().toString(),
-            type: event.data.level === 'warn' ? 'system' : 'output',
+            type: event.data.level === 'error' ? 'error' : event.data.level === 'warn' ? 'system' : 'output',
             text: logText,
             time: new Date().toLocaleTimeString()
           }
         ])
-      } else if (event.data && event.data.type === 'yulya:screen-captured') {
+      } else if (event.data.type === 'yulya:eval-result') {
+        setTermHistory(prev => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            type: event.data.ok ? 'output' : 'error',
+            text: event.data.ok ? `➔ ${event.data.output ?? 'undefined'}` : `Error: ${event.data.output || 'Evaluation failed'}`,
+            time: new Date().toLocaleTimeString()
+          }
+        ])
+      } else if (event.data.type === 'yulya:element-picked' && event.data.element) {
+        const el = event.data.element
+        setPickerActive(false)
+        setAiChatOpen(true)
+        const snippet = `[Selected Element: <${el.tag}> selector="${el.selector}"${el.text ? ` text="${el.text}"` : ''} color=${el.styles?.color || ''} bg=${el.styles?.background || ''}] `
+        curProps.setChat(curProps.chat ? `${curProps.chat}\n${snippet}` : snippet)
+        curProps.notify(`Attached <${el.tag}> (${el.selector}) to Copilot prompt`)
+      } else if (event.data.type === 'yulya:perf-stats') {
+        setPerfStats({ fps: Number(event.data.fps) || 0, memMb: event.data.memMb ?? null, domNodes: Number(event.data.domNodes) || 0 })
+      } else if (event.data.type === 'yulya:screen-captured') {
+        const targetId = curProps.currentProjectId || curProps.currentGame?.projectId || curProps.currentGame?.id
+        // If Gemini requested inspect_game_screen, send the real screenshot + errors + DOM back to backend!
+        if (pendingVisionCallIdRef.current && targetId) {
+          const cid = pendingVisionCallIdRef.current
+          pendingVisionCallIdRef.current = null
+          void submitAiToolResult(targetId, cid, {
+            dataUrl: String(event.data.dataUrl || ''),
+            width: Number(event.data.width) || 1280,
+            height: Number(event.data.height) || 720,
+            consoleErrors: Array.isArray(event.data.consoleErrors) ? event.data.consoleErrors : [],
+            domElements: Array.isArray(event.data.domElements) ? event.data.domElements : [],
+          }).catch(() => {})
+        }
         if (pendingSnapshotRef.current) {
           pendingSnapshotRef.current = false
           setIsSnapping(false)
           const rawUrl = event.data.dataUrl
-          const updateThumbnailFn = p.onUpdateThumbnail
-          const targetId = p.currentProjectId || p.currentGame?.projectId || p.currentGame?.id
+          const updateThumbnailFn = curProps.onUpdateThumbnail
           if (rawUrl && rawUrl.length > 500 && targetId && updateThumbnailFn) {
             void updateThumbnailFn(targetId, rawUrl)
             setLastSnapshot(rawUrl)
-            p.notify('📸 Game preview cover updated!')
+            curProps.notify('📸 Game preview cover updated!')
           }
         } else {
           setInspectionPill({
@@ -611,12 +727,12 @@ export default function StudioPage(p: StudioProps) {
             time: new Date().toLocaleTimeString()
           })
         }
-      } else if (event.data && event.data.type === 'yulya:input-held-released') {
+      } else if (event.data.type === 'yulya:input-held-released') {
         if (event.data.key) {
           const k = String(event.data.key).toUpperCase()
           setAiActiveKeys(prev => prev.filter(item => item !== k))
         }
-      } else if (event.data && event.data.type === 'yulya:target-located') {
+      } else if (event.data.type === 'yulya:target-located') {
         setAiCursor(prev => ({
           ...prev,
           active: true,
@@ -629,7 +745,7 @@ export default function StudioPage(p: StudioProps) {
     }
     window.addEventListener('message', handleGameMessage)
     return () => window.removeEventListener('message', handleGameMessage)
-  }, [])
+  }, [compiledSrcDoc])
 
   // Start & Stop AI Playtest handlers
   const startAiPlaytest = () => {
@@ -638,19 +754,14 @@ export default function StudioPage(p: StudioProps) {
     setDevice('desktop')
     if (previewWidth < 50) setPreviewWidth(52)
     p.notify('AI Playtest started — 16:9 HD Desktop view active')
-    previewIframeRef.current?.contentWindow?.postMessage({
-      type: 'yulya:capture-screen',
-      reqId: Date.now().toString()
-    }, '*')
+    postToPreview({ type: 'yulya:capture-screen', reqId: Date.now().toString() })
   }
 
   const stopAiPlaytest = () => {
     setIsAiControlling(false)
     setAiActiveKeys([])
     setAiCursor(prev => ({ ...prev, active: false, clicking: false }))
-    previewIframeRef.current?.contentWindow?.postMessage({
-      type: 'yulya:release-all-keys'
-    }, '*')
+    postToPreview({ type: 'yulya:release-all-keys' })
     if (prevViewSettingsRef.current) {
       setDevice(prevViewSettingsRef.current.device)
       setPreviewWidth(prevViewSettingsRef.current.previewWidth)
@@ -662,10 +773,15 @@ export default function StudioPage(p: StudioProps) {
   const captureLivePreview = async (): Promise<string | null> => {
     const iframe = previewIframeRef.current
     if (!iframe) return null
-    const doc = iframe.contentDocument || iframe.contentWindow?.document
+    let doc: Document | null = null
+    try {
+      doc = iframe.contentDocument || iframe.contentWindow?.document || null
+    } catch {
+      // Cross-origin isolated iframe (play.yulya.me): handled cleanly via postMessage bridge below!
+      return null
+    }
     if (!doc) return null
 
-    // Helper: resize and compress source canvas to standard 16:9 480×270 JPEG/WebP
     const createThumbnail = (source: HTMLCanvasElement): string | null => {
       try {
         const off = document.createElement('canvas')
@@ -673,7 +789,6 @@ export default function StudioPage(p: StudioProps) {
         off.height = 270
         const octx = off.getContext('2d')
         if (!octx) return null
-
         octx.fillStyle = '#101114'
         octx.fillRect(0, 0, 480, 270)
         const sw = source.width || 480
@@ -681,68 +796,36 @@ export default function StudioPage(p: StudioProps) {
         const scale = Math.max(480 / sw, 270 / sh)
         const dw = sw * scale
         const dh = sh * scale
-        const dx = (480 - dw) / 2
-        const dy = (270 - dh) / 2
-        octx.drawImage(source, dx, dy, dw, dh)
-
+        octx.drawImage(source, (480 - dw) / 2, (270 - dh) / 2, dw, dh)
         let dUrl = off.toDataURL('image/jpeg', 0.85)
         try {
           const wp = off.toDataURL('image/webp', 0.85)
           if (wp && wp.startsWith('data:image/webp')) dUrl = wp
-        } catch (e) {}
-
+        } catch {}
         if (dUrl && dUrl.length > 500) return dUrl
-      } catch (e) {}
+      } catch {}
       return null
     }
 
-    // Strategy 1: Check active visible <canvas> elements (for 2D canvas, WebGL Three.js, Phaser, Pixi, etc.)
     try {
       const canvases = doc.querySelectorAll('canvas')
       for (let i = 0; i < canvases.length; i++) {
         const c = canvases[i]
-        const cw = c.width || c.clientWidth
-        const ch = c.height || c.clientHeight
-        if (cw > 20 && ch > 20) {
+        if ((c.width || c.clientWidth) > 20 && (c.height || c.clientHeight) > 20) {
           const dUrl = createThumbnail(c)
           if (dUrl) return dUrl
         }
       }
-    } catch (e) {}
+    } catch {}
 
-    // Strategy 2: If no canvas or DOM-based game (like Little Star), use html2canvas to capture document.body
     if (doc.body) {
       try {
-        const body = doc.body
-        const win = iframe.contentWindow || window
-        const compBg = win.getComputedStyle ? win.getComputedStyle(body).backgroundColor : '#101114'
-        const safeBg = (compBg && compBg !== 'transparent' && compBg !== 'rgba(0, 0, 0, 0)') ? compBg : '#101114'
-        const w = Math.max(body.scrollWidth || 0, body.clientWidth || 0, doc.documentElement?.clientWidth || 0, 480)
-        const h = Math.max(body.scrollHeight || 0, body.clientHeight || 0, doc.documentElement?.clientHeight || 0, 270)
-
-        const captured = await html2canvas(body, {
-          backgroundColor: safeBg,
-          logging: false,
-          useCORS: true,
-          allowTaint: true,
-          scale: 1,
-          width: w,
-          height: h,
-          windowWidth: win.innerWidth || w,
-          windowHeight: win.innerHeight || h,
-          scrollX: 0,
-          scrollY: 0,
-        })
-
-        if (captured && captured.width > 20 && captured.height > 20) {
-          const dUrl = createThumbnail(captured)
-          if (dUrl) return dUrl
-        }
+        const du = await domToJpeg(doc.body, { quality: 0.82, scale: 0.75, backgroundColor: '#101114' })
+        if (du && du.length > 500) return du
       } catch (err) {
-        console.warn('html2canvas capture warning:', err)
+        console.warn('modern-screenshot capture warning:', err)
       }
     }
-
     return null
   }
 
@@ -752,7 +835,6 @@ export default function StudioPage(p: StudioProps) {
       p.notify('Open a project before taking a snapshot')
       return
     }
-    // 1. If there are unsaved changes in the editor, flush them to the server first
     if (p.dirtyFiles && p.dirtyFiles.size > 0 && p.code[p.activeFile] !== undefined) {
       try {
         await saveFile(p.currentProjectId, p.activeFile, p.code[p.activeFile])
@@ -763,13 +845,13 @@ export default function StudioPage(p: StudioProps) {
             return next
           })
         }
-      } catch (e) {}
+      } catch {}
     }
 
     setIsSnapping(true)
     setShutterFlash(true)
     setTimeout(() => setShutterFlash(false), 220)
-    p.notify('📸 Capturing cover from game preview…')
+    p.notify('📸 Capturing cover from isolated game preview…')
 
     try {
       const snapUrl = await captureLivePreview()
@@ -780,19 +862,16 @@ export default function StudioPage(p: StudioProps) {
         return
       }
 
-      // If direct capture returned null, trigger postMessage to iframe as backup
+      // Cross-origin isolated iframe capture via origin-verified postMessage bridge
       pendingSnapshotRef.current = true
-      previewIframeRef.current?.contentWindow?.postMessage({
-        type: 'yulya:capture-screen',
-        reqId: Date.now().toString()
-      }, '*')
+      postToPreview({ type: 'yulya:capture-screen', reqId: Date.now().toString() })
 
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      await new Promise(resolve => setTimeout(resolve, 2500))
       if (pendingSnapshotRef.current) {
         pendingSnapshotRef.current = false
         p.notify('Preview frame did not respond in time')
       }
-    } catch (err) {
+    } catch {
       p.notify('Could not capture preview snapshot')
     } finally {
       setIsSnapping(false)
@@ -819,10 +898,13 @@ export default function StudioPage(p: StudioProps) {
             setDevice(m)
           }
         }
-        previewIframeRef.current?.contentWindow?.postMessage({
-          type: 'yulya:capture-screen',
-          reqId: Date.now().toString()
-        }, '*')
+        if (detail.data?.call_id) {
+          pendingVisionCallIdRef.current = String(detail.data.call_id)
+        }
+        // Give viewport 150ms to resize if device_mode switched before capturing
+        window.setTimeout(() => {
+          postToPreview({ type: 'yulya:capture-screen', reqId: String(detail.data?.call_id || Date.now()) })
+        }, 150)
       } else if (detail.type === 'send_game_input') {
         if (!isAiControlling) {
           prevViewSettingsRef.current = { device, previewWidth }
@@ -842,94 +924,30 @@ export default function StudioPage(p: StudioProps) {
               const targetY = typeof action.y === 'number' ? action.y : 360
               const actionLabel = action.label || (action.action === 'click' ? 'Clicking…' : 'Moving…')
 
-              // 1. Smoothly glide cursor to target position
-              setAiCursor({
-                active: true,
-                x: targetX,
-                y: targetY,
-                clicking: false,
-                label: actionLabel
-              })
-
-              previewIframeRef.current?.contentWindow?.postMessage({
-                type: 'yulya:simulate-input',
-                inputKind: 'mousemove',
-                selector: action.selector,
-                text: action.text,
-                label: action.label,
-                x: targetX,
-                y: targetY
-              }, '*')
-
-              // Allow 220ms for human eye to follow fluid cursor glide
+              setAiCursor({ active: true, x: targetX, y: targetY, clicking: false, label: actionLabel })
+              postToPreview({ type: 'yulya:simulate-input', inputKind: 'mousemove', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY })
               await sleep(220)
 
               if (action.action === 'click' || action.action === 'down') {
-                // 2. Trigger visible click (starts ripple animation) and dispatch mousedown
                 setAiCursor(prev => ({ ...prev, clicking: true, label: action.label || 'Click' }))
-                previewIframeRef.current?.contentWindow?.postMessage({
-                  type: 'yulya:simulate-input',
-                  inputKind: 'mousedown',
-                  selector: action.selector,
-                  text: action.text,
-                  label: action.label,
-                  x: targetX,
-                  y: targetY,
-                  button: 0
-                }, '*')
-
-                // Hold down for 150ms so button :active state and animation register
+                postToPreview({ type: 'yulya:simulate-input', inputKind: 'mousedown', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY, button: 0 })
                 await sleep(150)
-
-                // 3. Dispatch mouseup and click
-                previewIframeRef.current?.contentWindow?.postMessage({
-                  type: 'yulya:simulate-input',
-                  inputKind: 'mouseup',
-                  selector: action.selector,
-                  text: action.text,
-                  label: action.label,
-                  x: targetX,
-                  y: targetY,
-                  button: 0
-                }, '*')
-                previewIframeRef.current?.contentWindow?.postMessage({
-                  type: 'yulya:simulate-input',
-                  inputKind: 'click',
-                  selector: action.selector,
-                  text: action.text,
-                  label: action.label,
-                  x: targetX,
-                  y: targetY,
-                  button: 0
-                }, '*')
-
+                postToPreview({ type: 'yulya:simulate-input', inputKind: 'mouseup', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY, button: 0 })
+                postToPreview({ type: 'yulya:simulate-input', inputKind: 'click', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY, button: 0 })
                 await sleep(120)
                 setAiCursor(prev => ({ ...prev, clicking: false }))
               }
             } else if (action.type === 'key' || action.key) {
               const keyLabel = String(action.key).toUpperCase()
               setAiActiveKeys(prev => prev.includes(keyLabel) ? prev : [...prev, keyLabel])
-
-              previewIframeRef.current?.contentWindow?.postMessage({
-                type: 'yulya:simulate-input',
-                inputKind: 'keydown',
-                key: action.key
-              }, '*')
-
+              postToPreview({ type: 'yulya:simulate-input', inputKind: 'keydown', key: action.key })
               const holdTime = action.duration_ms && action.duration_ms > 0 ? action.duration_ms : 200
               await sleep(holdTime)
-
-              previewIframeRef.current?.contentWindow?.postMessage({
-                type: 'yulya:simulate-input',
-                inputKind: 'keyup',
-                key: action.key
-              }, '*')
+              postToPreview({ type: 'yulya:simulate-input', inputKind: 'keyup', key: action.key })
               setAiActiveKeys(prev => prev.filter(k => k !== keyLabel))
-
               await sleep(60)
             }
           }
-          // After all actions finish, keep cursor visible for 1.8s then smoothly fade out
           await sleep(1800)
           setAiCursor(prev => ({ ...prev, active: false, clicking: false }))
         }
@@ -1026,6 +1044,11 @@ export default function StudioPage(p: StudioProps) {
         if (parentPath) next.delete(parentPath)
         return next
       })
+      if (p.currentProjectId) {
+        try {
+          await saveFile(p.currentProjectId, `${fullPath}/.keep.json`, '{"folder": true}')
+        } catch {}
+      }
       p.notify(`Folder "${clean}" created`)
       return
     }
@@ -1637,29 +1660,16 @@ export default function StudioPage(p: StudioProps) {
         time
       })
     } else {
-      try {
-        // eslint-disable-next-line no-eval
-        const result = window.eval(raw)
-        let outStr = ''
-        if (result === undefined) outStr = 'undefined'
-        else if (typeof result === 'object') {
-          try { outStr = JSON.stringify(result, null, 2) } catch { outStr = String(result) }
-        } else {
-          outStr = String(result)
-        }
-        newLogs.push({
-          id: (Date.now() + 1).toString(),
-          type: 'output',
-          text: `➔ ${outStr}`,
-          time
-        })
-      } catch (err: any) {
+      // Evaluate strictly inside the sandboxed preview iframe, NEVER in the parent IDE window (SEC-09)
+      if (!previewIframeRef.current?.contentWindow) {
         newLogs.push({
           id: (Date.now() + 1).toString(),
           type: 'error',
-          text: `Error: ${err?.message || String(err)}`,
+          text: 'Preview panel must be open to evaluate JavaScript inside the sandbox.',
           time
         })
+      } else {
+        postToPreview({ type: 'yulya:eval-code', evalId: Date.now().toString(), code: raw })
       }
     }
 
@@ -2315,6 +2325,27 @@ export default function StudioPage(p: StudioProps) {
               <div className="vsc-tab-actions">
                 <button
                   className="vsc-tool-btn"
+                  title="Command Palette (Ctrl+K / Ctrl+P)"
+                  onClick={() => setPaletteOpen(true)}
+                >
+                  <Command size={14} />
+                </button>
+                <button
+                  className="vsc-tool-btn"
+                  title="Checkpoints & Visual Diff Rollback"
+                  onClick={() => setCheckpointsOpen(true)}
+                >
+                  <History size={14} />
+                </button>
+                <button
+                  className="vsc-tool-btn"
+                  title="AI Asset Studio (Nano Banana 2.1 Sprites & Gemini 3.8 TTS)"
+                  onClick={() => setAiAssetOpen(true)}
+                >
+                  <Wand2 size={14} />
+                </button>
+                <button
+                  className="vsc-tool-btn"
                   title="Format Document (Shift+Alt+F)"
                   onClick={() => void formatDocument()}
                 >
@@ -2350,13 +2381,20 @@ export default function StudioPage(p: StudioProps) {
                   ● Unsaved
                 </span>
               )}
+              {esbuildStatus && (
+                <span style={{ fontSize: 11, color: '#38bdf8', marginLeft: 10, padding: '1px 7px', borderRadius: 6, background: 'rgba(56,189,248,0.12)' }}>
+                  ⚡ {esbuildStatus}
+                </span>
+              )}
               <span className="vsc-spacer" />
               <span className="lang-tag">{(p.language || 'text').toUpperCase()}</span>
             </div>
 
-            {/* Monaco Editor Canvas */}
+            {/* Monaco Editor or Visual Asset Previewer */}
             <div className="vsc-monaco-wrapper">
-              {p.activeFile ? (
+              {p.activeFile && isPreviewableBinaryAsset(p.activeFile) && p.currentProjectId ? (
+                <AssetPreview projectId={p.currentProjectId} path={p.activeFile} onNotify={p.notify} />
+              ) : p.activeFile ? (
                 <Editor
                   key={p.activeFile}
                   path={p.activeFile}
@@ -2473,10 +2511,25 @@ export default function StudioPage(p: StudioProps) {
                         </div>
                       ) : (
                         filteredTermHistory.map(entry => (
-                          <div key={entry.id} className={`term-line term-${entry.type}`}>
+                          <div key={entry.id} className={`term-line term-${entry.type}`} style={{ alignItems: 'center' }}>
                             {entry.time && <span className="term-timestamp">{entry.time}</span>}
                             <span className={`term-kind-tag kind-${entry.type}`}>{entry.type.toUpperCase()}</span>
-                            <pre className="term-text">{entry.text}</pre>
+                            <pre className="term-text" style={{ flex: 1 }}>{entry.text}</pre>
+                            {entry.type === 'error' && (
+                              <button
+                                type="button"
+                                className="vsc-tool-btn"
+                                style={{ fontSize: 11, padding: '2px 7px', color: '#c4b5fd', gap: 4, display: 'inline-flex', alignItems: 'center' }}
+                                title="Send error to Copilot for instant fix"
+                                onClick={() => {
+                                  setAiChatOpen(true)
+                                  p.setChat(`Fix this runtime error cleanly:\n${entry.text}`)
+                                  p.notify('Error attached to Copilot prompt — press Enter to fix!')
+                                }}
+                              >
+                                <Sparkles size={11} /> Fix
+                              </button>
+                            )}
                           </div>
                         ))
                       )}
@@ -2589,6 +2642,30 @@ export default function StudioPage(p: StudioProps) {
                   )}
                   <span className="vsc-header-sep" />
                   <button
+                    className={`device-btn ${pickerActive ? 'active' : ''}`}
+                    title="Click-to-Edit Visual Element Picker (click any element in preview to attach it to Copilot)"
+                    onClick={() => {
+                      const next = !pickerActive
+                      setPickerActive(next)
+                      postToPreview({ type: 'yulya:set-picker', active: next })
+                      if (next) p.notify('Click any element inside the preview to target it with Copilot')
+                    }}
+                  >
+                    <Crosshair size={13} />
+                  </button>
+                  <button
+                    className={`device-btn ${perfHudActive ? 'active' : ''}`}
+                    title="Toggle Live FPS & Memory Performance HUD"
+                    onClick={() => {
+                      const next = !perfHudActive
+                      setPerfHudActive(next)
+                      if (!next) setPerfStats(null)
+                      postToPreview({ type: 'yulya:set-perf', active: next })
+                    }}
+                  >
+                    <Gauge size={13} />
+                  </button>
+                  <button
                     className="device-btn"
                     title="Reload Preview"
                     onClick={async () => {
@@ -2690,9 +2767,24 @@ export default function StudioPage(p: StudioProps) {
                 return (
                   <div className="vsc-preview-stage" ref={previewWrapRef}>
                     {shutterFlash && <div className="preview-shutter-flash" />}
+                    {perfHudActive && perfStats && (
+                      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, background: 'rgba(10,12,20,0.86)', border: '1px solid rgba(56,189,248,0.35)', borderRadius: 8, padding: '4px 10px', fontSize: 11, color: '#38bdf8', fontFamily: 'monospace', pointerEvents: 'none' }}>
+                        {perfStats.fps} FPS · {perfStats.domNodes} DOM{perfStats.memMb !== null ? ` · ${perfStats.memMb} MB` : ''}
+                      </div>
+                    )}
                     {device === 'responsive' || !currentSpec ? (
                       <div className="preview-viewport-container device-responsive">
-                        {p.previewUrl ? (
+                        {compiledSrcDoc ? (
+                          <iframe
+                            ref={previewIframeRef}
+                            key={`esb-${p.previewKey}`}
+                            title="Compiled TypeScript/React preview"
+                            className="vsc-game-iframe"
+                            sandbox="allow-scripts allow-modals allow-forms allow-pointer-lock"
+                            srcDoc={compiledSrcDoc}
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : p.previewUrl ? (
                           <iframe
                             ref={previewIframeRef}
                             key={p.previewKey}
@@ -2755,7 +2847,17 @@ export default function StudioPage(p: StudioProps) {
                               <span className="phone-speaker" />
                             </div>
                           )}
-                          {p.previewUrl ? (
+                          {compiledSrcDoc ? (
+                            <iframe
+                              ref={previewIframeRef}
+                              key={`esb-${p.previewKey}`}
+                              title="Compiled TypeScript/React preview"
+                              className="vsc-game-iframe"
+                              sandbox="allow-scripts allow-modals allow-forms allow-pointer-lock"
+                              srcDoc={compiledSrcDoc}
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : p.previewUrl ? (
                             <iframe
                               ref={previewIframeRef}
                               key={p.previewKey}
@@ -3334,6 +3436,18 @@ export default function StudioPage(p: StudioProps) {
                       <Plus size={11} />
                     </button>
 
+                    {/* Plan vs Build Mode Pill */}
+                    {p.setAiMode && (
+                      <button
+                        type="button"
+                        className={`vsc-chat-pill-btn ${p.aiMode === 'plan' ? 'is-active' : ''}`}
+                        onClick={() => p.setAiMode?.(p.aiMode === 'plan' ? 'build' : 'plan')}
+                        title={p.aiMode === 'plan' ? 'Plan Mode (Read-only analysis). Click to switch to Build Mode.' : 'Build Mode (Edits files with automatic checkpoints). Click for Plan Mode.'}
+                      >
+                        <span>{p.aiMode === 'plan' ? 'Plan' : 'Build'}</span>
+                      </button>
+                    )}
+
                     {/* Antigravity Pill (Matches `{/} Agent` in screenshot) */}
                     <button
                       type="button"
@@ -3425,12 +3539,14 @@ export default function StudioPage(p: StudioProps) {
             title={`Workspace status: ${p.saveState || 'Saved'}`}
             onClick={() => p.notify(`Workspace status: ${p.saveState || 'All changes saved'}`)}
           >
-            {p.saveState === 'saving' ? (
+            {p.saveState?.toLowerCase().includes('saving') ? (
               <Loader2 size={13} className="animate-spin" />
+            ) : p.saveState?.toLowerCase().includes('fail') ? (
+              <AlertTriangle size={13} className="icon-err" />
             ) : (
               <Check size={13} />
             )}
-            <span>{p.saveState === 'saving' ? 'Saving…' : 'Saved'}</span>
+            <span>{p.saveState || 'Saved'}</span>
           </button>
 
           <button
@@ -3458,11 +3574,11 @@ export default function StudioPage(p: StudioProps) {
           <button
             type="button"
             className={`vsc-footer-item ${previewOpen ? 'active' : ''}`}
-            title="Toggle Live Game Preview (Port 5173)"
+            title="Toggle Isolated Live Preview"
             onClick={() => setPreviewOpen(!previewOpen)}
           >
             <Radio size={13} />
-            <span>Port 5173</span>
+            <span>{compiledSrcDoc ? 'esbuild Live' : 'Sandbox Preview'}</span>
           </button>
         </div>
 
@@ -3511,11 +3627,11 @@ export default function StudioPage(p: StudioProps) {
           <button
             type="button"
             className={`vsc-footer-item vsc-footer-ai-item ${p.isAiGenerating ? 'pulse-ai' : ''} ${aiChatOpen ? 'active' : ''}`}
-            title={`AI Assistant (${p.isAntigravityMode ? 'Antigravity Agent' : 'Standard Copilot'}): ${p.selectedModel || 'gemini-2.5-pro'}. Click to toggle chat.`}
+            title={`AI Assistant (${p.isAntigravityMode ? 'Antigravity Agent' : 'Standard Copilot'}): ${p.selectedModel || 'gemini-3.8-flash'}. Click to toggle chat.`}
             onClick={() => setAiChatOpen(!aiChatOpen)}
           >
             <Sparkles size={13} />
-            <span>{p.isAntigravityMode ? 'Antigravity' : 'Copilot'}: {(p.selectedModel || 'gemini-2.5-pro').replace(/^models\//, '').replace(/^antigravity-/, '')}</span>
+            <span>{p.isAntigravityMode ? 'Antigravity' : 'Copilot'}: {(p.selectedModel || 'gemini-3.8-flash').replace(/^models\//, '').replace(/^antigravity-/, '')}</span>
           </button>
 
           <button
@@ -3554,10 +3670,6 @@ export default function StudioPage(p: StudioProps) {
               }}>
                 <Copy size={13} />
                 <span>Copy Path</span>
-              </button>
-              <button onClick={() => { setMoveModalItem(contextMenu.item!); setContextMenu(null) }}>
-                <FolderInput size={13} />
-                <span>Move to Folder…</span>
               </button>
               <button onClick={() => { downloadFile(contextMenu.item!.path); setContextMenu(null) }}>
                 <Download size={13} />
@@ -3929,6 +4041,51 @@ export default function StudioPage(p: StudioProps) {
           </div>
         </div>
       )}
+
+      {/* Command Palette (Ctrl+K / Ctrl+P) */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        files={p.tree.map((f) => f.name)}
+        onOpenFile={(path) => openFileTab(path)}
+        actions={[
+          { id: 'cmd-checkpoints', label: 'Open Checkpoints & Diff Rollback', hint: 'History', icon: 'history', run: () => setCheckpointsOpen(true) },
+          { id: 'cmd-ai-assets', label: 'AI Asset Studio (Sprites & Voice Lines)', hint: 'Nano Banana / TTS', icon: 'asset', run: () => setAiAssetOpen(true) },
+          { id: 'cmd-picker', label: pickerActive ? 'Disable Element Picker' : 'Enable Click-to-Edit Element Picker', hint: 'Preview', icon: 'picker', run: () => { const n = !pickerActive; setPickerActive(n); postToPreview({ type: 'yulya:set-picker', active: n }) } },
+          { id: 'cmd-format', label: 'Format Current Document', hint: 'Shift+Alt+F', icon: 'file', run: () => void formatDocument() },
+          { id: 'cmd-preview', label: previewOpen ? 'Collapse Live Preview' : 'Expand Live Preview', hint: 'View', icon: 'preview', run: () => setPreviewOpen(!previewOpen) },
+          { id: 'cmd-terminal', label: p.terminalOpen ? 'Hide Terminal Console' : 'Show Terminal Console', hint: 'View', icon: 'terminal', run: () => p.setTerminalOpen(!p.terminalOpen) },
+          { id: 'cmd-ai', label: aiChatOpen ? 'Close Copilot Chat' : 'Open Copilot Chat', hint: 'AI', icon: 'ai', run: () => setAiChatOpen(!aiChatOpen) },
+          { id: 'cmd-zip', label: 'Export Project as ZIP', hint: 'Download', icon: 'download', run: () => p.onDownloadZip?.() },
+          { id: 'cmd-settings', label: 'Open Account & Security Settings', hint: 'Settings', icon: 'settings', run: () => p.setPage('settings') },
+        ]}
+      />
+
+      {/* Checkpoints & Visual Diff Rollback Modal */}
+      <CheckpointDiffModal
+        open={checkpointsOpen}
+        projectId={p.currentProjectId}
+        currentFiles={p.code}
+        onClose={() => setCheckpointsOpen(false)}
+        onRestored={async () => {
+          p.onReloadFiles()
+          p.setPreviewKey((k) => k + 1)
+        }}
+        notify={p.notify}
+      />
+
+      {/* AI Asset Studio (Nano Banana 2.1 + Gemini 3.8 TTS) */}
+      <AiAssetModal
+        open={aiAssetOpen}
+        projectId={p.currentProjectId}
+        hasKey={Boolean(p.user?.has_api_key)}
+        onClose={() => setAiAssetOpen(false)}
+        onAssetCreated={async (createdPath) => {
+          p.onReloadFiles()
+          openFileTab(createdPath)
+        }}
+        notify={p.notify}
+      />
     </div>
   )
 }

@@ -310,10 +310,10 @@ export default function PrivacyPolicyPage({
               </thead>
               <tbody>
                 <tr>
-                  <td><code>session_token</code></td>
-                  <td>HTTP-Only Cookie</td>
-                  <td>30 Days</td>
-                  <td>Secure session identifier; encrypted with <code>SameSite=Lax</code> and <code>Secure</code> flags.</td>
+                  <td><code>__Host-yulya_session</code></td>
+                  <td>HTTP-Only Host-Locked Cookie</td>
+                  <td>14 Days</td>
+                  <td>Secure session identifier bound to the studio host; protected with <code>HttpOnly</code>, <code>SameSite=Lax</code>, <code>Path=/</code>, and <code>Secure</code> flags.</td>
                 </tr>
                 <tr>
                   <td><code>X-CSRF-Token</code></td>
@@ -352,9 +352,9 @@ export default function PrivacyPolicyPage({
           </p>
           <ul>
             <li><strong>Encryption in Transit:</strong> All web traffic is encrypted using Modern TLS 1.3 / HTTPS with HSTS (HTTP Strict Transport Security) enabled.</li>
-            <li><strong>AES-256-GCM Key Encryption:</strong> User-provided Google Gemini API keys are never stored in raw plaintext. Keys are encrypted using authenticated 256-bit Galois/Counter Mode (AES-256-GCM) with unique initialization vectors (IVs) and authentication tags.</li>
-            <li><strong>One-Way Salted Passwords:</strong> Passwords are never stored in reversible form. We utilize memory-hard, GPU-resistant hashing algorithms (Argon2 / PBKDF2 with SHA-256) with unique per-user salts.</li>
-            <li><strong>Iframe Sandbox Isolation:</strong> Game preview executions take place inside restricted <code>&lt;iframe sandbox="..."&gt;</code> environments with strict Content Security Policies (CSP). Sandboxed games cannot read parent cookies, access parent <code>localStorage</code>, or inspect IDE state.</li>
+            <li><strong>AES-256-GCM Key Encryption (with AAD):</strong> User-provided Google Gemini API keys are encrypted server-side before database storage using authenticated 256-bit Galois/Counter Mode (AES-256-GCM) with unique 96-bit nonces and Associated Authenticated Data (AAD) bound to your user ID, preventing cross-account ciphertext substitution.</li>
+            <li><strong>One-Way Salted Passwords:</strong> Passwords are never stored in reversible form. We utilize memory-hard, GPU-resistant Argon2id hashing with unique per-user salts.</li>
+            <li><strong>Dedicated Sandbox Origin Isolation:</strong> Published games and private previews run on a separate origin (<code>play.yulya.me</code>) inside restricted <code>&lt;iframe sandbox="..."&gt;</code> environments with strict Content Security Policies (CSP) and zero session cookies. Sandboxed games cannot read studio cookies, access studio <code>localStorage</code>, or inspect IDE state.</li>
           </ul>
         </>
       )
@@ -382,7 +382,7 @@ export default function PrivacyPolicyPage({
                 <tr>
                   <td><strong>Account &amp; Profile</strong></td>
                   <td>Duration of active account</td>
-                  <td>Permanently deleted within 30 days upon user account deletion request.</td>
+                  <td>Permanently purged immediately via self-service deletion in Account Settings (<code>/settings</code>) or upon written request.</td>
                 </tr>
                 <tr>
                   <td><strong>Project Code &amp; Assets</strong></td>

@@ -193,7 +193,7 @@ const DOC_TOPICS: DocTopic[] = [
     category: 'AI Copilot',
     icon: Cpu,
     readTime: '4 min read',
-    summary: 'Selecting between Gemini 2.5 Flash, Gemini 2.5 Pro, and Flash-Lite.',
+    summary: 'Selecting between Gemini 3.8 Flash, Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, Nano Banana 2.1, and Gemini 3.8 TTS.',
     subsections: [
       { id: 'ai-comparison', title: 'Model Comparison & Best Uses' },
       { id: 'ai-streaming', title: 'Live Streaming SSE Responses' },
@@ -505,7 +505,7 @@ export default function DocsPage({
           <div className="docs-sidebar-footer">
             <div className="docs-version-pill">
               <span className="live-dot" />
-              <span>v2.5.0 • Powered by Gemini 2.5</span>
+              <span>v3.0 • Powered by Gemini 3.x</span>
             </div>
             <a
               href="https://aistudio.google.com"
@@ -665,7 +665,7 @@ function renderTopicContent(
               <div>
                 <strong>Philosophy: Creation Without Friction</strong>
                 <p>
-                  Start from a single sentence or prompt. Watch code and visual graphics assemble side by side. Iterate with Gemini 2.5 AI. Click one button to publish to the global arcade where anyone can play without installs or plugins.
+                  Start from a single sentence, prompt, or starter template. Watch HTML5, Canvas, WebGL, or React + TypeScript code assemble side by side. Iterate with Gemini 3.x AI, automatic Checkpoints, and Click-to-Edit inspection. Click one button to publish to the isolated Community Arcade where anyone can play without installs or plugins.
                 </p>
               </div>
             </div>
@@ -677,22 +677,22 @@ function renderTopicContent(
               <div className="pillar-card">
                 <div className="pillar-icon text-lilac"><Code2 size={22} /></div>
                 <h3>VS Code-Grade Monaco IDE</h3>
-                <p>Full IntelliSense, syntax coloring, multi-file project tree, and automatic asset resolution in your browser.</p>
+                <p>Full IntelliSense, Command Palette (Ctrl+K), Visual Asset Previewer, and live in-browser esbuild-wasm TypeScript/React bundling.</p>
               </div>
               <div className="pillar-card">
                 <div className="pillar-icon text-mint"><Sparkles size={22} /></div>
-                <h3>Gemini 2.5 AI Copilot</h3>
-                <p>Fast streaming SSE code generation, model waterfall cascading (Flash & Pro), and autonomous playtesting.</p>
+                <h3>Gemini 3.x AI Copilot &amp; Asset Studio</h3>
+                <p>Streaming SSE surgical patches, Plan vs Build mode, automatic Checkpoints, multimodal Vision playtesting, Nano Banana 2.1 art, and Gemini 3.8 TTS audio.</p>
               </div>
               <div className="pillar-card">
                 <div className="pillar-icon text-cyan"><Gamepad2 size={22} /></div>
-                <h3>Roblox & Steam-Style Arcade</h3>
-                <p>Curated player hub with spotlight hero games, genre discovery, search, and click-only player tracking.</p>
+                <h3>Community Arcade &amp; Play Hub</h3>
+                <p>Curated player hub with spotlight hero games, likes, comments, leaderboards, genre discovery, search, and anti-bot click-only player tracking.</p>
               </div>
               <div className="pillar-card">
                 <div className="pillar-icon text-peach"><ShieldCheck size={22} /></div>
-                <h3>Zero-Trust Isolated Sandbox</h3>
-                <p>HMAC-SHA256 signed private worker tokens, strict CSP, and full source code zip export for game owners.</p>
+                <h3>Dedicated Origin Sandbox (play.yulya.me)</h3>
+                <p>Cross-origin game execution with zero studio cookies, HMAC-SHA256 private preview tokens, strict CSP, and owner-only ZIP export.</p>
               </div>
             </div>
           </section>
@@ -703,10 +703,10 @@ function renderTopicContent(
               The Yulya Studio ecosystem is organized into four interconnected planes:
             </p>
             <ul className="doc-feature-list">
-              <li><strong>Frontend Client (React + TypeScript + Vite):</strong> Fast single-page application orchestrating editor state, live preview iframes, Monaco editor bindings, and Arcade views.</li>
-              <li><strong>Backend Engine (FastAPI + Async Motor MongoDB):</strong> Authenticated REST API with AES-GCM credential encryption, rate limiting, and project packaging.</li>
-              <li><strong>Sandbox Runner:</strong> Isolated iframe execution environment with runtime error bridge, synthetic input dispatch, and preserved WebGL canvas capturing.</li>
-              <li><strong>Gemini AI Intelligence Layer:</strong> Google Gemini 2.5 Flash, 2.5 Pro, and Flash-Lite connected via direct Server-Sent Events (SSE).</li>
+              <li><strong>Frontend Client (React + TypeScript + Vite):</strong> Fast single-page application orchestrating Monaco editor bindings, in-browser <code>esbuild-wasm</code> bundling, live preview iframes, Templates, Settings, and Arcade views.</li>
+              <li><strong>Backend Engine (FastAPI + MongoDB Atlas):</strong> Authenticated REST API with versioned AES-256-GCM + AAD key encryption, host-locked sessions, rate limiting, and streaming ZIP packaging.</li>
+              <li><strong>Dedicated Sandbox Runner (<code>play.yulya.me</code>):</strong> Strictly isolated cross-origin iframe execution environment with runtime error bridge, origin-pinned REPL, Click-to-Edit inspector, and preserved WebGL canvas capturing.</li>
+              <li><strong>Gemini 3.x AI Intelligence Layer:</strong> Google Gemini 3.8 Flash, 3.6 Flash, 3.5 Flash-Lite, Nano Banana 2.1, and Gemini 3.8 TTS connected via streaming Server-Sent Events (SSE) with keepalive heartbeats.</li>
             </ul>
           </section>
         </>
@@ -724,8 +724,8 @@ function renderTopicContent(
               Next, claim your unique creator handle (e.g., <code>@neonrider</code>). Your username is your personal branding across Yulya Studio:
             </p>
             <ul>
-              <li>Powers your public creator profile at <code>https://yulya.studio/@yourname</code></li>
-              <li>Forms the direct URL for all your games: <code>https://yulya.studio/yourname/game-name</code></li>
+              <li>Powers your public creator profile at <code>https://studio.yulya.me/@yourname</code></li>
+              <li>Forms the direct URL for all your games: <code>https://studio.yulya.me/yourname/game-name</code></li>
               <li>Establishes immutable ownership for your game codes and ZIP exports.</li>
             </ul>
           </section>
@@ -739,7 +739,7 @@ function renderTopicContent(
               <Lightbulb size={16} className="callout-icon" />
               <div>
                 <strong>Free of Charge</strong>
-                <p>Google AI Studio provides generous free rate limits for Gemini 2.5 Flash and Pro, meaning you can build and iterate games completely free.</p>
+                <p>Google AI Studio provides generous free rate limits for Gemini 3.8 Flash, 3.6 Flash, and 3.5 Flash-Lite, meaning you can build and iterate games completely free.</p>
               </div>
             </div>
             <p>
@@ -783,7 +783,7 @@ function renderTopicContent(
             <ol>
               <li>Click the <strong>Camera icon</strong> in the preview toolbar. This captures a crisp 480×270 WebP snapshot of the live game.</li>
               <li>Click the <strong>Publish</strong> button in the top menu bar to make your game public.</li>
-              <li>Share your link: <code>https://yulya.studio/{user?.username || 'yourname'}/space-dodger</code>. Anyone on desktop or mobile can play immediately!</li>
+              <li>Share your link: <code>https://studio.yulya.me/{user?.username || 'yourname'}/space-dodger</code>. Anyone on desktop or mobile can play immediately!</li>
             </ol>
           </section>
         </>
@@ -814,7 +814,7 @@ function renderTopicContent(
             </p>
             <div className="docs-url-card">
               <span className="url-method">PORTFOLIO</span>
-              <code>https://yulya.studio/<b>&#123;username&#125;</b></code>
+              <code>https://studio.yulya.me/<b>&#123;username&#125;</b></code>
             </div>
             <p>
               This page showcases:
@@ -850,7 +850,7 @@ function renderTopicContent(
           <section id="gemini-why" className="doc-section">
             <h2>Why a Gemini API Key is Required</h2>
             <p>
-              Yulya Studio integrates directly with Google&rsquo;s state-of-the-art <strong>Gemini 2.5 Flash</strong> and <strong>Gemini 2.5 Pro</strong> models. Rather than charging creators expensive monthly subscription fees with arbitrary token markups, Yulya Studio uses a direct-to-developer model:
+              Yulya Studio integrates directly with Google&rsquo;s state-of-the-art <strong>Gemini 3.8 Flash</strong>, <strong>Gemini 3.6 Flash</strong>, and <strong>Gemini 3.5 Flash-Lite</strong> models (plus Nano Banana 2.1 for sprites and Gemini 3.8 TTS for voice audio). Rather than charging creators expensive monthly subscription fees with arbitrary token markups, Yulya Studio uses a direct-to-developer model:
             </p>
             <ul>
               <li>You bring your own API key directly from Google AI Studio.</li>
@@ -896,7 +896,7 @@ function renderTopicContent(
           <section id="gemini-validation" className="doc-section">
             <h2>Live Key Verification</h2>
             <p>
-              When you submit a key, Yulya Studio performs an instant lightweight handshake with Google&rsquo;s <code>models/gemini-2.5-flash</code> endpoint. If the key is invalid, revoked, or has billing issues, you will immediately receive clear feedback before saving.
+              When you submit a key, Yulya Studio verifies it live against Google&rsquo;s Gemini models endpoint and selects the best available default model (such as <code>gemini-3.8-flash</code>). If the key is invalid, revoked, or has billing issues, you will immediately receive clear feedback before saving.
             </p>
           </section>
         </>
@@ -933,7 +933,7 @@ function renderTopicContent(
                 </div>
                 <div className="diagram-col col-4">
                   <b>COPILOT / AGENT</b>
-                  <span>Gemini 2.5 Flash / Pro</span>
+                  <span>Gemini 3.8 / 3.6 Flash</span>
                   <span>Streaming SSE</span>
                   <span>AI Playtester</span>
                 </div>
@@ -1141,7 +1141,7 @@ function renderTopicContent(
           <section id="snapshot-how" className="doc-section">
             <h2>The Cover Snapshot Engine</h2>
             <p>
-              Every game in the Roblox-style Arcade and Creator Profile features a visual cover card. Instead of generic placeholder icons, Yulya Studio features a built-in <strong>Cover Snapshot Camera</strong> located in the preview toolbar.
+              Every game in the Community Arcade and Creator Profile features a visual cover card. Instead of generic placeholder icons, Yulya Studio features a built-in <strong>Cover Snapshot Camera</strong> (powered by <code>modern-screenshot</code> and preserved WebGL buffers) located in the preview toolbar.
             </p>
             <p>
               Clicking the camera icon instantly captures the live, rendered gameplay visuals and saves an ultra-optimized <strong>480×270 WebP image</strong> directly to the project document.
@@ -1559,28 +1559,28 @@ function playLaser() {
       return (
         <>
           <section id="ai-comparison" className="doc-section">
-            <h2>Gemini 2.5 Model Comparison</h2>
+            <h2>Gemini 3.x Model Comparison</h2>
             <p>
-              Yulya Studio integrates directly with Google&rsquo;s flagship generative models:
+              Yulya Studio integrates directly with Google&rsquo;s latest Gemini 3.x generative models (with automatic remapping of legacy model IDs):
             </p>
             <div className="docs-pillar-grid">
               <div className="pillar-card">
                 <div className="pillar-icon text-lilac"><Zap size={22} /></div>
-                <h3>Gemini 2.5 Flash</h3>
+                <h3>Gemini 3.8 Flash</h3>
                 <span className="model-badge">DEFAULT RECOMMENDED</span>
-                <p>Lightning-fast generation, 1M token context window, incredible code comprehension. Perfect for 90% of game dev tasks, UI tweaking, and fast iterations.</p>
+                <p>Flagship speed, deep reasoning with preserved thought signatures, surgical <code>edit_file</code> patching, and true multimodal vision for 90% of game and web app tasks.</p>
               </div>
               <div className="pillar-card">
                 <div className="pillar-icon text-mint"><Sparkles size={22} /></div>
-                <h3>Gemini 2.5 Pro</h3>
-                <span className="model-badge pro">MAXIMUM REASONING</span>
-                <p>Advanced multi-step reasoning, complex 3D vector math, shader writing, and procedural world algorithms. Ideal for architecting intricate mechanics.</p>
+                <h3>Gemini 3.6 Flash</h3>
+                <span className="model-badge pro">RELIABLE FALLBACK</span>
+                <p>High-throughput secondary coding and architecture model with strong TypeScript, Three.js, and shader generation accuracy.</p>
               </div>
               <div className="pillar-card">
                 <div className="pillar-icon text-cyan"><Cpu size={22} /></div>
-                <h3>Gemini 2.0 Flash-Lite</h3>
+                <h3>Gemini 3.5 Flash-Lite</h3>
                 <span className="model-badge lite">HIGH VOLUME</span>
-                <p>Ultra-efficient, low-latency responses for quick syntax questions, boilerplate scaffolding, and lightweight helpers.</p>
+                <p>Ultra-efficient, low-latency tier for quick edits, boilerplate scaffolding, and uninterrupted waterfall completion.</p>
               </div>
             </div>
           </section>
@@ -1612,19 +1612,19 @@ function playLaser() {
             <div className="docs-waterfall-flow">
               <div className="wf-step">
                 <span className="wf-badge primary">Primary</span>
-                <b>Gemini 2.5 Flash</b>
-                <p>Executes request with maximum speed</p>
+                <b>Gemini 3.8 Flash</b>
+                <p>Executes request with flagship reasoning &amp; speed</p>
               </div>
               <div className="wf-arrow">➔ 429 Quota Exceeded ➔</div>
               <div className="wf-step">
                 <span className="wf-badge fallback">Fallback 1</span>
-                <b>Gemini 2.5 Pro</b>
+                <b>Gemini 3.6 Flash</b>
                 <p>Automatically retries request</p>
               </div>
               <div className="wf-arrow">➔ If Busy ➔</div>
               <div className="wf-step">
                 <span className="wf-badge fallback">Fallback 2</span>
-                <b>Flash-Lite</b>
+                <b>Gemini 3.5 Flash-Lite</b>
                 <p>Guarantees response delivery</p>
               </div>
             </div>
@@ -1725,7 +1725,7 @@ function playLaser() {
             </p>
             <div className="docs-url-card">
               <span className="url-method">GET</span>
-              <code>https://yulya.studio/<b>&#123;username&#125;</b>/<b>&#123;game-slug&#125;</b></code>
+              <code>https://studio.yulya.me/<b>&#123;username&#125;</b>/<b>&#123;game-slug&#125;</b></code>
             </div>
             <p>
               Anyone with this link can play the game immediately on any device (Windows, Mac, iOS, Android, Linux, Chromebook) without needing to log in or install anything.
@@ -1745,12 +1745,12 @@ function playLaser() {
           </section>
 
           <section id="publish-arcade" className="doc-section">
-            <h2>The Roblox & Steam-Style Arcade</h2>
+            <h2>The Community Arcade &amp; Play Wrapper</h2>
             <p>
               The Yulya Studio Arcade (accessible at <button className="inline-link" onClick={() => setPage('arcade')}>/arcade</button>) is the central discovery hub for the entire community:
             </p>
             <ul>
-              <li><strong>Spotlight Hero:</strong> Prominently highlights featured games with live animated badges.</li>
+              <li><strong>Spotlight Hero &amp; Play Wrapper:</strong> Play games in Theater or Fullscreen inside an isolated <code>play.yulya.me</code> sandbox with Likes, Comments, High-Score Leaderboards (<code>YulyaSDK.submitScore</code>), Embed codes, and Abuse Reporting.</li>
               <li><strong>Genre Filters:</strong> Filter instantly by ARCADE, ACTION, PUZZLE, PLATFORMER, SHOOTER, RACING, RPG, CASUAL, STRATEGY, and RETRO.</li>
               <li><strong>Sorting Engines:</strong> Sort by Most Played, Newest, or Title A-Z.</li>
             </ul>
@@ -1848,9 +1848,9 @@ function playLaser() {
           </section>
 
           <section id="export-ip" className="doc-section">
-            <h2>Intellectual Property & Anti-Fork Policy</h2>
+            <h2>Intellectual Property &amp; Opt-In Remix Control</h2>
             <p>
-              Unlike platforms that force all projects to be publicly remixable or cloneable, Yulya Studio respects creator ownership. There is <strong>no unauthorized remix or forking</strong>. Other users cannot clone your game into their account without your explicit permission.
+              Unlike platforms that force all projects to be publicly remixable, Yulya Studio respects creator ownership. <strong>Remixing is disabled by default</strong> on every project. Other creators can only clone a public project if you explicitly opt in from your project&rsquo;s edit dialog.
             </p>
           </section>
         </>
@@ -1883,9 +1883,9 @@ function playLaser() {
               Every game response includes a strict Content Security Policy header:
             </p>
             <ul>
-              <li><strong>Frame Ancestors:</strong> Restricted to <code>'self'</code> and the Yulya Studio origin. Unapproved third-party websites cannot embed your games in malicious iframes.</li>
-              <li><strong>Script Sources:</strong> Limited to <code>'self'</code>, safe inline scripts, and whitelisted CDNs (cdnjs, jsdelivr, unpkg, skypack, esm.sh).</li>
-              <li><strong>Cookie Isolation:</strong> The preview iframe has zero access to HTTP-only authentication session cookies.</li>
+              <li><strong>Dedicated Origin (<code>play.yulya.me</code>):</strong> User HTML, JS, CSS, and SVG games execute exclusively on <code>play.yulya.me</code> — never on <code>studio.yulya.me</code> — and receive zero authentication cookies.</li>
+              <li><strong>Frame Ancestors &amp; Sandbox:</strong> Restricted to <code>'self'</code> and the Yulya Studio origin, with <code>form-action 'none'</code>, <code>object-src 'none'</code>, and strict SVG sandbox headers.</li>
+              <li><strong>Origin-Pinned Bridge:</strong> Studio telemetry, Click-to-Edit picking, screenshot capture, and the iframe-scoped Terminal REPL communicate exclusively via exact origin-verified <code>postMessage</code> channels.</li>
             </ul>
           </section>
 

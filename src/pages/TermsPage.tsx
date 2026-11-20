@@ -143,8 +143,8 @@ export default function TermsPage({
       content: (
         <>
           <p>
-            Yulya Studio incorporates an artificial intelligence copilot and autonomous playtesting engine powered by
-            Google Gemini models (e.g., Gemini 2.5 Flash, Gemini 2.5 Pro).
+            Yulya Studio incorporates an artificial intelligence copilot, asset studio, and autonomous playtesting engine powered by
+            Google Gemini models (including Gemini 3.8 Flash, Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, Nano Banana 2.1, and Gemini 3.8 TTS).
           </p>
           <h4>Bring-Your-Own-Key (BYOK) Responsibility</h4>
           <p>
@@ -256,7 +256,7 @@ export default function TermsPage({
           </p>
           <ul>
             <li><strong>Owner-Exclusive ZIP Export:</strong> The full standalone project package (.zip), including all HTML, TypeScript/JavaScript, CSS, and asset manifests, can ONLY be downloaded by the authenticated creator who owns the project.</li>
-            <li><strong>Anti-Fork & Anti-Scraping Protection:</strong> Public games in the Arcade are served as bundled client experiences for play. We do not provide a one-click “Remix” or “Fork” button that duplicates private project trees without creator authorization.</li>
+            <li><strong>Opt-In Remix Control &amp; Anti-Scraping Protection:</strong> Public games in the Arcade are served on an isolated play sandbox for browser gameplay. Remixing is <strong>disabled by default</strong> on every project; another creator can only clone a public project if you explicitly opt in via your project settings.</li>
             <li><strong>Prohibition on Plagiarism:</strong> Scraping, reverse-engineering, or ripping assets from another creator’s published game to re-upload it as your own creation is a direct breach of these Terms and ground for immediate takedown and account suspension.</li>
           </ul>
         </>

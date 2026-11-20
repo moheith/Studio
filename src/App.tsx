@@ -18,6 +18,9 @@ import ProfilePage from './pages/ProfilePage'
 import PublicProfilePage from './pages/PublicProfilePage'
 import StudioPage from './pages/StudioPage'
 import ArcadePage from './pages/ArcadePage'
+import PlayGamePage from './pages/PlayGamePage'
+import TemplatesPage from './pages/TemplatesPage'
+import SettingsPage from './pages/SettingsPage'
 import DocsPage from './pages/DocsPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
@@ -41,13 +44,32 @@ function projectToGame(value: Record<string, unknown>): Game {
     plays: String(value.plays ?? 0),
     description: String(value.description ?? 'A game made in Yulya Studio.'),
     visibility: value.visibility === 'public' ? 'public' : 'private',
-    thumbnail: value.thumbnail ? String(value.thumbnail) : undefined
+    thumbnail: value.thumbnail ? String(value.thumbnail) : undefined,
+    allow_remix: Boolean(value.allow_remix),
+    likes_count: Number(value.likes_count ?? 0),
+    play_url: value.play_url ? String(value.play_url) : undefined,
+    share_url: value.share_url ? String(value.share_url) : undefined,
   }
 }
 function publicGameUrl(username: string, slug: string) {
-  const origin = (import.meta.env.VITE_API_ORIGIN || window.location.origin).replace(/\/$/, '')
+  const origin = window.location.origin.replace(/\/$/, '')
   return `${origin}/${encodeURIComponent(username)}/${encodeURIComponent(slug)}`
 }
+
+function inferMonacoLanguage(path: string): string {
+  const low = path.toLowerCase()
+  if (low.endsWith('.html') || low.endsWith('.htm')) return 'html'
+  if (low.endsWith('.css')) return 'css'
+  if (low.endsWith('.json')) return 'json'
+  if (low.endsWith('.ts') || low.endsWith('.tsx')) return 'typescript'
+  if (low.endsWith('.md')) return 'markdown'
+  return 'javascript'
+}
+
+const RESERVED_TOP_ROUTES = new Set([
+  'api', 'arcade', 'templates', 'settings', 'docs', 'terms', 'privacy',
+  'login', 'register', 'verify-email', 'setup-profile', 'profile', 'studio', 'not-found',
+])
 
 function editorPath(username: string, slug: string) {
   return `/${encodeURIComponent(username)}/${encodeURIComponent(slug)}/edit`
@@ -73,18 +95,49 @@ const initialTree: FileEntry[] = []
 export default function App() {
   const pageFromPath = (): Page => {
     const route = window.location.pathname
-    const fixed = ({ '/': 'home', '/arcade': 'arcade', '/docs': 'docs', '/terms': 'terms', '/privacy': 'privacy', '/login': 'login', '/register': 'register', '/verify-email': 'verify-email', '/setup-profile': 'setup-profile', '/profile': 'profile', '/studio': 'studio', '/not-found': 'not-found' }[route] as Page | undefined)
+    const fixed = ({
+      '/': 'home',
+      '/arcade': 'arcade',
+      '/templates': 'templates',
+      '/settings': 'settings',
+      '/docs': 'docs',
+      '/terms': 'terms',
+      '/privacy': 'privacy',
+      '/login': 'login',
+      '/register': 'register',
+      '/verify-email': 'verify-email',
+      '/setup-profile': 'setup-profile',
+      '/profile': 'profile',
+      '/studio': 'studio',
+      '/not-found': 'not-found',
+    }[route] as Page | undefined)
     if (fixed) return fixed
     const parts = route.split('/').filter(Boolean)
     if (parts.length === 3 && parts[2] === 'edit') return 'studio'
+    if (parts.length === 2 && !RESERVED_TOP_ROUTES.has(parts[0].toLowerCase())) return 'play'
     if (parts.length === 1) return 'profile'
     return 'home'
   }
   const [page, setPageState] = useState<Page>(pageFromPath)
   const setPage = (next: Page, pathOverride?: string) => {
-    const route: Record<Page, string> = { home: '/', arcade: '/arcade', docs: '/docs', terms: '/terms', privacy: '/privacy', login: '/login', register: '/register', 'verify-email': '/verify-email', 'setup-profile': '/setup-profile', profile: '/profile', studio: '/studio', 'not-found': '/not-found' }
+    const route: Record<Page, string> = {
+      home: '/',
+      arcade: '/arcade',
+      templates: '/templates',
+      play: '/arcade',
+      settings: '/settings',
+      docs: '/docs',
+      terms: '/terms',
+      privacy: '/privacy',
+      login: '/login',
+      register: '/register',
+      'verify-email': '/verify-email',
+      'setup-profile': '/setup-profile',
+      profile: '/profile',
+      studio: '/studio',
+      'not-found': '/not-found',
+    }
     const path = pathOverride ?? (next === 'profile' && user?.username ? `/${encodeURIComponent(user.username)}` : next === 'studio' && currentGame && user?.username ? editorPath(user.username, currentGame.id) : route[next])
-    // Dialogs belong to the page that opened them; never carry one across routes.
     setModal(null)
     if (`${window.location.pathname}${window.location.hash}` !== path) window.history.pushState({}, '', path)
     setPageState(next)
@@ -110,18 +163,21 @@ export default function App() {
   const [apiKey, setApiKey] = useState('')
   const [hasKey, setHasKey] = useState(false)
   const [models, setModels] = useState<Array<{ id: string; display_name: string }>>([
-    {"id": "antigravity-preview-latest", "display_name": "Antigravity (Gemini 3.6 Flash)"},
-    {"id": "antigravity-preview-09-2026", "display_name": "Antigravity (Gemini 3.8 Flash)"},
-    {"id": "gemini-3.6-flash", "display_name": "Gemini 3.6 Flash"},
-    {"id": "gemini-3.8-flash", "display_name": "Gemini 3.8 Flash"},
+    { id: 'antigravity-preview-09-2026', display_name: 'Antigravity (Gemini 3.8 Flash)' },
+    { id: 'antigravity-preview-latest', display_name: 'Antigravity (Gemini 3.6 Flash)' },
+    { id: 'gemini-3.8-flash', display_name: 'Gemini 3.8 Flash' },
+    { id: 'gemini-3.6-flash', display_name: 'Gemini 3.6 Flash' },
   ])
-  const [selectedModel, setSelectedModel] = useState('antigravity-preview-latest')
+  const [selectedModel, setSelectedModel] = useState('antigravity-preview-09-2026')
   const [isAntigravityMode, setIsAntigravityMode] = useState<boolean>(true)
+  const [aiMode, setAiMode] = useState<'build' | 'plan'>('build')
+  const [playOrigin, setPlayOrigin] = useState<string>('')
   const [useWaterfall, setUseWaterfall] = useState<boolean>(() => {
     const saved = localStorage.getItem('yulya:use-waterfall')
     return saved !== null ? saved === 'true' : true
   })
   const [projectName, setProjectName] = useState('little-star')
+  const [projectTemplate, setProjectTemplate] = useState('blank')
   const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [saveState, setSaveState] = useState('Saved')
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set())
@@ -180,7 +236,9 @@ export default function App() {
   }, [page, currentGame?.title, user?.username])
 
   useEffect(() => {
-    api<{ user: User; csrf_token: string; needs_username: boolean }>('/api/auth/me').then(async (session) => {
+    api<{ play_origin?: string }>('/api/health').then((h) => { if (h.play_origin) setPlayOrigin(h.play_origin) }).catch(() => {})
+    api<{ user: User; csrf_token: string; needs_username: boolean; play_origin?: string }>('/api/auth/me').then(async (session) => {
+      if (session.play_origin) setPlayOrigin(session.play_origin)
       setCsrfToken(session.csrf_token); setUser(session.user); setHasKey(Boolean((session.user as User & { has_api_key?: boolean }).has_api_key))
       if ((session.user as User & { has_api_key?: boolean }).has_api_key) api<{models: Array<{id: string; display_name: string}>}>('/api/models').then(result => { setModels(result.models); if (result.models[0]) setSelectedModel(result.models[0].id) }).catch(() => {})
       if (session.needs_username || !session.user?.username) setPage('setup-profile')
@@ -214,14 +272,14 @@ export default function App() {
 
   useEffect(() => {
     if (!currentProjectId || !activeFile) return
-    if (code[activeFile] === undefined && /\.(html|css|js|mjs|json|txt|csv|tsv)$/i.test(activeFile)) {
+    if (code[activeFile] === undefined && /\.(html|htm|css|js|mjs|cjs|ts|tsx|jsx|json|md|glsl|vert|frag|txt|csv|tsv)$/i.test(activeFile)) {
       getFile(currentProjectId, activeFile).then(res => {
         setCode(prev => ({ ...prev, [activeFile]: res.content }))
       }).catch(() => {})
     }
   }, [currentProjectId, activeFile, code])
 
-  const language = useMemo(() => activeFile.endsWith('.html') ? 'html' : activeFile.endsWith('.css') ? 'css' : activeFile.endsWith('.json') ? 'json' : 'javascript', [activeFile])
+  const language = useMemo(() => inferMonacoLanguage(activeFile), [activeFile])
   const openStudio = async (game?: Game) => {
     if (game) { setCurrentGame(game); setCurrentProjectId('') }
     const project = game ?? currentGame
@@ -256,18 +314,34 @@ export default function App() {
       }
     }, 600)
   }
-  const handleNewProject = async () => {
+  const createProjectWithTemplate = async (title: string, vis: 'private' | 'public', tplId = 'blank') => {
     if (!user) { setPage('login'); setModal(null); return }
-    if (!hasKey) { setModal('api-key'); return }
+    const result = await api<{ project: Record<string, unknown> }>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ title, visibility: vis, template_id: tplId }),
+    })
+    const project = projectToGame(result.project)
+    setProjects((items) => [project, ...items])
+    setCurrentGame(project)
+    setCurrentProjectId(project.projectId ?? '')
+    setCode(starterFiles)
+    setTree(initialTree)
+    setPage('studio', editorPath(user.username, project.id))
+    setModal(null)
+    if (project.projectId) await loadProject(project.projectId, project)
+  }
+
+  const handleNewProject = async () => {
     try {
-      const result = await api<{ project: Record<string, unknown> }>('/api/projects', { method: 'POST', body: JSON.stringify({ title: projectName, visibility }) })
-      const project = projectToGame(result.project); setProjects((items) => [project, ...items]); setCurrentGame(project); setCurrentProjectId(project.projectId ?? ''); setCode(starterFiles); setTree(initialTree); setPage('studio', editorPath(user.username, project.id)); setModal(null)
-      if (project.projectId) await loadProject(project.projectId, project)
-    } catch (error) { notify(error instanceof Error ? error.message : 'Could not create project') }
+      await createProjectWithTemplate(projectName, visibility, projectTemplate)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not create project')
+    }
   }
   const submitPrompt = async () => {
     if (!chat.trim()) return
-    if (!selectedModel) { notify('Connect a key and choose an available Gemini model first'); return }
+    if (!hasKey) { setModal('api-key'); notify('Connect your Google Gemini API key to use AI Copilot'); return }
+    if (!selectedModel) { notify('Choose an available Gemini model first'); return }
     const prompt = chat.trim()
     setChat('')
     const userMsgId = Date.now().toString()
@@ -304,8 +378,11 @@ export default function App() {
     try {
       let answer = ''
       const toolsUsed: string[] = []
-      for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel, antigravity: isAntigravityMode, waterfall: useWaterfall }, controller.signal)) {
+      for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel, antigravity: isAntigravityMode, waterfall: useWaterfall, mode: aiMode }, controller.signal)) {
         resetActivityTimer()
+        if (event.type === 'checkpoint') {
+          notify('Checkpoint auto-saved (rollback anytime via History)')
+        }
         if (event.type === 'thought') {
           const chunk = event.data.text || ''
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -405,7 +482,7 @@ export default function App() {
         const current = await api<{ files: Array<{ path: string }> }>(`/api/projects/${currentProjectId}/files`)
         const nextCode: Record<string, string> = {}
         for (const file of current.files) {
-          if (/\.(html|css|js|mjs|json)$/.test(file.path)) {
+          if (/\.(html|htm|css|js|mjs|cjs|ts|tsx|jsx|json|md|glsl|vert|frag|txt|csv|tsv)$/i.test(file.path)) {
             nextCode[file.path] = (await getFile(currentProjectId, file.path)).content
           }
         }
@@ -413,7 +490,7 @@ export default function App() {
         setTree(current.files.map(file => ({
           name: file.path,
           kind: 'file',
-          language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript'
+          language: inferMonacoLanguage(file.path)
         })))
         setPreviewKey(v => v + 1)
       }
@@ -440,12 +517,12 @@ export default function App() {
     if (!currentProjectId || !currentGame) return
     const next = currentGame.visibility === 'public' ? 'private' : 'public'
     try {
-      await api(`/api/projects/${currentProjectId}/visibility`, { method: 'PATCH', body: JSON.stringify({ visibility: next }) })
-      const updated = { ...currentGame, visibility: next as 'public' | 'private' }
+      const visRes = await api<{ visibility: string; url?: string | null; play_url?: string | null }>(`/api/projects/${currentProjectId}/visibility`, { method: 'PATCH', body: JSON.stringify({ visibility: next }) })
+      const updated = { ...currentGame, visibility: next as 'public' | 'private', play_url: visRes.play_url || undefined }
       setCurrentGame(updated); setProjects(items => items.map(item => item.projectId === currentProjectId ? updated : item))
-      if (next === 'public') setPreviewUrl(publicGameUrl(user?.username ?? currentGame.creator, updated.id))
-      else { const token = await api<{url:string}>(`/api/projects/${currentProjectId}/preview-token`, { method: 'POST', body: '{}' }); setPreviewUrl(token.url) }
-      setPreviewKey(v => v + 1); notify(next === 'public' ? 'Game is public in the arcade' : 'Game is private')
+      if (next === 'public') setPreviewUrl(visRes.play_url || `${(playOrigin || window.location.origin).replace(/\/$/, '')}/${encodeURIComponent(user?.username ?? currentGame.creator)}/${encodeURIComponent(updated.id)}/`)
+      else { const token = await api<{url:string; play_origin?: string}>(`/api/projects/${currentProjectId}/preview-token`, { method: 'POST', body: '{}' }); if (token.play_origin) setPlayOrigin(token.play_origin); setPreviewUrl(token.url) }
+      setPreviewKey(v => v + 1); notify(next === 'public' ? 'Project is now public in the Arcade' : 'Project is now private')
     }
     catch (error) { notify(error instanceof Error ? error.message : 'Could not change visibility') }
   }
@@ -463,7 +540,7 @@ export default function App() {
     }
   }
 
-  const handleUpdateProjectDetails = async (projectId: string, details: { title: string; description: string; genre: string }) => {
+  const handleUpdateProjectDetails = async (projectId: string, details: { title: string; description: string; genre: string; allow_remix?: boolean }) => {
     try {
       const res = await updateProjectDetails(projectId, details)
       const updated = projectToGame(res.project)
@@ -563,8 +640,8 @@ export default function App() {
   const addFile = (explicitName?: string) => {
     const raw = typeof explicitName === 'string' ? explicitName : newFileName
     const name = raw.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
-    if (!name || name.includes('..') || !/\.(html|css|js|mjs|json|png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(name)) { notify('Use a supported browser file name'); return }
-    setTree((items) => items.some((file) => file.name === name) ? items : [...items, { name, kind: 'file', language: name.endsWith('.css') ? 'css' : name.endsWith('.html') ? 'html' : name.endsWith('.json') ? 'json' : 'javascript' }])
+    if (!name || name.includes('..') || !/\.(html|htm|css|js|mjs|cjs|ts|tsx|jsx|json|md|glsl|vert|frag|txt|csv|tsv|svg|png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(name)) { notify('Use a supported browser file name'); return }
+    setTree((items) => items.some((file) => file.name === name) ? items : [...items, { name, kind: 'file', language: inferMonacoLanguage(name) }])
     setCode((files) => ({ ...files, [name]: files[name] ?? '' }))
     setActiveFile(name)
     setOpenFiles((tabs) => tabs.includes(name) ? tabs : [...tabs, name])
@@ -579,7 +656,7 @@ export default function App() {
       return
     }
     const clean = newPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim()
-    if (!clean || clean.includes('..') || !/\.(html|css|js|mjs|json|png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(clean)) {
+    if (!clean || clean.includes('..') || !/\.(html|htm|css|js|mjs|cjs|ts|tsx|jsx|json|md|glsl|vert|frag|txt|csv|tsv|svg|png|jpe?g|webp|gif|mp3|wav|ogg|mp4|webm|woff2?)$/i.test(clean)) {
       notify('Please enter a valid file name with supported extension')
       return
     }
@@ -660,8 +737,10 @@ export default function App() {
           project: Record<string, unknown>
           files: Array<{ path: string; size: number; etag: string; content: string | null }>
           preview_url: string
+          play_origin?: string
         }>(`/api/projects/${id}/bundle`)
 
+        if (bundle.play_origin) setPlayOrigin(bundle.play_origin)
         precomputedPreview = bundle.preview_url || ''
         for (const file of bundle.files) {
           if (file.content !== null && file.content !== undefined) {
@@ -670,7 +749,7 @@ export default function App() {
           treeList.push({
             name: file.path,
             kind: 'file',
-            language: file.path.endsWith('.css') ? 'css' : file.path.endsWith('.html') ? 'html' : file.path.endsWith('.json') ? 'json' : 'javascript'
+            language: inferMonacoLanguage(file.path)
           })
         }
       } catch {
@@ -815,8 +894,67 @@ export default function App() {
     <VerifyEmailPage email={verificationEmail} onBack={() => setPage('register')} onLogin={(nextUser, csrf) => { sessionStorage.removeItem('yulya-verification-email'); completeLogin(nextUser, csrf) }} notify={notify} />
     {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
   </>
+  if (page === 'play') {
+    const parts = window.location.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    const targetUser = (parts[0] || currentGame?.creator || '').replace(/^@/, '')
+    const targetSlug = parts[1] || currentGame?.id || ''
+    return (
+      <>
+        <PlayGamePage
+          username={targetUser}
+          slug={targetSlug}
+          user={user}
+          playOrigin={playOrigin}
+          setPage={setPage}
+          onOpenCreatorProfile={(u) => setPage('profile', `/@${encodeURIComponent(u)}`)}
+          onOpenRemixedProject={async (proj) => {
+            const game = projectToGame(proj)
+            setProjects((items) => [game, ...items])
+            await openStudio(game)
+          }}
+          notify={notify}
+        />
+        {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
+      </>
+    )
+  }
+  if (page === 'templates') {
+    return (
+      <>
+        <TemplatesPage
+          user={user}
+          setPage={setPage}
+          onCreateFromTemplate={async (tplId, title) => {
+            await createProjectWithTemplate(title, 'private', tplId)
+          }}
+          notify={notify}
+        />
+        {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
+        {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
+      </>
+    )
+  }
+  if (page === 'settings') {
+    return (
+      <>
+        <SettingsPage
+          user={user}
+          hasKey={hasKey}
+          setPage={setPage}
+          onOpenKeyModal={() => setModal('api-key')}
+          onAccountDeleted={() => {
+            setCsrfToken(''); setUser(null); setProjects([]); setHasKey(false); setModels([]); setSelectedModel(''); setPage('home')
+          }}
+          notify={notify}
+        />
+        {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
+        {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
+      </>
+    )
+  }
   if (page === 'profile') {
-    const routeUsername = decodeURIComponent(window.location.pathname.split('/').filter(Boolean)[0] ?? '')
+    // Strip leading '@' so /@username links resolve cleanly (BUG-02)
+    const routeUsername = decodeURIComponent(window.location.pathname.split('/').filter(Boolean)[0] ?? '').replace(/^@/, '')
     const isOwnProfile = window.location.pathname === '/profile' || Boolean(user?.username && routeUsername.toLowerCase() === user.username.toLowerCase())
     if (!isOwnProfile && routeUsername) {
       if (!sessionReady) return <main className="public-profile-shell"><div className="public-profile-loading">Loading creator profile…</div></main>
@@ -825,10 +963,10 @@ export default function App() {
     return <>
     <ProfilePage
     user={user} hasKey={hasKey} projects={projects}
-    onHome={() => setPage('home')} onArcade={() => {
-      setPage('home')
-      window.setTimeout(() => document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
-    }} onCreate={() => {
+    onHome={() => setPage('home')} onArcade={() => setPage('arcade')}
+    onTemplates={() => setPage('templates')}
+    onSettings={() => setPage('settings')}
+    onCreate={() => {
       if (!user?.username) {
         notify('Claim your unique username before creating a project')
         document.getElementById('username-setup')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -856,7 +994,7 @@ export default function App() {
     onTrackPlay={handleTrackPlay}
     notify={notify}
     />
-    {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
+    {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} templateId={projectTemplate} setTemplateId={setProjectTemplate} close={() => setModal(null)} create={handleNewProject}/>}
     {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
     {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}
     </>
@@ -912,11 +1050,11 @@ export default function App() {
           games={games}
           onSelectGame={(game) => {
             setCurrentGame(game)
-            handleTrackPlay(game.creator, game.id)
-            setModal('game')
+            setPage('play', `/${encodeURIComponent(game.creator)}/${encodeURIComponent(game.id)}`)
           }}
           onTrackPlay={handleTrackPlay}
           onOpenStudio={(game) => openStudio(game)}
+          onLogout={logout}
           setPage={setPage}
           onLogin={completeLogin}
           notify={notify}
@@ -931,14 +1069,13 @@ export default function App() {
             close={() => setModal(null)}
             play={() => {
               if (currentGame.visibility === 'public') {
-                handleTrackPlay(currentGame.creator, currentGame.id)
-                window.open(publicGameUrl(currentGame.creator, currentGame.id), '_blank', 'noopener,noreferrer')
+                setPage('play', `/${encodeURIComponent(currentGame.creator)}/${encodeURIComponent(currentGame.id)}`)
               } else notify('This project is private')
               setModal(null)
             }}
           />
         )}
-        {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
+        {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} templateId={projectTemplate} setTemplateId={setProjectTemplate} close={() => setModal(null)} create={handleNewProject}/>}
         {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
         {toast && <div className="toast"><Check size={15}/>{toast}</div>}
       </>
@@ -946,7 +1083,7 @@ export default function App() {
   }
   if (page === 'studio') return <><StudioPage {...{
     user, currentGame, activeFile, openFiles, setOpenFiles, code, language, tree, sidebarOpen, terminalOpen, chat, chatMessages, saveState, previewKey, currentProjectId, previewUrl, newFileName, modal, models, selectedModel, dirtyFiles, setDirtyFiles,
-    isAntigravityMode, setIsAntigravityMode,
+    isAntigravityMode, setIsAntigravityMode, playOrigin, aiMode, setAiMode,
     useWaterfall, setUseWaterfall: (v: boolean) => {
       setUseWaterfall(v)
       localStorage.setItem('yulya:use-waterfall', String(v))
@@ -967,9 +1104,9 @@ export default function App() {
       <nav className={`main-nav ${mobileNav ? 'nav-open' : ''}`}>
         <a href="#showcase" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('showcase')?.scrollIntoView({ behavior: 'smooth' }) }}>Features</a>
         <a href="/arcade" onClick={(e) => { e.preventDefault(); setMobileNav(false); setPage('arcade') }}>Arcade</a>
+        <a href="/templates" onClick={(e) => { e.preventDefault(); setMobileNav(false); setPage('templates') }}>Templates</a>
         <a href="/docs" onClick={(e) => { e.preventDefault(); setMobileNav(false); setPage('docs') }}>Docs</a>
-        <a href="#discover" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Community Games</a>
-        <a href="#how" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }) }}>Workflow</a>
+        <a href="#discover" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Community</a>
       </nav>
       <div className="top-actions">
         {user ? (
@@ -1045,8 +1182,8 @@ export default function App() {
           <div className="gallery-empty">{games.length === 0 ? "No public games published yet. Be the first to publish one!" : "No games found in this genre."}</div>
         )}
         <div className="gallery-footer">
-          <span><span className="live-dot"/> {games.length} PUBLIC GAMES</span>
-          <button className="quiet-button" onClick={() => setPage('arcade')}>Explore all in Roblox Arcade <ArrowRight size={14}/></button>
+          <span><span className="live-dot"/> {games.length} PUBLIC PROJECTS</span>
+          <button className="quiet-button" onClick={() => setPage('arcade')}>Explore all in Yulya Arcade <ArrowRight size={14}/></button>
         </div>
       </section>
       <section className="how-section" id="how"><div className="how-title"><div className="eyebrow">FROM THOUGHT TO THUMBS-UP</div><h2>Three steps.<br/><em>One playable idea.</em></h2></div><div className="how-steps"><div className="how-step"><span className="step-index">01</span><div className="step-icon"><MessageSquare size={20}/></div><h3>Tell it what you imagine</h3><p>Start with a sentence, a sketch in your head, or a “what if…”</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">02</span><div className="step-icon peach-step"><Code2 size={20}/></div><h3>Make it yours</h3><p>See the code and the game side by side. Tweak anything you like.</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">03</span><div className="step-icon mint-step"><Rocket size={20}/></div><h3>Send it to a friend</h3><p>Share one link. Anyone can play it in their browser.</p></div></div></section>
@@ -1062,6 +1199,7 @@ export default function App() {
       </div>
       <div className="footer-links">
         <a href="/arcade" onClick={(e) => { e.preventDefault(); setPage('arcade') }}>Arcade</a>
+        <a href="/templates" onClick={(e) => { e.preventDefault(); setPage('templates') }}>Templates</a>
         <a href="/docs" onClick={(e) => { e.preventDefault(); setPage('docs') }}>Documentation</a>
         <a href="/terms" onClick={(e) => { e.preventDefault(); setPage('terms') }}>Terms of Service</a>
         <a href="/privacy" onClick={(e) => { e.preventDefault(); setPage('privacy') }}>Privacy Policy</a>
@@ -1077,14 +1215,13 @@ export default function App() {
         close={() => setModal(null)}
         play={() => {
           if (currentGame.visibility === 'public') {
-            handleTrackPlay(currentGame.creator, currentGame.id)
-            window.open(publicGameUrl(currentGame.creator, currentGame.id), '_blank', 'noopener,noreferrer')
+            setPage('play', `/${encodeURIComponent(currentGame.creator)}/${encodeURIComponent(currentGame.id)}`)
           } else notify('This project is private')
           setModal(null)
         }}
       />
     )}
-    {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} close={() => setModal(null)} create={handleNewProject}/>}
+    {modal === 'new-project' && <NewProjectModal name={projectName} setName={setProjectName} visibility={visibility} setVisibility={setVisibility} templateId={projectTemplate} setTemplateId={setProjectTemplate} close={() => setModal(null)} create={handleNewProject}/>}
     {modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>}
     {toast && <div className="toast"><Check size={15}/>{toast}</div>}
   </div>
@@ -1121,8 +1258,34 @@ function GameCard({ game, index, onClick }: { game: Game; index: number; onClick
   )
 }
 
-function NewProjectModal({ name, setName, visibility, setVisibility, close, create }: { name: string; setName: (s: string) => void; visibility: 'private' | 'public'; setVisibility: (v: 'private' | 'public') => void; close: () => void; create: () => void }) {
-  return <Modal close={close}><div className="modal-icon"><Sparkles size={18}/></div><div className="eyebrow">NEW PROJECT</div><h2>Give your game a name.</h2><p>We’ll set up a clean, blank canvas with a live preview.</p><label>Project name<input autoFocus value={name} onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, '-'))}/></label><div className="visibility-choice"><button className={visibility === 'private' ? 'visibility-selected' : ''} onClick={() => setVisibility('private')}><LockKeyhole size={15}/><span><b>Private</b><small>Only you can see it</small></span>{visibility === 'private' && <Check size={14}/>}</button><button className={visibility === 'public' ? 'visibility-selected' : ''} onClick={() => setVisibility('public')}><Globe2 size={15}/><span><b>Public</b><small>Show it in the arcade</small></span>{visibility === 'public' && <Check size={14}/>}</button></div><button className="button button-primary modal-submit" onClick={create}>Create project <ArrowRight size={15}/></button></Modal>
+function NewProjectModal({ name, setName, visibility, setVisibility, templateId, setTemplateId, close, create }: { name: string; setName: (s: string) => void; visibility: 'private' | 'public'; setVisibility: (v: 'private' | 'public') => void; templateId: string; setTemplateId: (t: string) => void; close: () => void; create: () => void }) {
+  const templates = [
+    { id: 'blank', label: 'Blank HTML/CSS/JS' },
+    { id: 'canvas-arcade', label: 'Canvas 2D Arcade' },
+    { id: 'react-ts-tailwind', label: 'React + TypeScript (esbuild)' },
+    { id: 'threejs-3d', label: 'Three.js 3D Scene' },
+    { id: 'glsl-shader', label: 'WebGL2 GLSL Shader' },
+    { id: 'phaser-platformer', label: 'Phaser 3 Platformer' },
+    { id: 'landing-page', label: 'Landing Page' },
+    { id: 'interactive-tool', label: 'Interactive Web Tool' },
+  ]
+  return (
+    <Modal close={close}>
+      <div className="modal-icon"><Sparkles size={18}/></div>
+      <div className="eyebrow">NEW PROJECT</div>
+      <h2>Give your project a name.</h2>
+      <p>Pick a starter runtime and start coding immediately with live sandbox preview.</p>
+      <label>Project name<input autoFocus value={name} onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, '-'))}/></label>
+      <label style={{ marginTop: 10 }}>
+        Starter template
+        <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: '#0e1017', border: '1px solid rgba(148,163,184,0.22)', color: '#f8fafc', marginTop: 6 }}>
+          {templates.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+        </select>
+      </label>
+      <div className="visibility-choice"><button className={visibility === 'private' ? 'visibility-selected' : ''} onClick={() => setVisibility('private')}><LockKeyhole size={15}/><span><b>Private</b><small>Only you can see it</small></span>{visibility === 'private' && <Check size={14}/>}</button><button className={visibility === 'public' ? 'visibility-selected' : ''} onClick={() => setVisibility('public')}><Globe2 size={15}/><span><b>Public</b><small>Show it in the arcade</small></span>{visibility === 'public' && <Check size={14}/>}</button></div>
+      <button className="button button-primary modal-submit" onClick={create}>Create project <ArrowRight size={15}/></button>
+    </Modal>
+  )
 }
 function KeyModal({ value, setValue, close, save, remove, hasKey }: { value: string; setValue: (s: string) => void; close: () => void; save: () => Promise<void>; remove: () => void; hasKey: boolean }) {
   const [checking, setChecking] = useState(false)

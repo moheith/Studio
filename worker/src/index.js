@@ -1,26 +1,45 @@
-const allowed = new Set(['html','css','js','mjs','json','png','jpg','jpeg','webp','gif','mp3','wav','ogg','mp4','webm','woff','woff2']);
-const reserved = new Set(['api','auth','studio','profile','settings','assets','static','admin','health']);
+const allowed = new Set([
+  'html','htm','css','js','mjs','cjs','json','ts','tsx','jsx','md','glsl','vert','frag',
+  'png','jpg','jpeg','webp','gif','svg','ico','mp3','wav','ogg','m4a','mp4','webm',
+  'woff','woff2','ttf','otf','txt','csv','tsv','atlas','fnt','glb','gltf','obj','mtl'
+]);
+const reserved = new Set(['api','auth','studio','profile','settings','assets','static','admin','health','templates','arcade','docs','terms','privacy']);
+const safeSegmentRe = /^[A-Za-z0-9._\- ()+\[\]]+$/;
 
-function securityHeaders(appOrigin) {
+function securityHeaders(appOrigin, isSvg = false) {
+  const csp = isSvg
+    ? `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; sandbox; frame-ancestors ${appOrigin}`
+    : `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://cdn.skypack.dev https://esm.sh https://threejs.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' data: blob: https:; worker-src 'self' blob:; object-src 'none'; form-action 'none'; base-uri 'self'; frame-ancestors ${appOrigin}`;
   return {
-    'Content-Security-Policy': `default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://cdn.skypack.dev https://esm.sh https://threejs.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' data: blob: https:; form-action 'none'; base-uri 'self'; frame-ancestors ${appOrigin}`,
+    'Content-Security-Policy': csp,
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
-    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
     'Cache-Control': 'no-store',
   };
 }
 
 function mime(path) {
   const ext = path.split('.').pop().toLowerCase();
-  return ({html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',mjs:'text/javascript; charset=utf-8',json:'application/json',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',mp4:'video/mp4',webm:'video/webm',woff:'font/woff',woff2:'font/woff2'})[ext] || 'application/octet-stream';
+  return ({
+    html:'text/html; charset=utf-8',htm:'text/html; charset=utf-8',css:'text/css; charset=utf-8',
+    js:'text/javascript; charset=utf-8',mjs:'text/javascript; charset=utf-8',cjs:'text/javascript; charset=utf-8',
+    json:'application/json',ts:'text/plain; charset=utf-8',tsx:'text/plain; charset=utf-8',jsx:'text/plain; charset=utf-8',
+    png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',svg:'image/svg+xml',ico:'image/x-icon',
+    mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',m4a:'audio/mp4',mp4:'video/mp4',webm:'video/webm',
+    woff:'font/woff',woff2:'font/woff2',ttf:'font/ttf',otf:'font/otf',
+    glb:'model/gltf-binary',gltf:'model/gltf+json',txt:'text/plain; charset=utf-8',csv:'text/csv; charset=utf-8',tsv:'text/tab-separated-values; charset=utf-8'
+  })[ext] || 'application/octet-stream';
 }
 
 function safePath(raw) {
   let path;
   try { path = decodeURIComponent(raw); } catch { return null; }
-  if (!path || path.includes('\\') || path.includes('\0') || path.split('/').some(p => !p || p === '.' || p === '..' || p.startsWith('.'))) return null;
-  const ext = path.split('.').pop().toLowerCase();
+  if (!path || path.length > 240 || path.includes('\\') || path.includes('\0')) return null;
+  const parts = path.split('/');
+  if (parts.some(p => !p || p === '.' || p === '..' || p.startsWith('.') || !safeSegmentRe.test(p))) return null;
+  const ext = parts[parts.length - 1].split('.').pop().toLowerCase();
   return allowed.has(ext) ? path : null;
 }
 
@@ -46,9 +65,10 @@ async function verifyPreviewToken(token, secret) {
 }
 
 async function serve(bucket, key, path, appOrigin) {
+  const isSvg = path.toLowerCase().endsWith('.svg');
   const object = await bucket.get(key);
-  if (!object) return new Response('Game file not found', {status:404, headers:securityHeaders(appOrigin)});
-  const headers = new Headers(securityHeaders(appOrigin));
+  if (!object) return new Response('Game file not found', {status:404, headers:securityHeaders(appOrigin, isSvg)});
+  const headers = new Headers(securityHeaders(appOrigin, isSvg));
   headers.set('Content-Type', mime(path));
   if (object.httpEtag) headers.set('ETag', object.httpEtag);
   return new Response(object.body, {headers});
@@ -59,7 +79,10 @@ export default {
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', {status:405, headers:{Allow:'GET, HEAD'}});
     const url = new URL(request.url);
     const raw = url.pathname.replace(/^\/+/, '');
-    const appOrigin = env.APP_ORIGIN || 'https://app.example.com';
+    const appOrigin = env.APP_ORIGIN || 'https://studio.yulya.me';
+    if (raw === 'robots.txt') {
+      return new Response('User-agent: *\nDisallow: /\n', { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    }
     if (raw.startsWith('__preview/')) {
       if (!env.PREVIEW_TOKEN_SECRET) return new Response('Private preview is not configured', {status:503, headers:securityHeaders(appOrigin)});
       const [, , token, ...parts] = raw.split('/');

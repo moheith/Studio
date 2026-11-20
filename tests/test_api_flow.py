@@ -1,9 +1,19 @@
 """Mocked account-to-private-game flow; no Google, Gemini, MongoDB, or R2 calls."""
-import tempfile
 import asyncio
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+# Ensure local dev isolation even if run directly via python -m unittest
+os.environ.setdefault("APP_ENV", "development")
+os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ.setdefault("APP_ORIGIN", "http://testserver")
+os.environ.setdefault("API_ORIGIN", "http://testserver")
+os.environ.setdefault("PLAY_ORIGIN", "http://play.testserver")
+os.environ["MONGODB_URI"] = ""
+os.environ["RESEND_API_KEY"] = ""
 
 import httpx
 
@@ -19,7 +29,8 @@ class MockProviderClient:
     async def __aexit__(self, *args): return None
     async def get(self, url, **kwargs):
         return httpx.Response(200, json={"models": [{"name": "models/mock-game-model", "displayName": "Mock Game Model", "supportedGenerationMethods": ["generateContent"]}]})
-    async def post(self, url, **kwargs): return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "OK"}]}}]})
+    async def post(self, url, **kwargs):
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "OK"}]}}]})
     def stream(self, *args, **kwargs): return MockGenerateStream()
 
 
@@ -41,12 +52,14 @@ class AccountProjectFlow(unittest.IsolatedAsyncioTestCase):
         service.files_store.local_root = Path(self.temp.name).resolve()
         self.transport = httpx.ASGITransport(app=service.app)
         self.client = httpx.AsyncClient(transport=self.transport, base_url="http://testserver")
+        self.play_client = httpx.AsyncClient(transport=self.transport, base_url="http://play.testserver")
         self.provider_patch = patch.object(service.httpx, "AsyncClient", MockProviderClient)
         self.provider_patch.start()
 
     async def asyncTearDown(self):
         self.provider_patch.stop()
         await self.client.aclose()
+        await self.play_client.aclose()
         self.temp.cleanup()
 
     async def test_signup_key_project_preview_and_path_boundary(self):
@@ -64,7 +77,7 @@ class AccountProjectFlow(unittest.IsolatedAsyncioTestCase):
             key = await self.client.post("/api/keys/gemini", headers=headers, json={"api_key": "mock-gemini-api-key"})
         self.assertEqual(key.status_code, 200)
         models = await self.client.get("/api/models")
-        self.assertEqual(models.json()["models"][0]["id"], "mock-game-model")
+        self.assertIn("mock-game-model", [m["id"] for m in models.json()["models"]])
 
         created = await self.client.post("/api/projects", headers=headers, json={"title": "My First Game", "visibility": "private"})
         self.assertEqual(created.status_code, 200)
@@ -90,11 +103,18 @@ class AccountProjectFlow(unittest.IsolatedAsyncioTestCase):
 
         preview = await self.client.post(f"/api/projects/{project_id}/preview-token", headers=headers, json={})
         self.assertEqual(preview.status_code, 200)
-        self.assertIn("/api/worker/private/", preview.json()["url"])
-        self.assertEqual((await self.client.get(preview.json()["url"].replace("http://localhost:8000", ""))).status_code, 200)
+        preview_url = preview.json()["url"]
+        self.assertTrue(preview_url.startswith(service.PLAY_ORIGIN))
+        preview_path = preview_url.replace(service.PLAY_ORIGIN, "")
+        # Main origin MUST block raw preview execution (403); isolated play origin serves it (200)
+        self.assertEqual((await self.client.get(preview_path)).status_code, 403)
+        play_resp = await self.play_client.get(preview_path)
+        self.assertEqual(play_resp.status_code, 200)
+        self.assertIn("form-action 'none'", play_resp.headers["content-security-policy"])
+
         published = await self.client.patch(f"/api/projects/{project_id}/visibility", headers=headers, json={"visibility": "public"})
         self.assertEqual(published.status_code, 200)
-        self.assertIn("/maker_one/my-first-game/", published.json()["url"])
+        self.assertIn("/maker_one/my-first-game", published.json()["url"])
         gallery = await self.client.get("/api/gallery")
         self.assertEqual(gallery.json()["projects"][0]["id"], project_id)
 
