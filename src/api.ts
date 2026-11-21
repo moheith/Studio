@@ -1,4 +1,4 @@
-import type { ActiveSession, GameComment, GameScore, ProjectCheckpoint, PublicGameMeta, TemplateItem } from './types'
+import type { ActiveSession, GameComment, GameScore, PublicGameMeta, TemplateItem } from './types'
 
 const API_ORIGIN = (import.meta.env.VITE_API_ORIGIN as string | undefined)?.replace(/\/$/, '') ?? ''
 let csrfToken = ''
@@ -169,46 +169,24 @@ export async function fetchTemplates() {
   return api<{ templates: TemplateItem[] }>('/api/templates')
 }
 
-// Checkpoints & Rollback
-export async function fetchCheckpoints(projectId: string) {
-  return api<{ checkpoints: ProjectCheckpoint[] }>(`/api/projects/${encodeURIComponent(projectId)}/checkpoints`)
-}
-
-export async function fetchCheckpointDetail(projectId: string, checkpointId: string) {
-  return api<{ checkpoint: ProjectCheckpoint }>(`/api/projects/${encodeURIComponent(projectId)}/checkpoints/${encodeURIComponent(checkpointId)}`)
-}
-
-export async function restoreCheckpoint(projectId: string, checkpointId: string) {
-  return api<{ restored: boolean; files_restored: number }>(`/api/projects/${encodeURIComponent(projectId)}/checkpoints/${encodeURIComponent(checkpointId)}/restore`, {
-    method: 'POST',
-    body: '{}',
-  })
-}
-
-// Multimodal Vision Tool Result & AI Asset Generation
+// Multimodal Vision & Preview Eval Callback
 export async function submitAiToolResult(
   projectId: string,
   callId: string,
-  payload: { dataUrl: string; width: number; height: number; consoleErrors: Array<{ level: string; message: string }>; domElements: Array<Record<string, unknown>> },
+  payload: {
+    dataUrl?: string
+    width?: number
+    height?: number
+    consoleErrors?: Array<{ level: string; message: string }>
+    domElements?: Array<Record<string, unknown>>
+    ok?: boolean
+    output?: string
+  },
 ) {
   return api<{ accepted: boolean }>(`/api/projects/${encodeURIComponent(projectId)}/ai/tool-result/${encodeURIComponent(callId)}`, {
     method: 'POST',
     body: JSON.stringify(payload),
   })
-}
-
-export async function generateAiImage(projectId: string, body: { prompt: string; filename: string; set_as_thumbnail?: boolean; model?: string }) {
-  return api<{ path: string; etag: string; size: number; mime_type: string; thumbnail_url?: string | null }>(
-    `/api/projects/${encodeURIComponent(projectId)}/ai/generate-image`,
-    { method: 'POST', body: JSON.stringify(body) },
-  )
-}
-
-export async function generateAiAudio(projectId: string, body: { text: string; voice: string; style: string; filename: string; model?: string }) {
-  return api<{ path: string; etag: string; size: number; mime_type: string }>(
-    `/api/projects/${encodeURIComponent(projectId)}/ai/generate-audio`,
-    { method: 'POST', body: JSON.stringify(body) },
-  )
 }
 
 // Public Game Wrapper Page & Community Arcade

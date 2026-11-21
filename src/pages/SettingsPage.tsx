@@ -204,7 +204,7 @@ export default function SettingsPage({ user, hasKey, setPage, onOpenKeyModal, on
             <ShieldAlert size={17} /> Danger Zone — Delete Account (GDPR Art. 17)
           </h2>
           <p style={{ margin: '0 0 14px', fontSize: 13.5, color: '#fecaca', lineHeight: 1.5 }}>
-            Permanently deletes your account, encrypted Gemini API key, all projects, files, checkpoints, AI conversations, comments, and sessions. This cannot be undone.
+            Permanently deletes your account, encrypted Gemini API key, all projects, files, AI conversations, comments, and sessions. This cannot be undone.
           </p>
           <form onSubmit={handleDeleteAccount} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <input

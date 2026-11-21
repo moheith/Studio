@@ -1,13 +1,17 @@
-"""Gemini dynamic model discovery, adaptive thinking config, surgical patching, multimodal vision broker, and AI asset generation."""
+"""Gemini dynamic model discovery, adaptive thinking config, surgical patching, client tool broker, SSRF-safe URL fetch, diagnostics, and Nano Banana / TTS media generation."""
 from __future__ import annotations
 
 import asyncio
 import base64
+import ipaddress
+import json
 import logging
 import re
+import socket
 import time
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException
@@ -36,6 +40,8 @@ NON_CHAT_MODEL_TOKENS = (
 )
 
 API_REVISION_HEADER = "2026-05-20"
+
+ALLOWED_IMAGE_ASPECT_RATIOS = {"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9"}
 
 
 def normalize_model_id(model: str) -> str:
@@ -95,7 +101,6 @@ def rank_chat_model(model_row: dict[str, Any]) -> tuple[Any, ...]:
     else:
         family_rank = 3
 
-    # Prefer core flagship / pro / argon / flash tiers ahead of lite and older dated snapshots
     if any(k in mid for k in ("argon", "ultra")):
         tier_rank = 0
     elif "pro" in mid and "lite" not in mid:
@@ -107,7 +112,6 @@ def rank_chat_model(model_row: dict[str, Any]) -> tuple[Any, ...]:
     else:
         tier_rank = 4
 
-    # Slight preference for canonical aliases over dated checkpoints (-001 / -09-2025)
     is_dated = 1 if re.search(r"-\d{2}-\d{2,4}$|-\d{3}$", mid) else 0
     return (family_rank, -major, -minor, tier_rank, is_dated, mid)
 
@@ -186,7 +190,6 @@ def pick_best_chat_model(models: list[dict[str, Any]]) -> str | None:
     if not models:
         return None
     ranked = sorted(models, key=rank_chat_model)
-    # Prefer top non-lite Gemini model if present
     for row in ranked:
         mid = str(row.get("id") or "").lower()
         if mid.startswith("gemini-") and "lite" not in mid and "exp" not in mid:
@@ -204,14 +207,12 @@ def build_thinking_config(model_id: str, is_antigravity: bool, is_plan_mode: boo
     if not mid.startswith("gemini-"):
         return None
     major, minor = _version_tuple(mid)
-    # Gemini 3.x / 4.x / future generations support thinkingLevel + includeThoughts
     if major >= 3:
         if is_antigravity:
             return {"includeThoughts": True, "thinkingLevel": "high"}
         if is_plan_mode:
             return {"includeThoughts": True, "thinkingLevel": "medium"}
         return {"includeThoughts": True}
-    # Gemini 2.5 thinking models support includeThoughts (do NOT pass thinkingLevel on 2.5!)
     if major == 2 and minor >= 5 and is_antigravity:
         return {"includeThoughts": True}
     return None
@@ -229,7 +230,6 @@ def apply_search_replace(content: str, search: str, replace: str) -> tuple[str, 
             409,
             f"The search block matched {count} locations. Include 2-3 more surrounding lines so the patch target is unique.",
         )
-    # Fallback for CRLF/LF mismatch
     norm_content = content.replace("\r\n", "\n")
     norm_search = search.replace("\r\n", "\n")
     norm_replace = replace.replace("\r\n", "\n")
@@ -243,12 +243,143 @@ def apply_search_replace(content: str, search: str, replace: str) -> tuple[str, 
         )
     raise HTTPException(
         400,
-        "Could not find the exact 'search' block in the file. Call read_file first to inspect current contents.",
+        "Could not find the exact 'search' block in the file. Call read_file or read_file_lines first to inspect current contents.",
     )
 
 
+def analyze_project_diagnostics(file_texts: dict[str, str], all_paths: list[str]) -> dict[str, Any]:
+    """Run fast, zero-dependency static diagnostics across HTML/JSON/JS/TS project files."""
+    issues: list[dict[str, Any]] = []
+    path_set = set(all_paths)
+    has_ts = any(p.lower().endswith((".ts", ".tsx", ".jsx")) for p in all_paths)
+
+    if "index.html" not in path_set:
+        issues.append({"severity": "error", "path": "index.html", "message": "Missing root index.html entrypoint."})
+
+    # Validate JSON files
+    for p, txt in file_texts.items():
+        if p.lower().endswith(".json"):
+            try:
+                json.loads(txt)
+            except json.JSONDecodeError as exc:
+                issues.append({"severity": "error", "path": p, "line": exc.lineno, "message": f"Invalid JSON: {exc.msg}"})
+
+    # Validate local references & script module compatibility in HTML files
+    ref_re = re.compile(r'''<(?:script|link|img|audio|video|source)\b[^>]*\b(?:src|href)=["']([^"']+)["']''', re.IGNORECASE)
+    classic_script_re = re.compile(r'''<script(?![^>]*\btype=["']module["'])[^>]*\bsrc=["']([^"']+)["']''', re.IGNORECASE)
+    for p, txt in file_texts.items():
+        if not p.lower().endswith((".html", ".htm")):
+            continue
+        for match in ref_re.finditer(txt):
+            raw_ref = match.group(1).strip()
+            if not raw_ref or raw_ref.startswith(("http://", "https://", "//", "data:", "blob:", "#", "mailto:", "javascript:")):
+                continue
+            clean_ref = raw_ref.split("?", 1)[0].split("#", 1)[0].lstrip("./")
+            if clean_ref and clean_ref not in path_set:
+                line_no = txt[: match.start()].count("\n") + 1
+                issues.append({"severity": "warning", "path": p, "line": line_no, "message": f"Referenced local asset '{raw_ref}' does not exist in project files."})
+        for match in classic_script_re.finditer(txt):
+            ref = match.group(1).strip().split("?", 1)[0].lstrip("./")
+            if ref in file_texts:
+                js_body = file_texts[ref]
+                if re.search(r"^\s*(?:import|export)\s+", js_body, re.MULTILINE):
+                    issues.append({
+                        "severity": "error",
+                        "path": p,
+                        "message": f"'{ref}' uses ES module import/export syntax but is loaded without type=\"module\" in {p}.",
+                    })
+        open_scripts = len(re.findall(r"<script\b", txt, re.IGNORECASE))
+        close_scripts = len(re.findall(r"</script>", txt, re.IGNORECASE))
+        if open_scripts != close_scripts:
+            issues.append({"severity": "error", "path": p, "message": f"Mismatched <script> tags ({open_scripts} open vs {close_scripts} closed)."})
+
+    # Check common JS/TS pitfalls
+    for p, txt in file_texts.items():
+        if p.lower().endswith((".js", ".mjs", ".ts", ".tsx", ".jsx")):
+            if "document.write(" in txt:
+                issues.append({"severity": "warning", "path": p, "message": "Avoid document.write(); update DOM nodes directly instead."})
+            if has_ts and p.endswith((".ts", ".tsx")) and "index.html" in file_texts:
+                pass  # Bundled via esbuild-wasm
+
+    return {
+        "ok": not any(i["severity"] == "error" for i in issues),
+        "error_count": sum(1 for i in issues if i["severity"] == "error"),
+        "warning_count": sum(1 for i in issues if i["severity"] == "warning"),
+        "issues": issues[:40],
+        "has_typescript_bundle": has_ts,
+        "total_files": len(all_paths),
+    }
+
+
+def _is_public_ip(ip_str: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        return not (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_multicast
+            or addr.is_reserved
+            or addr.is_unspecified
+        )
+    except ValueError:
+        return False
+
+
+async def safe_url_fetch(url: str, max_chars: int = 16000) -> dict[str, Any]:
+    """SSRF-hardened fetcher allowing the AI agent to read public documentation, APIs, or CDN manifests safely."""
+    clean_url = (url or "").strip()
+    parsed = urlparse(clean_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(400, "url_fetch requires a valid public http:// or https:// URL")
+    host = parsed.hostname.lower()
+    if host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or host.endswith((".local", ".internal", ".localhost")):
+        raise HTTPException(403, "Blocked private or local hostname")
+
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await loop.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+    except Exception:
+        raise HTTPException(400, f"Could not resolve hostname '{host}'")
+    if not infos:
+        raise HTTPException(400, f"Could not resolve hostname '{host}'")
+    for info in infos:
+        ip_str = info[4][0]
+        if not _is_public_ip(ip_str):
+            raise HTTPException(403, "Access to private, loopback, or metadata IP addresses is blocked")
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0), follow_redirects=False) as client:
+        resp = await client.get(
+            clean_url,
+            headers={"User-Agent": "YulyaStudioBot/3.0 (+https://studio.yulya.me)", "Accept": "text/html,application/json,text/plain,*/*;q=0.8"},
+        )
+    if resp.status_code in {301, 302, 303, 307, 308}:
+        loc = resp.headers.get("location", "")
+        return {"url": clean_url, "status": resp.status_code, "redirect_to": loc, "note": "Redirect returned; call url_fetch on the target URL if public."}
+    if resp.status_code >= 400:
+        return {"url": clean_url, "status": resp.status_code, "error": f"Remote server returned HTTP {resp.status_code}"}
+
+    ctype = (resp.headers.get("content-type") or "").lower()
+    raw_text = resp.text[:120000]
+    if "html" in ctype:
+        cleaned = re.sub(r"(?is)<(?:script|style|noscript|svg)[^>]*>.*?</(?:script|style|noscript|svg)>", " ", raw_text)
+        cleaned = re.sub(r"(?s)<[^>]+>", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        excerpt = cleaned[:max_chars]
+    else:
+        excerpt = raw_text[:max_chars]
+
+    return {
+        "url": clean_url,
+        "status": resp.status_code,
+        "content_type": ctype.split(";")[0],
+        "content": excerpt,
+        "truncated": len(raw_text) > max_chars,
+    }
+
+
 class VisionToolBroker:
-    """Bounded async rendezvous for browser-to-server Multimodal Function Responses (inspect_game_screen)."""
+    """Bounded async rendezvous for browser-to-server client tools (inspect_game_screen, evaluate_in_preview, capture_cover_snapshot)."""
 
     def __init__(self, max_pending: int = 200) -> None:
         self._pending: dict[str, tuple[str, str, asyncio.Future[dict[str, Any]], float]] = {}
@@ -295,14 +426,14 @@ class VisionToolBroker:
 vision_broker = VisionToolBroker()
 
 
-def parse_data_url_image(data_url: str, max_bytes: int = 1_500_000) -> tuple[str, str] | None:
+def parse_data_url_image(data_url: str, max_bytes: int = 2_500_000) -> tuple[str, str] | None:
     """Validate and extract (mime_type, base64_data) from a browser image data URL."""
     if not data_url or not isinstance(data_url, str):
         return None
-    m = re.match(r"^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$", data_url.strip())
+    m = re.match(r"^data:(image/(?:jpeg|jpg|png|webp|gif));base64,([A-Za-z0-9+/=\s]+)$", data_url.strip())
     if not m:
         return None
-    mime_type = m.group(1)
+    mime_type = "image/jpeg" if m.group(1) == "image/jpg" else m.group(1)
     b64 = re.sub(r"\s+", "", m.group(2))
     approx_bytes = (len(b64) * 3) // 4
     if approx_bytes == 0 or approx_bytes > max_bytes:
@@ -319,13 +450,33 @@ async def generate_image_nano_banana(
     gemini_api_base: str,
     prompt: str,
     model: str = "gemini-nano-banana-2.1",
+    aspect_ratio: str | None = None,
+    reference_images: list[tuple[str, bytes]] | None = None,
 ) -> tuple[bytes, str]:
-    """Generate a PNG/JPEG sprite, texture, or cover using Nano Banana 2.1 Interactions REST API."""
+    """Generate or edit a PNG/JPEG/WebP sprite, texture, or cover using Nano Banana 2.1 Interactions REST API."""
     clean_model = normalize_model_id(model) or "gemini-nano-banana-2.1"
-    body = {
+    input_blocks: list[dict[str, Any]] = []
+    if reference_images:
+        for ref_mime, ref_bytes in reference_images[:4]:
+            input_blocks.append(
+                {
+                    "type": "image",
+                    "mime_type": ref_mime,
+                    "data": base64.b64encode(ref_bytes).decode("ascii"),
+                }
+            )
+    prompt_text = prompt.strip()
+    if aspect_ratio and aspect_ratio.strip() in ALLOWED_IMAGE_ASPECT_RATIOS:
+        prompt_text = f"{prompt_text} (Aspect ratio: {aspect_ratio.strip()})"
+    input_blocks.append({"type": "text", "text": prompt_text})
+
+    body: dict[str, Any] = {
         "model": clean_model,
-        "input": [{"type": "text", "text": prompt.strip()}],
+        "input": input_blocks,
     }
+    if aspect_ratio and aspect_ratio.strip() in ALLOWED_IMAGE_ASPECT_RATIOS:
+        body["generation_config"] = {"image_config": {"aspect_ratio": aspect_ratio.strip()}}
+
     async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=20.0)) as client:
         resp = await client.post(
             f"{gemini_api_base}/interactions",

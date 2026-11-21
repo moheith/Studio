@@ -155,7 +155,7 @@ export default function App() {
   const [openFiles, setOpenFiles] = useState<string[]>(['index.html', 'style.css', 'app.js'])
   const [tree, setTree] = useState(initialTree)
   const [terminalOpen, setTerminalOpen] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1200 : true))
   const [chat, setChat] = useState('')
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [modal, setModal] = useState<'new-project' | 'api-key' | 'new-file' | 'game' | null>(null)
@@ -361,11 +361,12 @@ export default function App() {
       notify(error instanceof Error ? error.message : 'Could not create project')
     }
   }
-  const submitPrompt = async () => {
-    if (!chat.trim()) return
+  const submitPrompt = async (attachedImages?: string[]) => {
+    const cleanImgs = (attachedImages || []).filter((u) => typeof u === 'string' && u.startsWith('data:image/')).slice(0, 4)
+    if (!chat.trim() && cleanImgs.length === 0) return
     if (!hasKey) { setModal('api-key'); notify('Connect your Google Gemini API key to use AI Copilot'); return }
     if (!selectedModel) { notify('Choose an available Gemini model first'); return }
-    const prompt = chat.trim()
+    const prompt = chat.trim() || 'Inspect the attached image(s) and help me with this.'
     setChat('')
     const userMsgId = Date.now().toString()
     const aiMsgId = (Date.now() + 1).toString()
@@ -374,10 +375,9 @@ export default function App() {
       : selectedModel
     setChatMessages(prev => [
       ...prev,
-      { id: userMsgId, role: 'user', text: prompt, time: Date.now() },
-      { id: aiMsgId, role: 'ai', text: 'Thinking…', time: Date.now(), tools: [], model: modelTag }
+      { id: userMsgId, role: 'user', text: prompt, images: cleanImgs.length ? cleanImgs : undefined, time: Date.now() },
+      { id: aiMsgId, role: 'ai', text: 'Thinking…', time: Date.now(), tools: [], media: [], model: modelTag }
     ])
-    setTerminalOpen(true)
     if (!currentProjectId) {
       setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: 'Studio AI: Open a project to start an AI coding session.' } : m))
       return
@@ -401,11 +401,12 @@ export default function App() {
     try {
       let answer = ''
       const toolsUsed: string[] = []
-      for await (const event of streamSse(`/api/projects/${currentProjectId}/ai/stream`, { prompt, model: selectedModel, antigravity: isAntigravityMode, waterfall: useWaterfall, mode: aiMode }, controller.signal)) {
+      for await (const event of streamSse(
+        `/api/projects/${currentProjectId}/ai/stream`,
+        { prompt, model: selectedModel, antigravity: isAntigravityMode, waterfall: useWaterfall, mode: aiMode, images: cleanImgs },
+        controller.signal,
+      )) {
         resetActivityTimer()
-        if (event.type === 'checkpoint') {
-          notify('Checkpoint auto-saved (rollback anytime via History)')
-        }
         if (event.type === 'thought') {
           const chunk = event.data.text || ''
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -416,6 +417,13 @@ export default function App() {
         if (event.type === 'token') {
           answer += event.data.text
           setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: answer, tools: [...toolsUsed] } : m))
+        }
+        if (event.type === 'media' && event.data?.url) {
+          const mediaItem = event.data
+          setChatMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            media: [...(m.media || []), mediaItem]
+          } : m))
         }
         if (event.type === 'tool') {
           const actionName = event.data.name || 'write_file'
@@ -429,10 +437,16 @@ export default function App() {
             ? `Generated image ${event.data.path}`
             : actionName === 'generate_audio_asset'
             ? `Generated voice audio ${event.data.path}`
+            : actionName === 'capture_cover_snapshot'
+            ? `Updated Arcade cover snapshot`
+            : actionName === 'update_project_metadata'
+            ? `Updated project details`
+            : actionName === 'url_fetch'
+            ? `Fetched ${event.data.path}`
             : actionName === 'search_grounding'
             ? `Grounded with Google Search: "${event.data.query || event.data.path || ''}"`
             : `Updated ${event.data.path}`
-          if (actionName !== 'search_grounding') {
+          if (actionName !== 'search_grounding' && actionName !== 'url_fetch') {
             toolsUsed.push(event.data.path)
             setChatMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, tools: [...toolsUsed] } : m))
           }
@@ -497,7 +511,13 @@ export default function App() {
           })
         }
         if (event.type === 'reload_preview') setPreviewKey(v => v + 1)
-        if (event.type === 'inspect_game_screen' || event.type === 'send_game_input' || event.type === 'set_game_device' || event.type === 'stop_game_playtest') {
+        if (
+          event.type === 'inspect_game_screen' ||
+          event.type === 'evaluate_in_preview' ||
+          event.type === 'send_game_input' ||
+          event.type === 'set_game_device' ||
+          event.type === 'stop_game_playtest'
+        ) {
           window.dispatchEvent(new CustomEvent('yulya:ai-game-action', { detail: event }))
         }
         if (event.type === 'error') {
@@ -753,7 +773,7 @@ export default function App() {
   const loadProject = async (id: string, meta: Game) => {
     try {
       // 1. Concurrently fetch AI chat history in the background so it never stalls editor booting
-      const historyPromise = api<{ conversations: Array<{ id: string; prompt: string; response: string; error?: string; status?: string; thought?: string; model?: string; created_at: number; telemetry?: any; grounding?: any }> }>(`/api/projects/${id}/ai/history`).catch(() => ({ conversations: [] }))
+      const historyPromise = api<{ conversations: Array<{ id: string; prompt: string; response: string; error?: string; status?: string; thought?: string; model?: string; created_at: number; telemetry?: any; grounding?: any; media?: any[] }> }>(`/api/projects/${id}/ai/history`).catch(() => ({ conversations: [] }))
 
       let loaded: Record<string, string> = {}
       let treeList: FileEntry[] = []
@@ -837,6 +857,7 @@ export default function App() {
                 model: conv.model,
                 telemetry: conv.telemetry,
                 grounding: conv.grounding,
+                media: conv.media || [],
                 waterfallTransitions: conv.telemetry?.waterfallTransitions || []
               })
             }

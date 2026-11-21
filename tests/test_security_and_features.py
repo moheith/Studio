@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import json
 import tempfile
 from pathlib import Path
@@ -14,7 +15,14 @@ import pytest_asyncio
 from cryptography.fernet import Fernet
 
 from backend import app as service
-from backend.ai_tools import apply_search_replace, build_thinking_config, normalize_model_id, normalize_waterfall
+from backend.ai_tools import (
+    analyze_project_diagnostics,
+    apply_search_replace,
+    build_thinking_config,
+    normalize_model_id,
+    normalize_waterfall,
+    safe_url_fetch,
+)
 from backend.security import KeyCipher, safe_relative_path
 
 
@@ -50,7 +58,7 @@ class CapturingMockClient:
         })
 
     async def post(self, url, **kwargs):
-        CapturingMockClient.last_requests.append({"url": url, "json": kwargs.get("json")})
+        CapturingMockClient.last_requests.append({"url": url, "json": copy.deepcopy(kwargs.get("json"))})
         if url.endswith("/interactions"):
             model = (kwargs.get("json") or {}).get("model", "")
             if "tts" in model:
@@ -61,7 +69,7 @@ class CapturingMockClient:
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "OK"}]}}]})
 
     def stream(self, method, url, **kwargs):
-        CapturingMockClient.last_requests.append({"url": url, "json": kwargs.get("json")})
+        CapturingMockClient.last_requests.append({"url": url, "json": copy.deepcopy(kwargs.get("json"))})
         idx = CapturingMockClient.call_index
         CapturingMockClient.call_index += 1
         return _MockStream(CapturingMockClient.mode, idx)
@@ -96,9 +104,14 @@ class _MockStream:
                     "content": {
                         "parts": [
                             {"thought": True, "text": "Batch patching + creating art & voice assets", "thoughtSignature": "AG_SIG_99"},
-                            {"functionCall": {"name": "batch_edit_files", "args": {"edits": [{"path": "app.js", "search": "Yulya Studio project ready!", "replace": "Antigravity upgraded!"}]}}},
-                            {"functionCall": {"name": "generate_image_asset", "args": {"path": "assets/boss.png", "prompt": "neon dragon boss sprite"}}},
+                            {"functionCall": {"name": "batch_edit_files", "args": {"edits": [{"path": "app.js", "search": "Patched cleanly!", "replace": "Antigravity upgraded!"}]}}},
+                            {"functionCall": {"name": "generate_image_asset", "args": {"path": "assets/boss.png", "prompt": "neon dragon boss sprite", "aspect_ratio": "1:1"}}},
                             {"functionCall": {"name": "generate_audio_asset", "args": {"path": "assets/audio/go.wav", "text": "Ready, go!", "voice": "Kore"}}},
+                            {"functionCall": {"name": "read_file_lines", "args": {"path": "index.html", "start_line": 1, "end_line": 10}}},
+                            {"functionCall": {"name": "regex_search", "args": {"pattern": "Antigravity"}}},
+                            {"functionCall": {"name": "list_assets", "args": {}}},
+                            {"functionCall": {"name": "check_project_diagnostics", "args": {}}},
+                            {"functionCall": {"name": "update_project_metadata", "args": {"description": "Upgraded by chat tools!", "genre": "ACTION"}}},
                         ]
                     }
                 }]
@@ -276,7 +289,7 @@ async def test_bug_regressions_llms_at_profile_thumbnail_plays_and_slug(clients)
 
 
 @pytest.mark.asyncio
-async def test_gemini_3_compliance_edit_file_checkpoints_plan_mode_and_multimodal_vision(clients):
+async def test_gemini_chat_tools_multimodal_media_and_no_checkpoints(clients):
     app_client, _, _ = clients
     # User-chosen paid/legacy model IDs MUST be preserved verbatim (never force-remapped!)
     assert normalize_model_id("models/gemini-2.5-pro") == "gemini-2.5-pro"
@@ -289,6 +302,15 @@ async def test_gemini_3_compliance_edit_file_checkpoints_plan_mode_and_multimoda
     assert build_thinking_config("gemini-2.0-flash", True, False) is None
     assert build_thinking_config("gemma-4-31b-it", True, False) is None
 
+    # Static diagnostics catches missing assets & invalid JSON cleanly
+    diag = analyze_project_diagnostics({"index.html": '<script src="missing.js"></script>', "data.json": "{bad"}, ["index.html", "data.json"])
+    assert diag["ok"] is False and diag["error_count"] >= 1 and diag["warning_count"] >= 1
+
+    # SSRF protection in safe_url_fetch blocks localhost & AWS/GCP metadata IPs
+    for blocked in ("http://127.0.0.1/secret", "http://localhost:8000/api/health", "http://169.254.169.254/latest/meta-data/", "file:///etc/passwd"):
+        with pytest.raises(service.HTTPException):
+            await safe_url_fetch(blocked)
+
     patched, n = apply_search_replace("const x = 1;\nconst y = 2;\n", "const x = 1;", "const x = 42;")
     assert n == 1 and "const x = 42;" in patched
 
@@ -296,56 +318,71 @@ async def test_gemini_3_compliance_edit_file_checkpoints_plan_mode_and_multimoda
     proj = (await app_client.post("/api/projects", headers=auth["headers"], json={"title": "AI Test", "visibility": "private"})).json()["project"]
     pid = proj["id"]
 
-    # 1. Build mode: paid/legacy model preserved verbatim + edit_file + auto-checkpoint + thoughtSignature + NO temperature
+    # Checkpoints endpoints MUST be removed (404)
+    assert (await app_client.get(f"/api/projects/{pid}/checkpoints")).status_code == 404
+
+    # 1. Build mode: paid/legacy model preserved verbatim + edit_file + user image attachment forwarded + NO checkpoints + NO temperature
+    tiny_png = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 32).decode()
     CapturingMockClient.mode = "edit_with_thought_sig"
     CapturingMockClient.call_index = 0
     CapturingMockClient.last_requests = []
-    res = await app_client.post(f"/api/projects/{pid}/ai/stream", headers=auth["headers"], json={"prompt": "Update log text", "model": "gemini-2.5-pro", "antigravity": True, "mode": "build"})
+    res = await app_client.post(
+        f"/api/projects/{pid}/ai/stream",
+        headers=auth["headers"],
+        json={"prompt": "Update log text based on this screenshot", "model": "gemini-2.5-pro", "antigravity": True, "mode": "build", "images": [tiny_png]},
+    )
     assert res.status_code == 200
-    assert "event: checkpoint" in res.text
+    assert "event: checkpoint" not in res.text
     assert len(CapturingMockClient.last_requests) >= 2
     first_req = CapturingMockClient.last_requests[0]
     assert "gemini-2.5-pro" in first_req["url"]  # user's chosen paid model preserved verbatim!
     assert "temperature" not in json.dumps(first_req["json"])
     assert first_req["json"]["generationConfig"]["thinkingConfig"] == {"includeThoughts": True}
+    # User image attached as multimodal inlineData!
+    assert "inlineData" in json.dumps(first_req["json"]["contents"][-1])
     second_req = CapturingMockClient.last_requests[1]
     assert "ENC_SIG_ABC123" in json.dumps(second_req["json"])  # thoughtSignature preserved!
+    assert "Patched cleanly!" in (await app_client.get(f"/api/projects/{pid}/files/app.js")).text
 
-    # Verify patched file + 1-click checkpoint rollback restores original
-    app_js = (await app_client.get(f"/api/projects/{pid}/files/app.js")).text
-    assert "Patched cleanly!" in app_js
-    cps = (await app_client.get(f"/api/projects/{pid}/checkpoints")).json()["checkpoints"]
-    assert len(cps) == 1
-    restored = await app_client.post(f"/api/projects/{pid}/checkpoints/{cps[0]['id']}/restore", headers=auth["headers"])
-    assert restored.status_code == 200
-    app_js_restored = (await app_client.get(f"/api/projects/{pid}/files/app.js")).text
-    assert "Yulya Studio project ready!" in app_js_restored
-
-    # 2. Antigravity Auto dynamically resolves newest live model (gemini-9.9-ultra from page 2!) + runs power tools
+    # 2. Standard Chat (antigravity=False!) ALSO has Nano Banana 2.1 + Gemini 3.8 TTS + batch_edit + diagnostics + inline event: media!
     CapturingMockClient.mode = "antigravity_power_tools"
     CapturingMockClient.call_index = 0
     CapturingMockClient.last_requests = []
-    ag_res = await app_client.post(f"/api/projects/{pid}/ai/stream", headers=auth["headers"], json={"prompt": "Upgrade game with boss art & voice", "model": "antigravity-auto", "antigravity": True, "mode": "build"})
-    assert ag_res.status_code == 200
-    assert "gemini-9.9-ultra" in CapturingMockClient.last_requests[0]["url"]
-    assert CapturingMockClient.last_requests[0]["json"]["generationConfig"]["thinkingConfig"] == {"includeThoughts": True, "thinkingLevel": "high"}
+    chat_res = await app_client.post(
+        f"/api/projects/{pid}/ai/stream",
+        headers=auth["headers"],
+        json={"prompt": "Generate boss art, voice line, run diagnostics, and update description", "model": "gemini-3.8-flash", "antigravity": False, "mode": "build"},
+    )
+    assert chat_res.status_code == 200
+    assert "event: media" in chat_res.text
+    assert '"kind": "image"' in chat_res.text and '"kind": "audio"' in chat_res.text
     assert "Antigravity upgraded!" in (await app_client.get(f"/api/projects/{pid}/files/app.js")).text
     assert (await app_client.get(f"/api/projects/{pid}/files/assets/boss.png")).status_code == 200
     assert (await app_client.get(f"/api/projects/{pid}/files/assets/audio/go.wav")).status_code == 200
+    # Persisted media metadata in AI history for inline replay!
+    hist = (await app_client.get(f"/api/projects/{pid}/ai/history")).json()["conversations"]
+    assert any(len(c.get("media") or []) == 2 for c in hist)
 
-    # 3. Plan mode exposes read-only tools only
+    # 3. Antigravity Auto dynamically resolves newest live model (gemini-9.9-ultra from page 2!) + high thinking + url_fetch
+    CapturingMockClient.mode = "simple"
+    CapturingMockClient.call_index = 0
+    CapturingMockClient.last_requests = []
+    ag_res = await app_client.post(f"/api/projects/{pid}/ai/stream", headers=auth["headers"], json={"prompt": "Review architecture", "model": "antigravity-auto", "antigravity": True, "mode": "build"})
+    assert ag_res.status_code == 200
+    assert "gemini-9.9-ultra" in CapturingMockClient.last_requests[0]["url"]
+    assert CapturingMockClient.last_requests[0]["json"]["generationConfig"]["thinkingConfig"] == {"includeThoughts": True, "thinkingLevel": "high"}
+    ag_tool_names = [t["name"] for t in CapturingMockClient.last_requests[0]["json"]["tools"][0]["functionDeclarations"]]
+    for expected_tool in ("generate_image_asset", "generate_audio_asset", "read_file_lines", "regex_search", "list_assets", "check_project_diagnostics", "evaluate_in_preview", "capture_cover_snapshot", "update_project_metadata", "url_fetch", "search_grounding"):
+        assert expected_tool in ag_tool_names
+
+    # 4. Plan mode exposes read-only tools only
     CapturingMockClient.mode = "simple"
     CapturingMockClient.call_index = 0
     CapturingMockClient.last_requests = []
     await app_client.post(f"/api/projects/{pid}/ai/stream", headers=auth["headers"], json={"prompt": "Plan a level system", "model": "gemini-3.8-flash", "mode": "plan"})
     declared_names = [t["name"] for t in CapturingMockClient.last_requests[0]["json"]["tools"][0]["functionDeclarations"]]
-    assert "read_file" in declared_names and "write_file" not in declared_names and "edit_file" not in declared_names and "batch_edit_files" not in declared_names
-
-    # 4. Direct Nano Banana 2.1 image gen & Gemini 3.8 TTS audio gen endpoints save assets straight into project
-    img_res = await app_client.post(f"/api/projects/{pid}/ai/generate-image", headers=auth["headers"], json={"prompt": "pixel spaceship sprite", "filename": "assets/ship.png"})
-    assert img_res.status_code == 200 and img_res.json()["path"] == "assets/ship.png"
-    tts_res = await app_client.post(f"/api/projects/{pid}/ai/generate-audio", headers=auth["headers"], json={"text": "Level up!", "voice": "Kore", "filename": "assets/audio/levelup.wav"})
-    assert tts_res.status_code == 200 and tts_res.json()["path"] == "assets/audio/levelup.wav"
+    assert "read_file" in declared_names and "read_file_lines" in declared_names and "check_project_diagnostics" in declared_names
+    assert "write_file" not in declared_names and "edit_file" not in declared_names and "generate_image_asset" not in declared_names
 
 
 @pytest.mark.asyncio

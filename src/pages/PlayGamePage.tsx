@@ -224,14 +224,14 @@ export default function PlayGamePage({
 
   return (
     <div style={{ minHeight: '100vh', background: '#070910', color: '#f8fafc' }}>
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 24px', borderBottom: '1px solid rgba(148,163,184,0.12)', background: 'rgba(11,13,20,0.9)', backdropFilter: 'blur(12px)', position: 'sticky', top: 0, zIndex: 40 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <button type="button" className="button button-outline button-small" onClick={() => setPage('arcade')}>
+      <header className="play-page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '12px 20px', borderBottom: '1px solid rgba(148,163,184,0.12)', background: 'rgba(11,13,20,0.9)', backdropFilter: 'blur(12px)', position: 'sticky', top: 0, zIndex: 40, maxWidth: '100%', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: '1 1 220px' }}>
+          <button type="button" className="button button-outline button-small" style={{ flexShrink: 0 }} onClick={() => setPage('arcade')}>
             <ArrowLeft size={14} /> Arcade
           </button>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>{meta.title}</div>
-            <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.title}</div>
+            <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => onOpenCreatorProfile(meta.username)}
@@ -249,7 +249,7 @@ export default function PlayGamePage({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="play-page-actions" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', maxWidth: '100%' }}>
           <button type="button" className={`button button-small ${liked ? 'button-primary' : 'button-outline'}`} onClick={handleLike}>
             <Heart size={14} fill={liked ? 'currentColor' : 'none'} /> <span>{likesCount}</span>
           </button>
@@ -306,7 +306,7 @@ export default function PlayGamePage({
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 24, marginTop: 24, alignItems: 'start' }}>
+        <div className="play-page-grid">
           <section style={{ background: '#0f121b', border: '1px solid rgba(148,163,184,0.14)', borderRadius: 16, padding: 20 }}>
             <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid rgba(148,163,184,0.14)', paddingBottom: 12, marginBottom: 16 }}>
               <button

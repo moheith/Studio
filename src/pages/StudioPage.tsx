@@ -5,15 +5,13 @@ import { domToJpeg } from 'modern-screenshot'
 import {
   AlertTriangle, ArrowUp, ArrowUpRight, Bell, BookOpen, Braces, Brain, Camera, Check, ChevronDown, ChevronRight, CircleHelp,
   Code2, Command, Copy, Crosshair, Download, ExternalLink, Eye, EyeOff, FileCode2, FileImage, FilePlus, Files, Folder,
-  FolderMinus, FolderInput, FolderOpen, FolderPlus, Gauge, GitBranch, Globe, History, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
+  FolderMinus, FolderInput, FolderOpen, FolderPlus, Gauge, Globe, Image as ImageIcon, Loader2, LockKeyhole, Maximize2,
   Monitor, MoreHorizontal, PanelBottomClose, PanelLeft, Pencil, Plus, Radio, RefreshCw,
-  Rocket, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, StretchHorizontal, Tablet, Terminal, Trash2, Upload, User as UserIcon, Wand2, X, XCircle, Zap,
+  Rocket, ScreenShare, ScreenShareOff, Search, Settings2, SlidersHorizontal, Smartphone, Sparkles, Square, StretchHorizontal, Tablet, Terminal, Trash2, Upload, User as UserIcon, Volume2, X, XCircle, Zap,
   Gamepad2, LogOut
 } from 'lucide-react'
-import { saveFile, submitAiToolResult } from '../api'
+import { getFileRawUrl, saveFile, submitAiToolResult } from '../api'
 import AssetPreview, { isPreviewableBinaryAsset } from '../components/AssetPreview'
-import AiAssetModal from '../components/AiAssetModal'
-import CheckpointDiffModal from '../components/CheckpointDiffModal'
 import CommandPalette from '../components/CommandPalette'
 import { bundleProjectToHtml, projectNeedsTranspile } from '../lib/esbuildBundler'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
@@ -49,7 +47,7 @@ type StudioProps = {
   setTerminalOpen: (v: boolean) => void
   setChat: (s: string) => void
   handleEditor: (s?: string) => void
-  submitPrompt: () => void
+  submitPrompt: (images?: string[]) => void
   shareLink: () => void
   notify: (s: string) => void
   setPreviewKey: React.Dispatch<React.SetStateAction<number>>
@@ -193,7 +191,7 @@ function buildTreeHierarchy(entries: FileEntry[], emptyFolders: Set<string>): Fi
 }
 
 
-function MarkdownBody({ text }: { text: string }) {
+function MarkdownBody({ text, projectId, onOpenImage }: { text: string; projectId?: string; onOpenImage?: (url: string) => void }) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const handleCopy = (code: string, id: string) => {
@@ -310,6 +308,26 @@ function MarkdownBody({ text }: { text: string }) {
                   </div>
                 )
               }
+              const imgMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)
+              if (imgMatch) {
+                const altText = imgMatch[1] || 'Generated image'
+                const rawSrc = imgMatch[2].trim()
+                const resolvedSrc = /^https?:\/\/|^data:image\/|^\/api\//i.test(rawSrc)
+                  ? rawSrc
+                  : (projectId ? getFileRawUrl(projectId, rawSrc.replace(/^\.\//, '')) : rawSrc)
+                return (
+                  <div key={idx} className="md-inline-image-wrap">
+                    <img
+                      src={resolvedSrc}
+                      alt={altText}
+                      className="md-inline-image"
+                      loading="lazy"
+                      onClick={() => onOpenImage?.(resolvedSrc)}
+                    />
+                    {altText && <span className="md-inline-image-caption">{altText}</span>}
+                  </div>
+                )
+              }
               return <p key={idx} className="md-p">{renderInline(line)}</p>
             })}
           </div>
@@ -409,18 +427,167 @@ export default function StudioPage(p: StudioProps) {
   const [selectedNewFallback, setSelectedNewFallback] = useState('')
   const [isSavingWaterfall, setIsSavingWaterfall] = useState(false)
 
-  // Pro IDE features: Command Palette, Checkpoints Diff, AI Asset Studio, Click-to-Edit Picker, Live Perf HUD, esbuild-wasm
+  // Pro IDE features: Command Palette, Click-to-Edit Picker, Live Perf HUD, esbuild-wasm, Multimodal Chat & Screen Share
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [checkpointsOpen, setCheckpointsOpen] = useState(false)
-  const [aiAssetOpen, setAiAssetOpen] = useState(false)
   const [pickerActive, setPickerActive] = useState(false)
   const [perfHudActive, setPerfHudActive] = useState(false)
   const [perfStats, setPerfStats] = useState<{ fps: number; memMb: number | null; domNodes: number } | null>(null)
   const [compiledSrcDoc, setCompiledSrcDoc] = useState<string | null>(null)
   const [esbuildStatus, setEsbuildStatus] = useState<string>('')
+  const [pendingChatImages, setPendingChatImages] = useState<string[]>([])
+  const [chatLightboxUrl, setChatLightboxUrl] = useState<string | null>(null)
+  const [chatDragOver, setChatDragOver] = useState(false)
+  const [screenShareActive, setScreenShareActive] = useState(false)
+  const [mobileTab, setMobileTab] = useState<'files' | 'code' | 'preview' | 'chat'>('code')
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null)
+  const screenStreamRef = useRef<MediaStream | null>(null)
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null)
   const pendingVisionCallIdRef = useRef<string | null>(null)
+  const pendingChatPreviewAttachRef = useRef(false)
+  const pendingAiEvalIdsRef = useRef<Set<string>>(new Set())
   const propsRef = useRef(p)
   propsRef.current = p
+
+  const compressImageToDataUrl = (file: Blob): Promise<string | null> =>
+    new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const src = typeof reader.result === 'string' ? reader.result : ''
+        if (!src) { resolve(null); return }
+        const img = new Image()
+        img.onload = () => {
+          const maxDim = 1280
+          const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1))
+          const w = Math.max(1, Math.round(img.width * scale))
+          const h = Math.max(1, Math.round(img.height * scale))
+          const canvas = document.createElement('canvas')
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')
+          if (!ctx) { resolve(src); return }
+          ctx.drawImage(img, 0, 0, w, h)
+          try { resolve(canvas.toDataURL('image/jpeg', 0.84)) } catch { resolve(src) }
+        }
+        img.onerror = () => resolve(null)
+        img.src = src
+      }
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(file)
+    })
+
+  const attachChatImageBlobs = async (files: FileList | Blob[]) => {
+    const arr = Array.from(files).filter((f) => (f.type || '').startsWith('image/')).slice(0, 4)
+    if (!arr.length) return
+    const urls: string[] = []
+    for (const f of arr) {
+      const du = await compressImageToDataUrl(f)
+      if (du) urls.push(du)
+    }
+    if (urls.length) {
+      setPendingChatImages((prev) => [...prev, ...urls].slice(0, 4))
+      setAiChatOpen(true)
+    }
+  }
+
+  const stopScreenShare = () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t) => t.stop())
+      screenStreamRef.current = null
+    }
+    if (screenVideoRef.current) {
+      screenVideoRef.current.srcObject = null
+    }
+    setScreenShareActive(false)
+  }
+
+  const startScreenShare = async () => {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      p.notify('Browser screen sharing is not supported in this browser')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 5, max: 15 } },
+        audio: false,
+      })
+      screenStreamRef.current = stream
+      stream.getVideoTracks().forEach((track) => {
+        track.addEventListener('ended', () => {
+          stopScreenShare()
+        })
+      })
+      const video = screenVideoRef.current
+      if (video) {
+        video.srcObject = stream
+        await video.play().catch(() => {})
+      }
+      setScreenShareActive(true)
+      setAiChatOpen(true)
+      p.notify('Screen sharing active — live frames will attach when you message Gemini')
+    } catch {
+      stopScreenShare()
+    }
+  }
+
+  const captureSharedScreenFrame = (): string | null => {
+    const video = screenVideoRef.current
+    if (!screenShareActive || !video || !video.videoWidth || !video.videoHeight) return null
+    const maxDim = 1280
+    const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    try {
+      const du = canvas.toDataURL('image/jpeg', 0.82)
+      return du.length > 500 ? du : null
+    } catch {
+      return null
+    }
+  }
+
+  const attachPreviewFrameToChat = () => {
+    if (!previewOpen) setPreviewOpen(true)
+    pendingChatPreviewAttachRef.current = true
+    window.setTimeout(() => {
+      postToPreview({ type: 'yulya:capture-screen', reqId: `chat-snap-${Date.now()}` })
+    }, previewOpen ? 30 : 250)
+    window.setTimeout(() => {
+      if (pendingChatPreviewAttachRef.current) {
+        pendingChatPreviewAttachRef.current = false
+        p.notify('Could not capture live preview frame')
+      }
+    }, 3500)
+  }
+
+  const handleSendChat = () => {
+    if (p.isAiGenerating) return
+    const imagesToSend = [...pendingChatImages]
+    if (screenShareActive && imagesToSend.length < 4) {
+      const liveFrame = captureSharedScreenFrame()
+      if (liveFrame) imagesToSend.push(liveFrame)
+    }
+    if (!p.chat.trim() && imagesToSend.length === 0) return
+    setPendingChatImages([])
+    p.submitPrompt(imagesToSend)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach((t) => t.stop())
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (screenShareActive && screenVideoRef.current && screenStreamRef.current && screenVideoRef.current.srcObject !== screenStreamRef.current) {
+      screenVideoRef.current.srcObject = screenStreamRef.current
+      void screenVideoRef.current.play().catch(() => {})
+    }
+  }, [screenShareActive])
 
   const targetPreviewOrigin = useMemo(() => {
     try {
@@ -459,7 +626,7 @@ export default function StudioPage(p: StudioProps) {
     let cancelled = false
     const timer = window.setTimeout(() => {
       setEsbuildStatus('Bundling TS/JSX…')
-      bundleProjectToHtml(p.code).then((res) => {
+      bundleProjectToHtml(p.code, window.location.origin).then((res) => {
         if (cancelled) return
         if (res.ok) {
           setCompiledSrcDoc(res.html)
@@ -675,15 +842,25 @@ export default function StudioPage(p: StudioProps) {
           }
         ])
       } else if (event.data.type === 'yulya:eval-result') {
-        setTermHistory(prev => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            type: event.data.ok ? 'output' : 'error',
-            text: event.data.ok ? `➔ ${event.data.output ?? 'undefined'}` : `Error: ${event.data.output || 'Evaluation failed'}`,
-            time: new Date().toLocaleTimeString()
-          }
-        ])
+        const evalId = String(event.data.evalId || '')
+        const targetId = curProps.currentProjectId || curProps.currentGame?.projectId || curProps.currentGame?.id
+        if (evalId && pendingAiEvalIdsRef.current.has(evalId) && targetId) {
+          pendingAiEvalIdsRef.current.delete(evalId)
+          void submitAiToolResult(targetId, evalId, {
+            ok: Boolean(event.data.ok),
+            output: String(event.data.output ?? ''),
+          }).catch(() => {})
+        } else {
+          setTermHistory(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              type: event.data.ok ? 'output' : 'error',
+              text: event.data.ok ? `➔ ${event.data.output ?? 'undefined'}` : `Error: ${event.data.output || 'Evaluation failed'}`,
+              time: new Date().toLocaleTimeString()
+            }
+          ])
+        }
       } else if (event.data.type === 'yulya:element-picked' && event.data.element) {
         const el = event.data.element
         setPickerActive(false)
@@ -695,12 +872,25 @@ export default function StudioPage(p: StudioProps) {
         setPerfStats({ fps: Number(event.data.fps) || 0, memMb: event.data.memMb ?? null, domNodes: Number(event.data.domNodes) || 0 })
       } else if (event.data.type === 'yulya:screen-captured') {
         const targetId = curProps.currentProjectId || curProps.currentGame?.projectId || curProps.currentGame?.id
-        // If Gemini requested inspect_game_screen, send the real screenshot + errors + DOM back to backend!
+        const rawUrl = String(event.data.dataUrl || '')
+        // If user clicked "Attach Live Preview" to chat composer
+        if (pendingChatPreviewAttachRef.current) {
+          pendingChatPreviewAttachRef.current = false
+          if (rawUrl.length > 500) {
+            setPendingChatImages(prev => [...prev, rawUrl].slice(0, 4))
+            setAiChatOpen(true)
+            curProps.notify('Attached live preview screenshot to chat')
+          } else {
+            curProps.notify('Preview frame was empty — ensure your preview is rendered')
+          }
+          return
+        }
+        // If Gemini requested inspect_game_screen or capture_cover_snapshot, send screenshot + errors + DOM back to backend!
         if (pendingVisionCallIdRef.current && targetId) {
           const cid = pendingVisionCallIdRef.current
           pendingVisionCallIdRef.current = null
           void submitAiToolResult(targetId, cid, {
-            dataUrl: String(event.data.dataUrl || ''),
+            dataUrl: rawUrl,
             width: Number(event.data.width) || 1280,
             height: Number(event.data.height) || 720,
             consoleErrors: Array.isArray(event.data.consoleErrors) ? event.data.consoleErrors : [],
@@ -710,7 +900,6 @@ export default function StudioPage(p: StudioProps) {
         if (pendingSnapshotRef.current) {
           pendingSnapshotRef.current = false
           setIsSnapping(false)
-          const rawUrl = event.data.dataUrl
           const updateThumbnailFn = curProps.onUpdateThumbnail
           if (rawUrl && rawUrl.length > 500 && targetId && updateThumbnailFn) {
             void updateThumbnailFn(targetId, rawUrl)
@@ -721,7 +910,7 @@ export default function StudioPage(p: StudioProps) {
           setInspectionPill({
             visible: true,
             open: true,
-            dataUrl: event.data.dataUrl,
+            dataUrl: rawUrl,
             width: event.data.width || 1280,
             height: event.data.height || 720,
             errorCount: gameErrorCountRef.current,
@@ -888,10 +1077,12 @@ export default function StudioPage(p: StudioProps) {
       if (!detail) return
 
       if (detail.type === 'inspect_game_screen') {
+        const wasClosed = !previewOpen
+        if (wasClosed) setPreviewOpen(true)
         if (!isAiControlling) {
           prevViewSettingsRef.current = { device, previewWidth }
           setIsAiControlling(true)
-          if (previewWidth < 50) setPreviewWidth(52)
+          if (previewWidth < 46) setPreviewWidth(50)
         }
         if (detail.data?.device_mode) {
           const m = detail.data.device_mode
@@ -902,10 +1093,20 @@ export default function StudioPage(p: StudioProps) {
         if (detail.data?.call_id) {
           pendingVisionCallIdRef.current = String(detail.data.call_id)
         }
-        // Give viewport 150ms to resize if device_mode switched before capturing
         window.setTimeout(() => {
           postToPreview({ type: 'yulya:capture-screen', reqId: String(detail.data?.call_id || Date.now()) })
-        }, 150)
+        }, wasClosed ? 650 : 180)
+      } else if (detail.type === 'evaluate_in_preview') {
+        const wasClosed = !previewOpen
+        if (wasClosed) setPreviewOpen(true)
+        const cid = String(detail.data?.call_id || '')
+        const codeStr = String(detail.data?.code || '')
+        if (cid && codeStr) {
+          pendingAiEvalIdsRef.current.add(cid)
+          window.setTimeout(() => {
+            postToPreview({ type: 'yulya:eval-code', evalId: cid, code: codeStr })
+          }, wasClosed ? 600 : 80)
+        }
       } else if (detail.type === 'send_game_input') {
         if (!isAiControlling) {
           prevViewSettingsRef.current = { device, previewWidth }
@@ -1719,7 +1920,20 @@ export default function StudioPage(p: StudioProps) {
   }
 
   return (
-    <div className={`vscode-ide ${dragging ? 'is-resizing' : ''}`}>
+    <div className={`vscode-ide ${dragging ? 'is-resizing' : ''}`} data-mobile-tab={mobileTab}>
+      {/* Hidden video element keeping live getDisplayMedia track active for frame captures */}
+      <video ref={screenVideoRef} muted playsInline style={{ display: 'none' }} />
+      <input
+        ref={chatImageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          if (e.target.files?.length) void attachChatImageBlobs(e.target.files)
+          e.target.value = ''
+        }}
+      />
       {/* Top Navbar */}
       <header className="vsc-topbar">
         <div className="vsc-brand-group">
@@ -1845,6 +2059,42 @@ export default function StudioPage(p: StudioProps) {
           </div>
         </div>
       </header>
+
+      {/* Responsive Tablet / Mobile Workspace Switcher (visible <= 960px) */}
+      <nav className="vsc-mobile-tabs" aria-label="Workspace View">
+        <button
+          type="button"
+          className={`vsc-mobile-tab-btn ${mobileTab === 'files' ? 'active' : ''}`}
+          onClick={() => { setMobileTab('files'); p.setSidebarOpen(true) }}
+        >
+          <Files size={14} />
+          <span>Files</span>
+        </button>
+        <button
+          type="button"
+          className={`vsc-mobile-tab-btn ${mobileTab === 'code' ? 'active' : ''}`}
+          onClick={() => setMobileTab('code')}
+        >
+          <Code2 size={14} />
+          <span>Code</span>
+        </button>
+        <button
+          type="button"
+          className={`vsc-mobile-tab-btn ${mobileTab === 'preview' ? 'active' : ''}`}
+          onClick={() => { setMobileTab('preview'); setPreviewOpen(true) }}
+        >
+          <Eye size={14} />
+          <span>Preview</span>
+        </button>
+        <button
+          type="button"
+          className={`vsc-mobile-tab-btn ${mobileTab === 'chat' ? 'active' : ''}`}
+          onClick={() => { setMobileTab('chat'); setAiChatOpen(true) }}
+        >
+          <Sparkles size={14} />
+          <span>AI Chat</span>
+        </button>
+      </nav>
 
       {/* Main Studio Workspace */}
       <div className="vsc-body">
@@ -2333,20 +2583,6 @@ export default function StudioPage(p: StudioProps) {
                 </button>
                 <button
                   className="vsc-tool-btn"
-                  title="Checkpoints & Visual Diff Rollback"
-                  onClick={() => setCheckpointsOpen(true)}
-                >
-                  <History size={14} />
-                </button>
-                <button
-                  className="vsc-tool-btn"
-                  title="AI Asset Studio (Nano Banana 2.1 Sprites & Gemini 3.8 TTS)"
-                  onClick={() => setAiAssetOpen(true)}
-                >
-                  <Wand2 size={14} />
-                </button>
-                <button
-                  className="vsc-tool-btn"
                   title="Format Document (Shift+Alt+F)"
                   onClick={() => void formatDocument()}
                 >
@@ -2371,9 +2607,9 @@ export default function StudioPage(p: StudioProps) {
 
             {/* Breadcrumbs Bar */}
             <div className="vsc-breadcrumb-bar">
-              <span>{p.currentGame?.id ?? 'project'}</span>
-              <ChevronRight size={12} />
-              <b>
+              <span className="vsc-crumb-project">{p.currentGame?.id ?? 'project'}</span>
+              <ChevronRight size={12} className="vsc-crumb-sep" />
+              <b className="vsc-crumb-file">
                 <FileIcon name={p.activeFile} />
                 <span>{p.activeFile || 'Select a file'}</span>
               </b>
@@ -2383,7 +2619,7 @@ export default function StudioPage(p: StudioProps) {
                 </span>
               )}
               {esbuildStatus && (
-                <span style={{ fontSize: 11, color: '#38bdf8', marginLeft: 10, padding: '1px 7px', borderRadius: 6, background: 'rgba(56,189,248,0.12)' }}>
+                <span className="vsc-esbuild-badge">
                   ⚡ {esbuildStatus}
                 </span>
               )}
@@ -2589,7 +2825,7 @@ export default function StudioPage(p: StudioProps) {
               <div className="vsc-preview-header">
                 <div className="preview-label-group">
                   <span className="status-dot saved live-pulse" />
-                  <b className="preview-heading">GAME PREVIEW</b>
+                  <b className="preview-heading">PREVIEW</b>
                 </div>
 
                 <div className="vsc-device-controls">
@@ -2935,11 +3171,11 @@ export default function StudioPage(p: StudioProps) {
           >
             <div className="copilot-panel-header">
               <div className="copilot-title-group">
-                <Sparkles size={15} className="copilot-icon" />
-                <span className="copilot-title">COPILOT CHAT</span>
-                <span className="copilot-model-badge">
+                <Sparkles size={14} className="copilot-icon" />
+                <span className="copilot-title">COPILOT</span>
+                <span className="copilot-model-badge" title={p.selectedModel || 'Gemini'}>
                   {p.isAntigravityMode
-                    ? `✦ Antigravity (${p.selectedModel ? p.selectedModel.replace('models/', '').replace('antigravity-', '') : 'preview'})`
+                    ? `✦ Antigravity (${p.selectedModel ? p.selectedModel.replace('models/', '').replace('antigravity-', '') : 'auto'})`
                     : (p.selectedModel ? p.selectedModel.replace('models/', '') : 'Gemini')}
                 </span>
               </div>
@@ -3025,19 +3261,19 @@ export default function StudioPage(p: StudioProps) {
                   </div>
                   <div className="empty-title">Ask Copilot or choose a prompt</div>
                   <div className="copilot-quick-commands">
-                    <button onClick={() => p.setChat('Review the game code and fix any bugs')}>
+                    <button onClick={() => p.setChat('Review the project code, run diagnostics, and fix any bugs')}>
                       <code>/fix</code>
                       <span>Fix bugs</span>
                     </button>
-                    <button onClick={() => p.setChat('Explain the game architecture and logic')}>
-                      <code>/explain</code>
-                      <span>Explain game</span>
+                    <button onClick={() => p.setChat('Generate a custom pixel-art hero sprite with Nano Banana and wire it into the game')}>
+                      <code>/sprite</code>
+                      <span>Nano Banana art</span>
                     </button>
-                    <button onClick={() => p.setChat('Add synthesized retro sound effects using Web Audio API')}>
-                      <code>/audio</code>
-                      <span>Web Audio SFX</span>
+                    <button onClick={() => p.setChat('Generate an energetic arcade voice line ("READY, GO!") using Gemini TTS and play it on start')}>
+                      <code>/voice</code>
+                      <span>Gemini TTS voice</span>
                     </button>
-                    <button onClick={() => p.setChat('Add responsive touch controls for mobile screens')}>
+                    <button onClick={() => p.setChat('Add responsive touch controls and mobile layout polish')}>
                       <code>/touch</code>
                       <span>Mobile controls</span>
                     </button>
@@ -3155,19 +3391,80 @@ export default function StudioPage(p: StudioProps) {
                       </div>
                     )}
 
-                    {/* AI Output Displayed Below Errors */}
+                    {/* AI Output & Multimodal Attachments */}
                     <div className="bubble-body">
+                      {isUser && msg.images && msg.images.length > 0 && (
+                        <div className="chat-user-images-grid">
+                          {msg.images.map((imgUrl, iIdx) => (
+                            <button
+                              key={iIdx}
+                              type="button"
+                              className="chat-user-image-btn"
+                              onClick={() => setChatLightboxUrl(imgUrl)}
+                              title="Click to zoom image"
+                            >
+                              <img src={imgUrl} alt={`Attachment ${iIdx + 1}`} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {isUser ? (
                         <pre className="user-plain-text">{msg.text}</pre>
-                      ) : msg.text === 'Thinking…' && !msg.thought ? (
+                      ) : msg.text === 'Thinking…' && !msg.thought && !(msg.media && msg.media.length > 0) ? (
                         <div className="bubble-thinking-placeholder">
                           <Loader2 size={12} className="animate-spin text-accent" />
                           <span>Thinking…</span>
                         </div>
                       ) : (
-                        <MarkdownBody text={msg.text} />
+                        <MarkdownBody text={msg.text} projectId={p.currentProjectId} onOpenImage={setChatLightboxUrl} />
                       )}
                     </div>
+
+                    {/* Inline Generated Images (Nano Banana), Captured Previews & TTS Audio Players */}
+                    {!isUser && msg.media && msg.media.length > 0 && (
+                      <div className="chat-media-gallery">
+                        {msg.media.map((item, mIdx) => (
+                          item.kind === 'audio' ? (
+                            <div key={mIdx} className="chat-audio-card">
+                              <div className="chat-audio-header">
+                                <Volume2 size={13} className="chat-audio-icon" />
+                                <span className="chat-media-path" title={item.path}>{item.path}</span>
+                                <a href={item.url} download={item.path.split('/').pop() || 'voice.wav'} className="chat-media-dl" title="Download WAV">
+                                  <Download size={12} />
+                                </a>
+                              </div>
+                              {item.caption && <div className="chat-media-caption">{item.caption}</div>}
+                              <audio controls preload="metadata" src={item.url} className="chat-audio-player" />
+                            </div>
+                          ) : (
+                            <div key={mIdx} className={`chat-image-card ${item.kind === 'vision' ? 'is-vision' : ''}`}>
+                              <button
+                                type="button"
+                                className="chat-image-preview-btn"
+                                onClick={() => setChatLightboxUrl(item.url)}
+                                title="Click to view full size"
+                              >
+                                <img src={item.url} alt={item.caption || item.path} loading="lazy" />
+                              </button>
+                              <div className="chat-image-meta">
+                                <span className="chat-media-badge">{item.kind === 'vision' ? 'Vision' : 'Nano Banana'}</span>
+                                <span className="chat-media-path" title={item.path}>{item.path}</span>
+                                {item.kind !== 'vision' && item.path !== 'Arcade Cover' && (
+                                  <button
+                                    type="button"
+                                    className="chat-media-open-btn"
+                                    onClick={() => openFileTab(item.path)}
+                                    title="Open asset in workspace"
+                                  >
+                                    Open
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        ))}
+                      </div>
+                    )}
 
                     {msg.grounding && ((msg.grounding.queries && msg.grounding.queries.length > 0) || (msg.grounding.sources && msg.grounding.sources.length > 0)) && (
                       <div className="bubble-grounding-section">
@@ -3373,24 +3670,94 @@ export default function StudioPage(p: StudioProps) {
               </div>
             )}
 
-            {/* Copilot Chat Composer (VS Code Style Single Card) */}
+            {/* Copilot Chat Composer (VS Code Style Multimodal Card: Images + Live Screen Share + Tools) */}
             <div className="vsc-composer-wrapper">
-              <div className="vsc-composer-card">
+              <div
+                className={`vsc-composer-card ${chatDragOver ? 'is-drag-over' : ''}`}
+                onDragOver={(e) => { e.preventDefault(); setChatDragOver(true) }}
+                onDragLeave={() => setChatDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setChatDragOver(false)
+                  if (e.dataTransfer.files?.length) void attachChatImageBlobs(e.dataTransfer.files)
+                }}
+              >
+                {/* Active Browser Screen Share Status Bar */}
+                {screenShareActive && (
+                  <div className="chat-screenshare-bar">
+                    <span className="screenshare-live-dot" />
+                    <span className="screenshare-label">Screen sharing live — frame sends with prompt</span>
+                    <button
+                      type="button"
+                      className="screenshare-action-btn"
+                      onClick={() => {
+                        const f = captureSharedScreenFrame()
+                        if (f) setPendingChatImages((prev) => [...prev, f].slice(0, 4))
+                      }}
+                      title="Capture frame now into attachments"
+                    >
+                      Snap
+                    </button>
+                    <button
+                      type="button"
+                      className="screenshare-action-btn danger"
+                      onClick={stopScreenShare}
+                      title="Stop screen sharing"
+                    >
+                      Stop
+                    </button>
+                  </div>
+                )}
+
+                {/* Pending Attached Images Strip */}
+                {pendingChatImages.length > 0 && (
+                  <div className="chat-pending-images">
+                    {pendingChatImages.map((imgUrl, idx) => (
+                      <div key={idx} className="chat-pending-thumb">
+                        <img src={imgUrl} alt={`Attached ${idx + 1}`} onClick={() => setChatLightboxUrl(imgUrl)} />
+                        <button
+                          type="button"
+                          className="chat-pending-remove"
+                          onClick={() => setPendingChatImages((prev) => prev.filter((_, i) => i !== idx))}
+                          aria-label="Remove image"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Textarea on the left, Up Arrow button at the right end */}
                 <div className="vsc-composer-input-row">
                   <textarea
                     className="vsc-composer-textarea"
                     value={p.chat}
                     onChange={e => p.setChat(e.target.value)}
+                    onPaste={(e) => {
+                      const items = e.clipboardData?.items
+                      if (!items) return
+                      const imageFiles: Blob[] = []
+                      for (let i = 0; i < items.length; i++) {
+                        if (items[i].type.startsWith('image/')) {
+                          const blob = items[i].getAsFile()
+                          if (blob) imageFiles.push(blob)
+                        }
+                      }
+                      if (imageFiles.length) {
+                        e.preventDefault()
+                        void attachChatImageBlobs(imageFiles)
+                      }
+                    }}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault()
-                        if (!p.isAiGenerating) p.submitPrompt()
+                        handleSendChat()
                       }
                     }}
                     placeholder={p.isAntigravityMode
-                      ? "Chat with Antigravity Agent… (tools & reasoning active)"
-                      : "Chat with Copilot… (Enter to send, Shift+Enter for newline)"}
+                      ? "Ask Antigravity… paste/drop images, request Nano Banana art or TTS voice"
+                      : "Chat with Copilot… paste images, ask for sprites/audio or code changes"}
                     rows={2}
                   />
 
@@ -3409,8 +3776,8 @@ export default function StudioPage(p: StudioProps) {
                       <button
                         type="button"
                         className="vsc-chat-send-btn"
-                        disabled={!p.chat.trim() || !p.selectedModel}
-                        onClick={p.submitPrompt}
+                        disabled={(!p.chat.trim() && pendingChatImages.length === 0 && !screenShareActive) || !p.selectedModel}
+                        onClick={handleSendChat}
                         title="Send message (Enter)"
                       >
                         <ArrowUp size={12} strokeWidth={2.2} />
@@ -3419,47 +3786,69 @@ export default function StudioPage(p: StudioProps) {
                   </div>
                 </div>
 
-                {/* Bottom Action Bar inside the card: Tools */}
+                {/* Bottom Action Bar inside the card: Row 1 = Media & Modes, Row 2 = Model & Waterfall */}
                 <div className="vsc-composer-toolbar">
-                  {/* Left Controls */}
-                  <div className="vsc-toolbar-left">
-                    {/* Attach context button (+) */}
-                    <button
-                      type="button"
-                      className="vsc-composer-icon-btn"
-                      title={p.activeFile ? `Add @${p.activeFile} context` : 'Add file context'}
-                      onClick={() => {
-                        if (p.activeFile) {
-                          p.setChat(p.chat ? `${p.chat} @${p.activeFile} ` : `@${p.activeFile} `)
-                        }
-                      }}
-                    >
-                      <Plus size={11} />
-                    </button>
-
-                    {/* Plan vs Build Mode Pill */}
-                    {p.setAiMode && (
+                  <div className="vsc-toolbar-row">
+                    <div className="vsc-toolbar-group">
+                      {/* Attach Image from device */}
                       <button
                         type="button"
-                        className={`vsc-chat-pill-btn ${p.aiMode === 'plan' ? 'is-active' : ''}`}
-                        onClick={() => p.setAiMode?.(p.aiMode === 'plan' ? 'build' : 'plan')}
-                        title={p.aiMode === 'plan' ? 'Plan Mode (Read-only analysis). Click to switch to Build Mode.' : 'Build Mode (Edits files with automatic checkpoints). Click for Plan Mode.'}
+                        className="vsc-composer-icon-btn"
+                        title="Attach image / mockup / screenshot (or paste/drop)"
+                        aria-label="Attach image"
+                        onClick={() => chatImageInputRef.current?.click()}
                       >
-                        <span>{p.aiMode === 'plan' ? 'Plan' : 'Build'}</span>
+                        <ImageIcon size={12} />
                       </button>
-                    )}
 
-                    {/* Antigravity Pill (Matches `{/} Agent` in screenshot) */}
-                    <button
-                      type="button"
-                      className={`vsc-chat-pill-btn ${p.isAntigravityMode ? 'is-active' : ''}`}
-                      onClick={() => p.setIsAntigravityMode?.(!p.isAntigravityMode)}
-                      title={p.isAntigravityMode ? "Antigravity Mode active (Tools & Google Grounding). Click to turn OFF" : "Click to activate Antigravity Mode"}
-                    >
-                      <Code2 size={11} className="pill-agent-icon" />
-                      <span>Antigravity</span>
-                    </button>
+                      {/* Attach live game preview screenshot */}
+                      <button
+                        type="button"
+                        className="vsc-composer-icon-btn"
+                        title="Attach live preview frame to chat"
+                        aria-label="Attach live preview screenshot"
+                        onClick={attachPreviewFrameToChat}
+                      >
+                        <Camera size={12} />
+                      </button>
 
+                      {/* Real Live Browser Screen Share (getDisplayMedia) */}
+                      <button
+                        type="button"
+                        className={`vsc-composer-icon-btn ${screenShareActive ? 'is-sharing' : ''}`}
+                        title={screenShareActive ? 'Stop live screen share' : 'Share your browser tab / screen live with Gemini'}
+                        aria-label={screenShareActive ? 'Stop live screen share' : 'Share screen with Gemini'}
+                        onClick={() => (screenShareActive ? stopScreenShare() : void startScreenShare())}
+                      >
+                        {screenShareActive ? <ScreenShareOff size={12} /> : <ScreenShare size={12} />}
+                      </button>
+
+                      {/* Plan vs Build Mode Pill */}
+                      {p.setAiMode && (
+                        <button
+                          type="button"
+                          className={`vsc-chat-pill-btn ${p.aiMode === 'plan' ? 'is-active' : ''}`}
+                          onClick={() => p.setAiMode?.(p.aiMode === 'plan' ? 'build' : 'plan')}
+                          title={p.aiMode === 'plan' ? 'Plan Mode (Read-only analysis). Click to switch to Build Mode.' : 'Build Mode (Edits code + Nano Banana art + Gemini TTS voice). Click for Plan Mode.'}
+                        >
+                          <span>{p.aiMode === 'plan' ? 'Plan' : 'Build'}</span>
+                        </button>
+                      )}
+
+                      {/* Antigravity Pill */}
+                      <button
+                        type="button"
+                        className={`vsc-chat-pill-btn ${p.isAntigravityMode ? 'is-active' : ''}`}
+                        onClick={() => p.setIsAntigravityMode?.(!p.isAntigravityMode)}
+                        title={p.isAntigravityMode ? "Antigravity Mode active (Tools & Google Grounding). Click to turn OFF" : "Click to activate Antigravity Mode"}
+                      >
+                        <Code2 size={11} className="pill-agent-icon" />
+                        <span>Antigravity</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="vsc-toolbar-row vsc-toolbar-row-model">
                     {/* AI Model Selector (Automatically displays ALL live chat models from Google AI Studio) */}
                     <div className="vsc-chat-model-wrapper" title="Select any live Gemini or Gemma chat model">
                       <Sparkles size={10} className="vsc-model-icon" />
@@ -3499,13 +3888,13 @@ export default function StudioPage(p: StudioProps) {
                         onClick={() => void p.onRefreshModels?.()}
                         title="Refresh live chat models from your Google Gemini API key"
                         aria-label="Refresh live chat models"
-                        style={{ padding: '3px 6px' }}
+                        style={{ padding: '3px 6px', flexShrink: 0 }}
                       >
                         <RefreshCw size={10} />
                       </button>
                     )}
 
-                    {/* Waterfall & Setup Composite Pill (Matches `Auto | Balance` in screenshot) */}
+                    {/* Waterfall & Setup Composite Pill */}
                     <div className={`vsc-composite-pill ${p.useWaterfall ? 'is-active' : ''}`}>
                       <button
                         type="button"
@@ -3541,16 +3930,6 @@ export default function StudioPage(p: StudioProps) {
           <button
             type="button"
             className="vsc-footer-item"
-            title="Source Control: main branch"
-            onClick={() => p.notify('Branch: main (synced with repository)')}
-          >
-            <GitBranch size={13} />
-            <span>main</span>
-          </button>
-
-          <button
-            type="button"
-            className="vsc-footer-item"
             title={`Workspace status: ${p.saveState || 'Saved'}`}
             onClick={() => p.notify(`Workspace status: ${p.saveState || 'All changes saved'}`)}
           >
@@ -3578,7 +3957,7 @@ export default function StudioPage(p: StudioProps) {
 
           <button
             type="button"
-            className={`vsc-footer-item ${p.terminalOpen ? 'active' : ''}`}
+            className={`vsc-footer-item vsc-footer-hide-mobile ${p.terminalOpen ? 'active' : ''}`}
             title="Toggle Integrated Terminal"
             onClick={() => p.setTerminalOpen(!p.terminalOpen)}
           >
@@ -3588,7 +3967,7 @@ export default function StudioPage(p: StudioProps) {
 
           <button
             type="button"
-            className={`vsc-footer-item ${previewOpen ? 'active' : ''}`}
+            className={`vsc-footer-item vsc-footer-hide-mobile ${previewOpen ? 'active' : ''}`}
             title="Toggle Isolated Live Preview"
             onClick={() => setPreviewOpen(!previewOpen)}
           >
@@ -3600,7 +3979,7 @@ export default function StudioPage(p: StudioProps) {
         <div className="vsc-footer-right">
           <button
             type="button"
-            className="vsc-footer-item"
+            className="vsc-footer-item vsc-footer-hide-mobile"
             title="Current Cursor Position"
             onClick={() => editorRef.current?.focus()}
           >
@@ -3633,7 +4012,7 @@ export default function StudioPage(p: StudioProps) {
 
           <button
             type="button"
-            className="vsc-footer-item"
+            className="vsc-footer-item vsc-footer-hide-mobile"
             title={`Language Mode: ${activeLangLabel}`}
           >
             <span>{activeLangLabel}</span>
@@ -4078,8 +4457,7 @@ export default function StudioPage(p: StudioProps) {
         files={p.tree.map((f) => f.name)}
         onOpenFile={(path) => openFileTab(path)}
         actions={[
-          { id: 'cmd-checkpoints', label: 'Open Checkpoints & Diff Rollback', hint: 'History', icon: 'history', run: () => setCheckpointsOpen(true) },
-          { id: 'cmd-ai-assets', label: 'AI Asset Studio (Sprites & Voice Lines)', hint: 'Nano Banana / TTS', icon: 'asset', run: () => setAiAssetOpen(true) },
+          { id: 'cmd-screenshare', label: screenShareActive ? 'Stop Live Screen Share' : 'Share Screen Live with Gemini', hint: 'Vision', icon: 'preview', run: () => (screenShareActive ? stopScreenShare() : void startScreenShare()) },
           { id: 'cmd-picker', label: pickerActive ? 'Disable Element Picker' : 'Enable Click-to-Edit Element Picker', hint: 'Preview', icon: 'picker', run: () => { const n = !pickerActive; setPickerActive(n); postToPreview({ type: 'yulya:set-picker', active: n }) } },
           { id: 'cmd-format', label: 'Format Current Document', hint: 'Shift+Alt+F', icon: 'file', run: () => void formatDocument() },
           { id: 'cmd-preview', label: previewOpen ? 'Collapse Live Preview' : 'Expand Live Preview', hint: 'View', icon: 'preview', run: () => setPreviewOpen(!previewOpen) },
@@ -4090,31 +4468,17 @@ export default function StudioPage(p: StudioProps) {
         ]}
       />
 
-      {/* Checkpoints & Visual Diff Rollback Modal */}
-      <CheckpointDiffModal
-        open={checkpointsOpen}
-        projectId={p.currentProjectId}
-        currentFiles={p.code}
-        onClose={() => setCheckpointsOpen(false)}
-        onRestored={async () => {
-          p.onReloadFiles()
-          p.setPreviewKey((k) => k + 1)
-        }}
-        notify={p.notify}
-      />
-
-      {/* AI Asset Studio (Nano Banana 2.1 + Gemini 3.8 TTS) */}
-      <AiAssetModal
-        open={aiAssetOpen}
-        projectId={p.currentProjectId}
-        hasKey={Boolean(p.user?.has_api_key)}
-        onClose={() => setAiAssetOpen(false)}
-        onAssetCreated={async (createdPath) => {
-          p.onReloadFiles()
-          openFileTab(createdPath)
-        }}
-        notify={p.notify}
-      />
+      {/* Full-Screen Chat Image Lightbox */}
+      {chatLightboxUrl && (
+        <div className="chat-lightbox-backdrop" onClick={() => setChatLightboxUrl(null)}>
+          <div className="chat-lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="chat-lightbox-close" onClick={() => setChatLightboxUrl(null)} aria-label="Close image preview">
+              <X size={18} />
+            </button>
+            <img src={chatLightboxUrl} alt="Full preview" className="chat-lightbox-img" />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

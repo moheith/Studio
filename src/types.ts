@@ -53,6 +53,15 @@ export type GroundingData = {
   sources: GroundingSource[]
 }
 
+export type ChatMediaItem = {
+  kind: 'image' | 'audio' | 'vision'
+  path: string
+  url: string
+  caption?: string
+  mime_type?: string
+  size?: number
+}
+
 export type ChatMessage = {
   id: string
   role: 'user' | 'ai'
@@ -60,6 +69,8 @@ export type ChatMessage = {
   thought?: string
   time?: number
   tools?: string[]
+  images?: string[]
+  media?: ChatMediaItem[]
   model?: string
   mode?: 'build' | 'plan'
   telemetry?: ChatTelemetry
@@ -98,14 +109,6 @@ export type TemplateItem = {
   description: string
   stack: string[]
   accent: string
-}
-
-export type ProjectCheckpoint = {
-  id: string
-  label: string
-  file_count: number
-  created_at: number
-  files?: Record<string, string>
 }
 
 export type GameComment = {

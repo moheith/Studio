@@ -14,7 +14,7 @@ Yulya Studio is an all-in-one web platform where creators can build, prompt, bun
 
 ## Core Pillars & Capabilities
 - **Browser-Native Monaco IDE**: Full VS Code-grade editing with multi-file explorer, folder persistence, Command Palette (`Ctrl+K` / `Ctrl+P`), Visual Asset Previewer, and live in-browser `esbuild-wasm` TypeScript/React bundling.
-- **Gemini 3.x AI Copilot & Asset Studio**: Bring-Your-Own-Key (BYOK) agent supporting Gemini 3.8 Flash, Gemini 3.6 Flash, and Gemini 3.5 Flash-Lite with surgical `edit_file` patches, Plan vs Build mode, automatic pre-edit Checkpoints with Monaco Diff rollback, true Multimodal Vision (`inspect_game_screen`), Click-to-Edit visual element picker, Nano Banana 2.1 sprite/texture generation, and Gemini 3.8 TTS audio generation.
+- **Multimodal Gemini AI Chat**: Bring-Your-Own-Key (BYOK) agent discovering every live Gemini/Gemma chat model on the user's key automatically, with surgical `edit_file` / `batch_edit_files`, diagnostics (`check_project_diagnostics`), `regex_search`, `read_file_lines`, `evaluate_in_preview`, inline **Nano Banana 2.1** image generation & editing, inline **Gemini 3.8 TTS** voice players, image paste/drop uploads, live browser **Screen Share**, and Click-to-Edit visual picking.
 - **Dedicated Origin Sandbox (`play.yulya.me`)**: Public games and private previews execute on a strictly isolated origin (`play.yulya.me`) with zero studio cookies, strict CSP, and HMAC-SHA256 signed private preview tokens.
 - **Community Arcade & Instant Hosting**: Publish public games in one click to `https://studio.yulya.me/{username}/{slug}` with theater/fullscreen play wrapper, likes, comments, leaderboards (`YulyaSDK.submitScore`), embed codes, abuse reporting, and creator opt-in Remixing (disabled by default).
 - **Owner-Only ZIP Export & Account Security**: Creators retain 100% IP ownership, export clean `.zip` archives, manage active sessions & password resets, and purge accounts immediately in `/settings`.
@@ -24,7 +24,7 @@ Yulya Studio is an all-in-one web platform where creators can build, prompt, bun
 - [Full A to Z Documentation](https://studio.yulya.me/llms-full.txt): Comprehensive platform documentation, guides, APIs, and security architecture.
 - [Starter Templates Gallery](https://studio.yulya.me/templates): 8 instant-launch templates (Canvas 2D Arcade, React + TS + Tailwind, Three.js 3D, GLSL Shader, Phaser Platformer, Landing Page, Interactive Tool, Blank).
 - [5-Minute Quickstart](https://studio.yulya.me/docs#quickstart): Step-by-step tutorial from signup to publishing a live game.
-- [Studio IDE Guide](https://studio.yulya.me/docs#studio-ide): How to use Monaco, esbuild-wasm, Command Palette, Checkpoints, and keyboard shortcuts.
+- [Studio IDE Guide](https://studio.yulya.me/docs#studio-ide): How to use Monaco, esbuild-wasm, Command Palette, live screen sharing, and keyboard shortcuts.
 - [Gemini Copilot Guide](https://studio.yulya.me/docs#copilot): Plan/Build mode, surgical edits, vision playtesting, and AI asset generation.
 - [Arcade & Publishing](https://studio.yulya.me/docs#arcade-publishing): Visibility, likes, comments, leaderboards, and creator opt-in remixing.
 - [Terms of Service](https://studio.yulya.me/terms): User rights, IP ownership, and acceptable use.

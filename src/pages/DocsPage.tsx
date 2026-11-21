@@ -665,7 +665,7 @@ function renderTopicContent(
               <div>
                 <strong>Philosophy: Creation Without Friction</strong>
                 <p>
-                  Start from a single sentence, prompt, or starter template. Watch HTML5, Canvas, WebGL, or React + TypeScript code assemble side by side. Iterate with Gemini 3.x AI, automatic Checkpoints, and Click-to-Edit inspection. Click one button to publish to the isolated Community Arcade where anyone can play without installs or plugins.
+                  Start from a single sentence, prompt, or starter template. Watch HTML5, Canvas, WebGL, or React + TypeScript code assemble side by side. Iterate with Gemini AI (with inline Nano Banana art, Gemini TTS voices, image uploads, live screen sharing, and Click-to-Edit inspection). Click one button to publish to the isolated Community Arcade where anyone can play without installs or plugins.
                 </p>
               </div>
             </div>
@@ -681,8 +681,8 @@ function renderTopicContent(
               </div>
               <div className="pillar-card">
                 <div className="pillar-icon text-mint"><Sparkles size={22} /></div>
-                <h3>Gemini 3.x AI Copilot &amp; Asset Studio</h3>
-                <p>Streaming SSE surgical patches, Plan vs Build mode, automatic Checkpoints, multimodal Vision playtesting, Nano Banana 2.1 art, and Gemini 3.8 TTS audio.</p>
+                <h3>Multimodal Gemini AI Chat</h3>
+                <p>Streaming SSE surgical edits, Plan vs Build mode, inline Nano Banana 2.1 art &amp; Gemini 3.8 TTS voice players, image uploads, live screen sharing, and Vision playtesting.</p>
               </div>
               <div className="pillar-card">
                 <div className="pillar-icon text-cyan"><Gamepad2 size={22} /></div>

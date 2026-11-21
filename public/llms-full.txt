@@ -11,8 +11,7 @@ Yulya Studio is a browser-native game & web app creation studio, Monaco code IDE
 
 ### Key Value Propositions
 - **Zero-Setup Studio**: VS Code-grade Monaco editor with Command Palette (`Ctrl+K` / `Ctrl+P`), persistent folders, visual asset previews, live FPS/DOM/Memory telemetry HUD, and automatic in-browser TypeScript/JSX bundling.
-- **Gemini 3.x AI Copilot**: Surgical `edit_file` search/replace patches, Plan vs Build mode, automatic pre-edit Checkpoints with Monaco side-by-side Diff rollback, true Multimodal Vision (`inspect_game_screen`), Click-to-Edit DOM targeting, and Smart Waterfall failover (`gemini-3.8-flash` → `gemini-3.6-flash` → `gemini-3.5-flash-lite`).
-- **AI Asset Studio**: Generate sprites, textures, and cover art with `gemini-nano-banana-2.1` and voice lines / narration WAV audio with `gemini-3.8-flash-tts`, saved straight into project `assets/`.
+- **Multimodal Gemini AI Chat**: Surgical `edit_file` / `batch_edit_files`, static `check_project_diagnostics`, `regex_search`, `read_file_lines`, `evaluate_in_preview`, Plan vs Build mode, true Multimodal Vision (`inspect_game_screen`), live browser Screen Share (`getDisplayMedia`), image paste/drop uploads, inline **Nano Banana 2.1** sprites/artwork, inline **Gemini 3.8 TTS** voice audio players, and Click-to-Edit DOM targeting.
 - **Dedicated Origin Sandbox (`play.yulya.me`)**: Every live preview and public game executes on `https://play.yulya.me` with strict CSP, zero authentication cookies, and strict `postMessage` origin verification.
 - **Community Arcade**: One-click publishing to `https://studio.yulya.me/{username}/{slug}` with likes, comments, `YulyaSDK.submitScore` high-score leaderboards, embed codes, abuse reporting, and creator opt-in Remixing (off by default).
 - **Creator Ownership**: 100% of game code and assets belong to the creator. Owners can export clean `.zip` archives and purge their accounts immediately from `/settings`.
@@ -38,7 +37,7 @@ Yulya Studio is a browser-native game & web app creation studio, Monaco code IDE
 
 ### Step 4: Build with Monaco & Gemini 3.x Copilot
 1. Toggle **Plan** mode to review a step-by-step architectural roadmap without touching files, or **Build** mode to let the agent create and surgically patch files (`edit_file`).
-2. Before any AI edit turn, Yulya Studio automatically saves a **Checkpoint** so you can inspect diffs in Monaco and roll back in one click.
+2. Paste or drop screenshots/mockups directly into chat, toggle **Live Screen Share**, or ask Gemini to generate sprites (`Nano Banana 2.1`) and voice cues (`Gemini 3.8 TTS`) — generated images and audio players appear right inside the chat!
 3. Click the **Inspect (Click-to-Edit)** icon in the preview toolbar to pick any rendered DOM element and inject its exact selector and context into the AI prompt.
 4. Click **1-Click Fix** next to any runtime console error in the Terminal to send the exact stack trace to the Copilot.
 
@@ -67,7 +66,7 @@ Yulya Studio is a browser-native game & web app creation studio, Monaco code IDE
 
 - **Models & Waterfall**: Dynamically lists every live chat model available on the user's Google AI Studio key (including paid Gemini 2.5, 3.x, 4.x, Gemma, and newly launched models) and preserves chosen model IDs verbatim. **Antigravity Auto** dynamically picks the newest flagship model with deep thinking (`thinkingConfig`), `batch_edit_files`, `rename_file`, autonomous image/audio asset generation, Google Search grounding, and visual verification. Multi-turn function calls preserve full `thoughtSignature` metadata.
 - **True Multimodal Vision (`inspect_game_screen`)**: When the agent calls `inspect_game_screen`, the frontend captures a live JPEG frame of the running game and posts it back to the agent turn so Gemini visually inspects rendered canvas/DOM pixels before answering or fixing layout bugs.
-- **AI Asset Studio**: Generate sprites, tilesets, and backdrops with `gemini-nano-banana-2.1` or voice lines with `gemini-3.8-flash-tts`, stored directly inside your project's `assets/` folder.
+- **Built-In Nano Banana 2.1 & Gemini 3.8 TTS Chat Tools**: Ask the chat directly to generate or edit sprites, icons, backgrounds, or voice lines—images and playable WAV audio cards render inline inside the chat and save directly into `assets/`.
 
 ---
 
