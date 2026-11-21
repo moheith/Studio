@@ -14,12 +14,12 @@ import pytest_asyncio
 from cryptography.fernet import Fernet
 
 from backend import app as service
-from backend.ai_tools import apply_search_replace, normalize_waterfall
+from backend.ai_tools import apply_search_replace, build_thinking_config, normalize_model_id, normalize_waterfall
 from backend.security import KeyCipher, safe_relative_path
 
 
 class CapturingMockClient:
-    """Mock httpx client capturing Gemini requests to verify Gemini 3.x spec compliance."""
+    """Mock httpx client capturing Gemini requests to verify dynamic model discovery, Antigravity & thinkingConfig."""
     last_requests: list[dict] = []
     call_index: int = 0
     mode: str = "simple"
@@ -29,7 +29,25 @@ class CapturingMockClient:
     async def __aexit__(self, *args): return None
 
     async def get(self, url, **kwargs):
-        return httpx.Response(200, json={"models": [{"name": "models/gemini-3.8-flash", "displayName": "Gemini 3.8 Flash", "supportedGenerationMethods": ["generateContent"]}]})
+        params = kwargs.get("params") or {}
+        if params.get("pageToken") == "page-2":
+            return httpx.Response(200, json={
+                "models": [
+                    {"name": "models/gemini-9.9-ultra", "displayName": "Gemini 9.9 Ultra", "supportedGenerationMethods": ["generateContent"], "inputTokenLimit": 2000000, "thinking": True},
+                    {"name": "models/gemma-4-31b-it", "displayName": "Gemma 4 31B", "supportedGenerationMethods": ["generateContent"]},
+                    {"name": "models/imagen-4.0-generate", "displayName": "Imagen 4", "supportedGenerationMethods": ["generateContent"]},
+                ]
+            })
+        return httpx.Response(200, json={
+            "models": [
+                {"name": "models/gemini-2.5-pro", "displayName": "Gemini 2.5 Pro", "supportedGenerationMethods": ["generateContent"], "inputTokenLimit": 1048576, "thinking": True},
+                {"name": "models/gemini-2.5-flash", "displayName": "Gemini 2.5 Flash", "supportedGenerationMethods": ["generateContent"]},
+                {"name": "models/gemini-3.8-flash", "displayName": "Gemini 3.8 Flash", "supportedGenerationMethods": ["generateContent"], "inputTokenLimit": 1048576, "thinking": True},
+                {"name": "models/gemini-3.8-flash-tts", "displayName": "Gemini 3.8 Flash TTS", "supportedGenerationMethods": ["generateContent"]},
+                {"name": "models/text-embedding-004", "displayName": "Text Embedding", "supportedGenerationMethods": ["embedContent"]},
+            ],
+            "nextPageToken": "page-2",
+        })
 
     async def post(self, url, **kwargs):
         CapturingMockClient.last_requests.append({"url": url, "json": kwargs.get("json")})
@@ -71,6 +89,20 @@ class _MockStream:
             yield "data: " + json.dumps(payload)
         elif self.mode == "inspect_vision" and self.idx == 0:
             payload = {"candidates": [{"content": {"parts": [{"functionCall": {"name": "inspect_game_screen", "args": {"device_mode": "desktop"}}}]}}]}
+            yield "data: " + json.dumps(payload)
+        elif self.mode == "antigravity_power_tools" and self.idx == 0:
+            payload = {
+                "candidates": [{
+                    "content": {
+                        "parts": [
+                            {"thought": True, "text": "Batch patching + creating art & voice assets", "thoughtSignature": "AG_SIG_99"},
+                            {"functionCall": {"name": "batch_edit_files", "args": {"edits": [{"path": "app.js", "search": "Yulya Studio project ready!", "replace": "Antigravity upgraded!"}]}}},
+                            {"functionCall": {"name": "generate_image_asset", "args": {"path": "assets/boss.png", "prompt": "neon dragon boss sprite"}}},
+                            {"functionCall": {"name": "generate_audio_asset", "args": {"path": "assets/audio/go.wav", "text": "Ready, go!", "voice": "Kore"}}},
+                        ]
+                    }
+                }]
+            }
             yield "data: " + json.dumps(payload)
         else:
             yield 'data: {"candidates":[{"content":{"parts":[{"text":"All done!"}]}}]}'
@@ -246,9 +278,17 @@ async def test_bug_regressions_llms_at_profile_thumbnail_plays_and_slug(clients)
 @pytest.mark.asyncio
 async def test_gemini_3_compliance_edit_file_checkpoints_plan_mode_and_multimodal_vision(clients):
     app_client, _, _ = clients
-    assert normalize_waterfall(["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]) == [
-        "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"
+    # User-chosen paid/legacy model IDs MUST be preserved verbatim (never force-remapped!)
+    assert normalize_model_id("models/gemini-2.5-pro") == "gemini-2.5-pro"
+    assert normalize_waterfall(["gemini-2.5-pro", "gemini-3.7-flash", "gemini-3.5-flash-lite"]) == [
+        "gemini-2.5-pro", "gemini-3.7-flash", "gemini-3.5-flash-lite"
     ]
+    # Adaptive thinkingConfig per generation
+    assert build_thinking_config("gemini-3.8-flash", True, False) == {"includeThoughts": True, "thinkingLevel": "high"}
+    assert build_thinking_config("gemini-2.5-pro", True, False) == {"includeThoughts": True}
+    assert build_thinking_config("gemini-2.0-flash", True, False) is None
+    assert build_thinking_config("gemma-4-31b-it", True, False) is None
+
     patched, n = apply_search_replace("const x = 1;\nconst y = 2;\n", "const x = 1;", "const x = 42;")
     assert n == 1 and "const x = 42;" in patched
 
@@ -256,17 +296,18 @@ async def test_gemini_3_compliance_edit_file_checkpoints_plan_mode_and_multimoda
     proj = (await app_client.post("/api/projects", headers=auth["headers"], json={"title": "AI Test", "visibility": "private"})).json()["project"]
     pid = proj["id"]
 
-    # 1. Build mode: edit_file + auto-checkpoint + thoughtSignature preserved + NO temperature sent
+    # 1. Build mode: paid/legacy model preserved verbatim + edit_file + auto-checkpoint + thoughtSignature + NO temperature
     CapturingMockClient.mode = "edit_with_thought_sig"
     CapturingMockClient.call_index = 0
     CapturingMockClient.last_requests = []
-    res = await app_client.post(f"/api/projects/{pid}/ai/stream", headers=auth["headers"], json={"prompt": "Update log text", "model": "gemini-3.7-flash", "mode": "build"})
+    res = await app_client.post(f"/api/projects/{pid}/ai/stream", headers=auth["headers"], json={"prompt": "Update log text", "model": "gemini-2.5-pro", "antigravity": True, "mode": "build"})
     assert res.status_code == 200
     assert "event: checkpoint" in res.text
     assert len(CapturingMockClient.last_requests) >= 2
     first_req = CapturingMockClient.last_requests[0]
-    assert "gemini-3.8-flash" in first_req["url"]  # deprecated 3.7 remapped!
-    assert "temperature" not in json.dumps(first_req["json"])  # Gemini 3.x compliant!
+    assert "gemini-2.5-pro" in first_req["url"]  # user's chosen paid model preserved verbatim!
+    assert "temperature" not in json.dumps(first_req["json"])
+    assert first_req["json"]["generationConfig"]["thinkingConfig"] == {"includeThoughts": True}
     second_req = CapturingMockClient.last_requests[1]
     assert "ENC_SIG_ABC123" in json.dumps(second_req["json"])  # thoughtSignature preserved!
 
@@ -280,19 +321,70 @@ async def test_gemini_3_compliance_edit_file_checkpoints_plan_mode_and_multimoda
     app_js_restored = (await app_client.get(f"/api/projects/{pid}/files/app.js")).text
     assert "Yulya Studio project ready!" in app_js_restored
 
-    # 2. Plan mode exposes read-only tools only
+    # 2. Antigravity Auto dynamically resolves newest live model (gemini-9.9-ultra from page 2!) + runs power tools
+    CapturingMockClient.mode = "antigravity_power_tools"
+    CapturingMockClient.call_index = 0
+    CapturingMockClient.last_requests = []
+    ag_res = await app_client.post(f"/api/projects/{pid}/ai/stream", headers=auth["headers"], json={"prompt": "Upgrade game with boss art & voice", "model": "antigravity-auto", "antigravity": True, "mode": "build"})
+    assert ag_res.status_code == 200
+    assert "gemini-9.9-ultra" in CapturingMockClient.last_requests[0]["url"]
+    assert CapturingMockClient.last_requests[0]["json"]["generationConfig"]["thinkingConfig"] == {"includeThoughts": True, "thinkingLevel": "high"}
+    assert "Antigravity upgraded!" in (await app_client.get(f"/api/projects/{pid}/files/app.js")).text
+    assert (await app_client.get(f"/api/projects/{pid}/files/assets/boss.png")).status_code == 200
+    assert (await app_client.get(f"/api/projects/{pid}/files/assets/audio/go.wav")).status_code == 200
+
+    # 3. Plan mode exposes read-only tools only
     CapturingMockClient.mode = "simple"
     CapturingMockClient.call_index = 0
     CapturingMockClient.last_requests = []
     await app_client.post(f"/api/projects/{pid}/ai/stream", headers=auth["headers"], json={"prompt": "Plan a level system", "model": "gemini-3.8-flash", "mode": "plan"})
     declared_names = [t["name"] for t in CapturingMockClient.last_requests[0]["json"]["tools"][0]["functionDeclarations"]]
-    assert "read_file" in declared_names and "write_file" not in declared_names and "edit_file" not in declared_names
+    assert "read_file" in declared_names and "write_file" not in declared_names and "edit_file" not in declared_names and "batch_edit_files" not in declared_names
 
-    # 3. Nano Banana 2.1 image gen & Gemini 3.8 TTS audio gen save assets straight into project
+    # 4. Direct Nano Banana 2.1 image gen & Gemini 3.8 TTS audio gen endpoints save assets straight into project
     img_res = await app_client.post(f"/api/projects/{pid}/ai/generate-image", headers=auth["headers"], json={"prompt": "pixel spaceship sprite", "filename": "assets/ship.png"})
     assert img_res.status_code == 200 and img_res.json()["path"] == "assets/ship.png"
     tts_res = await app_client.post(f"/api/projects/{pid}/ai/generate-audio", headers=auth["headers"], json={"text": "Level up!", "voice": "Kore", "filename": "assets/audio/levelup.wav"})
     assert tts_res.status_code == 200 and tts_res.json()["path"] == "assets/audio/levelup.wav"
+
+
+@pytest.mark.asyncio
+async def test_dynamic_models_pagination_sitemap_and_robots(clients):
+    app_client, _, play_client = clients
+    auth = await _signup_user(app_client, "seo@test.dev", username="seo_dev", connect_key=True)
+
+    # 1. /api/models fetches ALL pages (including newly launched models on page 2) & excludes non-chat models
+    m_resp = await app_client.get("/api/models")
+    assert m_resp.status_code == 200
+    assert m_resp.headers.get("cache-control") == "no-store"
+    ids = [m["id"] for m in m_resp.json()["models"]]
+    assert ids[0] == "antigravity-auto"
+    assert ids[1] == "gemini-9.9-ultra"  # brand-new model on page 2 automatically sorted to top!
+    assert "gemini-2.5-pro" in ids and "gemini-2.5-flash" in ids and "gemma-4-31b-it" in ids
+    assert "text-embedding-004" not in ids and "imagen-4.0-generate" not in ids and "gemini-3.8-flash-tts" not in ids
+
+    # 2. Public project appears in dynamic /sitemap.xml alongside /@seo_dev profile & core routes
+    proj = (await app_client.post("/api/projects", headers=auth["headers"], json={"title": "Galaxy Drift", "visibility": "public"})).json()["project"]
+    sm = await app_client.get("/sitemap.xml")
+    assert sm.status_code == 200
+    assert "/templates</loc>" in sm.text
+    assert "/llms.txt</loc>" in sm.text
+    assert f"/seo_dev/{proj['slug']}</loc>" in sm.text
+    assert "/@seo_dev</loc>" in sm.text
+    assert "<lastmod>" in sm.text
+    assert (await app_client.head("/sitemap.xml")).status_code == 200
+
+    # 3. /robots.txt properly protects private routes on studio origin and blocks indexing on play origin
+    rb = await app_client.get("/robots.txt")
+    assert rb.status_code == 200
+    assert "Disallow: /*/edit" in rb.text
+    assert "Disallow: /__preview/" in rb.text
+    assert "Disallow: /settings" in rb.text
+    assert "User-agent: OAI-SearchBot" in rb.text
+    assert "Sitemap:" in rb.text
+    assert (await app_client.head("/robots.txt")).status_code == 200
+    play_rb = await play_client.get("/robots.txt")
+    assert play_rb.status_code == 200 and "Disallow: /" in play_rb.text
 
 
 @pytest.mark.asyncio

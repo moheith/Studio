@@ -37,7 +37,7 @@ type StudioProps = {
   previewUrl: string
   newFileName: string
   modal: 'new-project' | 'api-key' | 'new-file' | 'game' | null
-  models: Array<{ id: string; display_name: string }>
+  models: Array<{ id: string; display_name: string; input_token_limit?: number | null; dynamic?: boolean; resolved_model?: string | null }>
   selectedModel: string
   dirtyFiles?: Set<string>
   setDirtyFiles?: React.Dispatch<React.SetStateAction<Set<string>>>
@@ -61,6 +61,7 @@ type StudioProps = {
   renameProjectFile?: (oldPath: string, newPath: string) => Promise<void> | void
   toggleVisibility: () => void
   setSelectedModel: (s: string) => void
+  onRefreshModels?: () => Promise<void> | void
   uploadProjectAsset: (file: File) => void
   onClearChat: () => void
   onReloadFiles: () => void
@@ -3459,8 +3460,8 @@ export default function StudioPage(p: StudioProps) {
                       <span>Antigravity</span>
                     </button>
 
-                    {/* AI Model Selector (Matches Model button in screenshot) */}
-                    <div className="vsc-chat-model-wrapper" title="Select AI Model">
+                    {/* AI Model Selector (Automatically displays ALL live chat models from Google AI Studio) */}
+                    <div className="vsc-chat-model-wrapper" title="Select any live Gemini or Gemma chat model">
                       <Sparkles size={10} className="vsc-model-icon" />
                       <select
                         className="vsc-chat-model-select"
@@ -3481,7 +3482,9 @@ export default function StudioPage(p: StudioProps) {
                       >
                         {p.models.length ? (
                           p.models.map(m => (
-                            <option key={m.id} value={m.id}>{m.display_name || m.id}</option>
+                            <option key={m.id} value={m.id}>
+                              {m.dynamic ? m.display_name : `${m.display_name || m.id} (${m.id})`}
+                            </option>
                           ))
                         ) : (
                           <option value="connect-key">Connect Gemini Key</option>
@@ -3489,6 +3492,18 @@ export default function StudioPage(p: StudioProps) {
                       </select>
                       <ChevronDown size={9} className="vsc-model-chevron" />
                     </div>
+                    {p.onRefreshModels && p.user?.has_api_key && (
+                      <button
+                        type="button"
+                        className="vsc-chat-pill-btn"
+                        onClick={() => void p.onRefreshModels?.()}
+                        title="Refresh live chat models from your Google Gemini API key"
+                        aria-label="Refresh live chat models"
+                        style={{ padding: '3px 6px' }}
+                      >
+                        <RefreshCw size={10} />
+                      </button>
+                    )}
 
                     {/* Waterfall & Setup Composite Pill (Matches `Auto | Balance` in screenshot) */}
                     <div className={`vsc-composite-pill ${p.useWaterfall ? 'is-active' : ''}`}>
@@ -3935,7 +3950,21 @@ export default function StudioPage(p: StudioProps) {
             </div>
 
             <div className="waterfall-add-section">
-              <label className="wf-add-label">Add Fallback Model to Waterfall</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <label className="wf-add-label" style={{ marginBottom: 0 }}>
+                  Add Fallback Model ({p.models.filter(m => !m.dynamic).length} live chat models)
+                </label>
+                {p.onRefreshModels && (
+                  <button
+                    type="button"
+                    className="button button-outline button-small"
+                    style={{ fontSize: 11, padding: '2px 8px' }}
+                    onClick={() => void p.onRefreshModels?.()}
+                  >
+                    <RefreshCw size={11} /> Sync Latest
+                  </button>
+                )}
+              </div>
               <div className="wf-add-controls">
                 <select
                   className="wf-select-model"
@@ -3944,7 +3973,7 @@ export default function StudioPage(p: StudioProps) {
                 >
                   <option value="">-- Select model to add --</option>
                   {p.models
-                    .filter(m => !customWaterfall.includes(m.id.replace('models/', '')))
+                    .filter(m => !m.dynamic && !customWaterfall.includes(m.id.replace('models/', '')))
                     .map(m => (
                       <option key={m.id} value={m.id.replace('models/', '')}>
                         {m.display_name} ({m.id.replace('models/', '')})

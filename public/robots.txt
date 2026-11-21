@@ -1,36 +1,62 @@
-# Yulya Studio Search Crawler Instructions
+# Yulya Studio Search & AI Crawler Directives
 User-agent: *
 Allow: /
 Allow: /arcade
+Allow: /templates
 Allow: /docs
 Allow: /terms
 Allow: /privacy
-Allow: /login
-Allow: /register
 Allow: /llms.txt
 Allow: /llms-full.txt
 Disallow: /api/
+Disallow: /__preview/
+Disallow: /studio
+Disallow: /*/edit
+Disallow: /settings
 Disallow: /setup-profile
 Disallow: /verify-email
+Disallow: /reset-password
+Disallow: /login
+Disallow: /register
 
 # AI Agents & LLM Web Crawlers
 User-agent: GPTBot
 Allow: /
+Disallow: /api/
+Disallow: /*/edit
+Disallow: /settings
 
 User-agent: ChatGPT-User
 Allow: /
+Disallow: /api/
+Disallow: /*/edit
 
-User-agent: PerplexityBot
+User-agent: OAI-SearchBot
 Allow: /
+Disallow: /api/
+Disallow: /*/edit
 
 User-agent: ClaudeBot
 Allow: /
+Disallow: /api/
+Disallow: /*/edit
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /api/
+Disallow: /*/edit
 
 User-agent: Google-Extended
 Allow: /
+Disallow: /api/
+Disallow: /*/edit
 
-# Host & Sitemap
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /api/
+Disallow: /*/edit
+
+# Host, Sitemap & LLM Discovery
+# LLMs: https://studio.yulya.me/llms.txt
 Host: https://studio.yulya.me
 Sitemap: https://studio.yulya.me/sitemap.xml
-
-

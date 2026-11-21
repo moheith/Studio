@@ -65,7 +65,7 @@ Yulya Studio is a browser-native game & web app creation studio, Monaco code IDE
 
 ## 4. Gemini 3.x AI Copilot, Vision & Asset Studio
 
-- **Models & Waterfall**: Default failover cascade uses `gemini-3.8-flash` → `gemini-3.6-flash` → `gemini-3.5-flash-lite` (deprecated 2.5/3.5/3.7 IDs automatically remap to current equivalents). Multi-turn function calls preserve full `thoughtSignature` metadata per Gemini 3.x specifications.
+- **Models & Waterfall**: Dynamically lists every live chat model available on the user's Google AI Studio key (including paid Gemini 2.5, 3.x, 4.x, Gemma, and newly launched models) and preserves chosen model IDs verbatim. **Antigravity Auto** dynamically picks the newest flagship model with deep thinking (`thinkingConfig`), `batch_edit_files`, `rename_file`, autonomous image/audio asset generation, Google Search grounding, and visual verification. Multi-turn function calls preserve full `thoughtSignature` metadata.
 - **True Multimodal Vision (`inspect_game_screen`)**: When the agent calls `inspect_game_screen`, the frontend captures a live JPEG frame of the running game and posts it back to the agent turn so Gemini visually inspects rendered canvas/DOM pixels before answering or fixing layout bugs.
 - **AI Asset Studio**: Generate sprites, tilesets, and backdrops with `gemini-nano-banana-2.1` or voice lines with `gemini-3.8-flash-tts`, stored directly inside your project's `assets/` folder.
 

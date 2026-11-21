@@ -1561,7 +1561,7 @@ function playLaser() {
           <section id="ai-comparison" className="doc-section">
             <h2>Gemini 3.x Model Comparison</h2>
             <p>
-              Yulya Studio integrates directly with Google&rsquo;s latest Gemini 3.x generative models (with automatic remapping of legacy model IDs):
+              Yulya Studio automatically discovers <strong>every chat model available on your Google Gemini API key</strong> (including paid models, Gemini 2.5/3.x/4.x, Gemma, and newly released models as soon as Google ships them) and preserves your exact chosen model IDs:
             </p>
             <div className="docs-pillar-grid">
               <div className="pillar-card">

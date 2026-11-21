@@ -162,13 +162,10 @@ export default function App() {
   const [toast, setToast] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [hasKey, setHasKey] = useState(false)
-  const [models, setModels] = useState<Array<{ id: string; display_name: string }>>([
-    { id: 'antigravity-preview-09-2026', display_name: 'Antigravity (Gemini 3.8 Flash)' },
-    { id: 'antigravity-preview-latest', display_name: 'Antigravity (Gemini 3.6 Flash)' },
-    { id: 'gemini-3.8-flash', display_name: 'Gemini 3.8 Flash' },
-    { id: 'gemini-3.6-flash', display_name: 'Gemini 3.6 Flash' },
+  const [models, setModels] = useState<Array<{ id: string; display_name: string; input_token_limit?: number | null; dynamic?: boolean; resolved_model?: string | null }>>([
+    { id: 'antigravity-auto', display_name: '✦ Antigravity Auto (Best Model)', dynamic: true },
   ])
-  const [selectedModel, setSelectedModel] = useState('antigravity-preview-09-2026')
+  const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem('yulya:selected-model') || 'antigravity-auto')
   const [isAntigravityMode, setIsAntigravityMode] = useState<boolean>(true)
   const [aiMode, setAiMode] = useState<'build' | 'plan'>('build')
   const [playOrigin, setPlayOrigin] = useState<string>('')
@@ -235,17 +232,43 @@ export default function App() {
     }
   }, [page, currentGame?.title, user?.username])
 
+  const selectModelPersisted = (nextId: string) => {
+    setSelectedModel(nextId)
+    if (nextId && nextId !== 'connect-key') localStorage.setItem('yulya:selected-model', nextId)
+  }
+
+  const refreshModels = async (silent = true, preferredModel?: string) => {
+    try {
+      const result = await api<{ models: Array<{ id: string; display_name: string; input_token_limit?: number | null; dynamic?: boolean; resolved_model?: string | null }>; total_chat_models?: number }>('/api/models')
+      setModels(result.models)
+      setSelectedModel((curr) => {
+        const saved = preferredModel || curr || localStorage.getItem('yulya:selected-model') || ''
+        if (saved && result.models.some((m) => m.id === saved)) return saved
+        return result.models[0]?.id ?? ''
+      })
+      if (!silent) notify(`Synced ${result.total_chat_models ?? Math.max(0, result.models.length - 1)} live chat models from Google AI`)
+    } catch (err) {
+      if (!silent) notify(err instanceof Error ? err.message : 'Could not refresh Gemini models')
+    }
+  }
+
   useEffect(() => {
     api<{ play_origin?: string }>('/api/health').then((h) => { if (h.play_origin) setPlayOrigin(h.play_origin) }).catch(() => {})
     api<{ user: User; csrf_token: string; needs_username: boolean; play_origin?: string }>('/api/auth/me').then(async (session) => {
       if (session.play_origin) setPlayOrigin(session.play_origin)
       setCsrfToken(session.csrf_token); setUser(session.user); setHasKey(Boolean((session.user as User & { has_api_key?: boolean }).has_api_key))
-      if ((session.user as User & { has_api_key?: boolean }).has_api_key) api<{models: Array<{id: string; display_name: string}>}>('/api/models').then(result => { setModels(result.models); if (result.models[0]) setSelectedModel(result.models[0].id) }).catch(() => {})
+      if ((session.user as User & { has_api_key?: boolean }).has_api_key) void refreshModels(true)
       if (session.needs_username || !session.user?.username) setPage('setup-profile')
       else { const data = await api<{ projects: Array<Record<string, unknown>> }>('/api/projects').catch(() => ({ projects: [] })); setProjects(data.projects.map(projectToGame)) }
     }).catch(() => {}).finally(() => setSessionReady(true))
     api<{ projects: Array<Record<string, unknown>> }>('/api/gallery').then((data) => setGames(data.projects.map(projectToGame))).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (page === 'studio' && hasKey) {
+      void refreshModels(true)
+    }
+  }, [page, hasKey])
 
   useEffect(() => {
     // Keep the old profile route as a compatible entry point, but expose the
@@ -400,6 +423,12 @@ export default function App() {
             ? `Created folder ${event.data.path}`
             : actionName === 'create_file'
             ? `Created ${event.data.path}`
+            : actionName === 'rename_file'
+            ? `Renamed ${event.data.old_path || ''} → ${event.data.path}`
+            : actionName === 'generate_image_asset'
+            ? `Generated image ${event.data.path}`
+            : actionName === 'generate_audio_asset'
+            ? `Generated voice audio ${event.data.path}`
             : actionName === 'search_grounding'
             ? `Grounded with Google Search: "${event.data.query || event.data.path || ''}"`
             : `Updated ${event.data.path}`
@@ -612,8 +641,7 @@ export default function App() {
     const verified = await api<{ verified_model?: string; fallback_used?: boolean }>('/api/keys/gemini', { method: 'POST', body: JSON.stringify({ api_key: apiKey.trim() }) })
     setHasKey(true); setApiKey(''); setModal(null); notify(verified.fallback_used ? `Key connected with ${verified.verified_model ?? 'Gemma'} fallback` : 'Gemini key verified and connected')
     try {
-      const result = await api<{models: Array<{id: string; display_name: string}>}>('/api/models')
-      setModels(result.models); setSelectedModel(verified.verified_model && result.models.some(model => model.id === verified.verified_model) ? verified.verified_model : result.models[0]?.id ?? '')
+      await refreshModels(true, verified.verified_model || 'antigravity-auto')
     } catch {
       notify('Key connected. Models could not be loaded yet; try again shortly.')
     }
@@ -631,7 +659,7 @@ export default function App() {
     setUser(nextUser)
     setHasKey(Boolean((nextUser as User & { has_api_key?: boolean }).has_api_key))
     api<{ projects: Array<Record<string, unknown>> }>('/api/projects').then(result => setProjects(result.projects.map(projectToGame))).catch(() => {})
-    if ((nextUser as User & { has_api_key?: boolean }).has_api_key) api<{ models: Array<{ id: string; display_name: string }> }>('/api/models').then(result => { setModels(result.models); setSelectedModel(result.models[0]?.id ?? '') }).catch(() => {})
+    if ((nextUser as User & { has_api_key?: boolean }).has_api_key) void refreshModels(true)
     if (needsUsername || !nextUser.username) { setPage('setup-profile'); return }
     const returnTo = sessionStorage.getItem('yulya:return-to')
     if (returnTo) { sessionStorage.removeItem('yulya:return-to'); setPage('studio', returnTo) }
@@ -1089,7 +1117,7 @@ export default function App() {
       localStorage.setItem('yulya:use-waterfall', String(v))
     },
     setPage, setModal, setActiveFile, setSidebarOpen, setTerminalOpen, setChat, handleEditor, submitPrompt, shareLink,
-    notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, renameProjectFile, toggleVisibility, setSelectedModel, uploadProjectAsset,
+    notify, setPreviewKey, setMobileNav, mobileNav, setTree, setNewFileName, addFile, deleteProjectFile, renameProjectFile, toggleVisibility, setSelectedModel: selectModelPersisted, onRefreshModels: () => refreshModels(false), uploadProjectAsset,
     isAiGenerating, stopAiGeneration, onClearChat: clearChatHistory, onReloadFiles: reloadProjectFiles, updateWaterfall,
     onUpdateThumbnail: handleUpdateThumbnail,
     onDownloadZip: () => { if (currentGame) void handleDownloadZip(currentGame) },
