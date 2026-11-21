@@ -505,15 +505,22 @@ export default function DocsPage({
           <div className="docs-sidebar-footer">
             <div className="docs-version-pill">
               <span className="live-dot" />
-              <span>v3.0 • Powered by Gemini 3.x</span>
+              <span>Yulya Studio · Gemini 3.x</span>
             </div>
             <a
-              href="https://aistudio.google.com"
+              href="mailto:support@yulya.me"
+              className="docs-ext-link"
+            >
+              <span>support@yulya.me</span>
+              <ExternalLink size={12} />
+            </a>
+            <a
+              href="https://moheith.tech"
               target="_blank"
               rel="noreferrer"
               className="docs-ext-link"
             >
-              <span>Google AI Studio</span>
+              <span>Creator · moheith.tech</span>
               <ExternalLink size={12} />
             </a>
           </div>
@@ -1651,31 +1658,35 @@ function playLaser() {
       return (
         <>
           <section id="playtest-concept" className="doc-section">
-            <h2>What is Autonomous AI Playtesting?</h2>
+            <h2>Headless Game-Only Screen Share &amp; Autonomous Playtesting</h2>
             <p>
-              Instead of manually pressing keys to test every single code edit, Yulya Studio features an <strong>Autonomous Playtest Agent</strong>.
+              Yulya Studio streams <strong>only your isolated game preview iframe</strong> headlessly to Gemini—with zero OS screen-picker popups and zero exposure of your desktop, bookmarks, or other tabs.
             </p>
             <p>
-              Clicking <strong>Start AI Playtest</strong> in the preview toolbar activates the agent. The AI inspects the game screen, identifies interactable elements (such as &ldquo;Start Game&rdquo; or player sprites), and plays the game autonomously!
+              Toggle the <strong>Headless Game Stream</strong> icon in the Gemini chat composer (or click <strong>Playtest</strong> in the preview toolbar) to keep a live mini-feed synced with Gemini. Every message automatically includes the current rendered game frame, console errors, and interactive element map.
             </p>
           </section>
 
           <section id="playtest-inputs" className="doc-section">
-            <h2>Synthetic Keyboard & Mouse Control</h2>
+            <h2>Full Autonomous Preview Control</h2>
             <p>
-              The playtesting runtime uses high-fidelity synthetic event dispatchers:
+              Inside the isolated sandbox (<code>play.yulya.me</code> or compiled React/TS <code>srcDoc</code>), Gemini has full runtime control to test and debug cleanly:
             </p>
             <ul>
-              <li><strong>Pointer Coordinates:</strong> Moves a visual cursor dot across the preview canvas and clicks buttons using <code>PointerEvent</code> and <code>MouseEvent</code>.</li>
-              <li><strong>Held Keys:</strong> Dispatches real <code>KeyboardEvent</code> (Space, Arrow keys, WASD) with millisecond hold durations (e.g. holding Space to charge a jump).</li>
-              <li><strong>Focus Simulation:</strong> Dispatches focus and blur events on canvas and input elements.</li>
+              <li><strong>Pointer &amp; Drag Actions:</strong> Click, double-click, right-click, hover, and smooth drag-and-drop by CSS selector, visible text, or exact viewport coordinates.</li>
+              <li><strong>Keyboard &amp; Form Control:</strong> Dispatches real <code>KeyboardEvent</code> key presses and millisecond holds (WASD, Arrows, Space, Enter) plus React-safe text input typing and wheel scrolling.</li>
+              <li><strong>Touch &amp; Device Emulation:</strong> Tap/swipe touch events and instant switching between Responsive, Desktop (1280×720), Tablet, and Mobile (390×844) viewports.</li>
+              <li><strong>Async Runtime Evaluation &amp; State Probes:</strong> Runs <code>get_preview_state()</code> and async <code>evaluate_in_preview()</code> to inspect scores, canvas dimensions, FPS, and console logs, then returns a fresh post-action screenshot automatically.</li>
             </ul>
           </section>
 
           <section id="playtest-vision" className="doc-section">
-            <h2>Visual Inspection & Diagnostics</h2>
+            <h2>Sharing the Live Preview Screen</h2>
             <p>
-              During playtesting, the agent takes live snapshots to verify that rendering remains intact. If an error or crash occurs, the playtester reports it with exact diagnostics directly to the Copilot.
+              Public projects update instantly at <code>https://studio.yulya.me/username/slug</code> (sandboxed on <code>play.yulya.me</code>). For private work-in-progress projects, clicking the Copy icon in the Preview address bar copies an HMAC-signed 24-hour isolated preview link so teammates can view the exact live build read-only without any access to your editor or API key.
+            </p>
+            <p>
+              Need help or want to report an issue? Reach us at <a href="mailto:support@yulya.me">support@yulya.me</a> or visit the creator&apos;s portfolio at <a href="https://moheith.tech" target="_blank" rel="noreferrer">moheith.tech</a>.
             </p>
           </section>
         </>

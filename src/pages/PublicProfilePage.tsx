@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import type * as React from 'react'
-import { ArrowLeft, ArrowUpRight, Gamepad2, Play, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Check, Gamepad2, Heart, Mail, Play, Share2 } from 'lucide-react'
 import type { Game } from '../types'
 import { api } from '../api'
 
@@ -23,6 +22,7 @@ export default function PublicProfilePage({
   const [games, setGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
   const [missing, setMissing] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -42,11 +42,12 @@ export default function PublicProfilePage({
               projectId: String(project.id ?? ''),
               title: String(project.title ?? slug),
               creator: data.profile.username,
-              genre: 'WEB GAME',
-              color: (project.color as string) || '#c7a6ff',
+              genre: String(project.genre ?? 'ARCADE').toUpperCase(),
+              color: (project.color as string) || '#6e56cf',
               art: (project.art as string) || '✦',
               plays: String(project.plays ?? 0),
-              description: String(project.description ?? 'A game made in Yulya Studio.'),
+              likes_count: Number(project.likes_count ?? 0),
+              description: String(project.description ?? 'Playable experience built in Yulya Studio.'),
               visibility: 'public',
               thumbnail: project.thumbnail ? String(project.thumbnail) : undefined
             }
@@ -64,16 +65,14 @@ export default function PublicProfilePage({
     }
   }, [username])
 
-  const totalPlays = useMemo(() => {
-    return games.reduce((acc, g) => acc + (Number(g.plays) || 0), 0)
-  }, [games])
+  const totalPlays = useMemo(() => games.reduce((acc, g) => acc + (Number(g.plays) || 0), 0), [games])
 
   if (loading) {
     return (
-      <main className="public-profile-shell">
+      <main className="dash-shell">
         <div className="public-profile-loading">
           <span className="key-spinner" />
-          <span>Loading creator profile…</span>
+          <span>Loading creator portfolio…</span>
         </div>
       </main>
     )
@@ -81,12 +80,12 @@ export default function PublicProfilePage({
 
   if (missing || !creator) {
     return (
-      <main className="public-profile-shell">
+      <main className="dash-shell">
         <div className="public-profile-empty">
           <span>404</span>
           <h1>Creator not found</h1>
-          <p>This profile may have moved or doesn’t exist on Yulya Studio.</p>
-          <button className="button button-primary" onClick={onHome}>
+          <p>This creator handle does not exist or has no public profile on Yulya Studio.</p>
+          <button className="button button-alabaster" onClick={onHome}>
             <ArrowLeft size={15} /> Back to Yulya Studio
           </button>
         </div>
@@ -97,116 +96,129 @@ export default function PublicProfilePage({
   const displayName = creator.display_name || creator.username
 
   return (
-    <main className="public-profile-shell">
-      {/* Top Navigation */}
-      <header className="public-profile-nav">
-        <button className="public-profile-brand" onClick={onHome}>
-          <span>✳</span> yulya<span>studio</span>
+    <div className="dash-shell">
+      <header className="dash-topbar">
+        <button className="brand" onClick={onHome}>
+          <span className="brand-mark">✳</span>
+          <span>yulya<span className="brand-light">studio</span></span>
         </button>
-        <button className="button button-outline button-small" onClick={onHome}>
-          Explore Arcade <ArrowUpRight size={13} />
-        </button>
+        <div className="dash-nav">
+          <button
+            type="button"
+            className="button button-outline button-small"
+            onClick={() => {
+              navigator.clipboard?.writeText(window.location.href).catch(() => {})
+              setCopied(true)
+              window.setTimeout(() => setCopied(false), 1500)
+            }}
+          >
+            {copied ? <Check size={13} /> : <Share2 size={13} />}
+            <span>{copied ? 'Copied' : 'Share Portfolio'}</span>
+          </button>
+          <button className="button button-alabaster button-small" onClick={onHome}>
+            Explore Studio <ArrowUpRight size={13} />
+          </button>
+        </div>
       </header>
 
-      {/* Hero Header */}
-      <section className="pro-identity-card public-identity-card" aria-label="Creator Profile">
-        <div className="pro-cover-banner">
-          <div className="pro-banner-mesh" />
-          <div className="pro-banner-stars">✦　·　✧　✳　✦</div>
-          <div className="pro-banner-badge">
-            <Sparkles size={11} className="text-lilac" />
-            <span>VERIFIED CREATOR</span>
-          </div>
-        </div>
-
-        <div className="pro-identity-body">
-          <div className="pro-identity-top">
-            <div className="pro-avatar-wrap">
-              <div className="pro-avatar-inner">
+      <main className="dash-main">
+        <section className="dash-profile-card" aria-label="Public Creator Portfolio">
+          <div className="dash-profile-top">
+            <div className="dash-identity-left">
+              <div className="dash-avatar">
                 {creator.avatar ? (
                   <img src={creator.avatar} alt={displayName} referrerPolicy="no-referrer" />
                 ) : (
                   <span>{(displayName[0] || 'C').toUpperCase()}</span>
                 )}
               </div>
-              <span className="pro-avatar-status" />
-            </div>
-
-            <div className="public-stats-pill-group">
-              <span className="public-stat-pill">
-                <Gamepad2 size={13} /> <b>{games.length}</b> {games.length === 1 ? 'Game' : 'Games'}
-              </span>
-              <span className="public-stat-pill">
-                <Play size={12} fill="currentColor" /> <b>{totalPlays.toLocaleString()}</b> Total Plays
-              </span>
-            </div>
-          </div>
-
-          <div className="pro-info-wrap">
-            <div className="pro-title-line">
-              <h1>{displayName}</h1>
-              <span className="pro-tier-pill">CREATOR</span>
-            </div>
-            <div className="pro-meta-line">
-              <span className="pro-username">@{creator.username}</span>
-            </div>
-            {creator.bio && <p className="pro-bio">{creator.bio}</p>}
-          </div>
-        </div>
-      </section>
-
-      {/* Games Gallery */}
-      <section className="public-profile-games">
-        <div className="public-profile-heading">
-          <div>
-            <div className="eyebrow">CREATOR ARCADE</div>
-            <h2>Games by {displayName}</h2>
-          </div>
-          <span>
-            <Gamepad2 size={15} />
-            {games.length} PLAYABLE
-          </span>
-        </div>
-
-        {games.length > 0 ? (
-          <div className="game-grid">
-            {games.map((game) => (
-              <a
-                className="game-card public-game-link"
-                key={game.projectId || game.id}
-                href={`/${encodeURIComponent(creator.username)}/${encodeURIComponent(game.id)}`}
-              >
-                <div className="game-art" style={{ '--game-color': game.color } as React.CSSProperties}>
-                  {game.thumbnail ? (
-                    <img src={game.thumbnail} alt={game.title} className="game-art-cover-img" />
-                  ) : (
-                    <>
-                      <div className="game-art-stars">✦　·　✧</div>
-                      <div className="game-art-object">{game.art}</div>
-                    </>
-                  )}
-                  <span className="art-play">
-                    <Play size={14} fill="currentColor" />
-                  </span>
+              <div className="dash-identity-text">
+                <div className="dash-name-row">
+                  <h1>{displayName}</h1>
+                  <span className="dash-handle">@{creator.username}</span>
                 </div>
-                <div className="game-card-info">
-                  <div className="game-genre">{game.genre}</div>
-                  <h3>{game.title}</h3>
-                  <p>{game.description}</p>
-                  <div className="card-meta">
-                    Play game <ArrowUpRight size={12} />
+                {creator.bio && <p className="dash-bio">{creator.bio}</p>}
+              </div>
+            </div>
+
+            <div className="pub-stat-strip tabular-count">
+              <div className="pub-stat-box">
+                <strong>{games.length}</strong>
+                <span>Published</span>
+              </div>
+              <div className="pub-stat-box">
+                <strong>{totalPlays.toLocaleString()}</strong>
+                <span>Total Plays</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="dash-workspace" aria-label="Published Experiences">
+          <div className="dash-workspace-header">
+            <div className="dash-workspace-title-block">
+              <h2>Published Experiences</h2>
+              <span className="dash-count-pill tabular-count">{games.length}</span>
+            </div>
+          </div>
+
+          {games.length > 0 ? (
+            <div className="arc-grid">
+              {games.map((game) => (
+                <a
+                  className="arc-card arc-card-link"
+                  key={game.projectId || game.id}
+                  href={`/${encodeURIComponent(creator.username)}/${encodeURIComponent(game.id)}`}
+                >
+                  <div className="arc-card-media">
+                    {game.thumbnail ? (
+                      <img src={game.thumbnail} alt={game.title} className="arc-card-img" loading="lazy" />
+                    ) : (
+                      <div className="arc-card-fallback">
+                        <span className="arc-fallback-abbr">{game.title.slice(0, 2).toUpperCase()}</span>
+                        <span className="arc-fallback-slug">/{game.id}</span>
+                      </div>
+                    )}
+                    <span className="arc-card-genre">{game.genre}</span>
+                    <div className="arc-card-hover">
+                      <span className="arc-hover-launch"><Play size={14} fill="currentColor" /> Play</span>
+                    </div>
                   </div>
-                </div>
-              </a>
-            ))}
+                  <div className="arc-card-body">
+                    <h3 className="arc-card-title">{game.title}</h3>
+                    <p className="arc-card-desc">{game.description}</p>
+                    <div className="arc-card-footer">
+                      <span className="arc-card-creator">Launch in Sandbox</span>
+                      <div className="arc-card-stats tabular-count">
+                        <span><Play size={10} fill="currentColor" /> {game.plays}</span>
+                        {typeof game.likes_count === 'number' && game.likes_count > 0 && (
+                          <span><Heart size={10} /> {game.likes_count}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <div className="dash-empty">
+              <Gamepad2 size={28} />
+              <h3>No published experiences yet</h3>
+              <p>@{creator.username} has not made any projects public on Yulya Arcade yet.</p>
+            </div>
+          )}
+        </section>
+      </main>
+
+      <footer className="dash-footer">
+        <div className="dash-footer-inner">
+          <span>&copy; {new Date().getFullYear()} Yulya Studio</span>
+          <div className="dash-footer-links">
+            <a href="mailto:support@yulya.me"><Mail size={12} /> support@yulya.me</a>
+            <a href="https://moheith.tech" target="_blank" rel="noreferrer">moheith.tech <ArrowUpRight size={11} /></a>
           </div>
-        ) : (
-          <div className="gallery-empty">
-            <Gamepad2 size={24} />
-            <p>This creator has not published any public arcade games yet.</p>
-          </div>
-        )}
-      </section>
-    </main>
+        </div>
+      </footer>
+    </div>
   )
 }

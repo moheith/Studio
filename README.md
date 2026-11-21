@@ -33,7 +33,7 @@ Browser-native VS Code-style coding & game studio, isolated live game host, and 
 - **Authenticated BYOK Encryption**: User Gemini API keys are encrypted server-side using versioned **AES-256-GCM with `user_id` AAD** (with automatic fallback decryption of legacy Fernet ciphertexts) and deduplicated via keyed HMAC-SHA256 fingerprints.
 - **Local Google ID Token Verification**: Google Sign-In tokens are verified locally via `google-auth` JWKS signature verification requiring `email_verified=True`.
 - **Sandboxed Runtime & Safe REPL**: Project files are validated against traversal/HTML-injection characters and served from `play.yulya.me` with strict CSP (`form-action 'none'`, `object-src 'none'`, SVG `sandbox`). The Studio Terminal evaluates expressions strictly inside the sandboxed iframe via origin-pinned `postMessage` (`yulya:eval-code`) — never via parent `window.eval()`.
-- **Dynamic Gemini Models, Multimodal Chat & Antigravity Engine**: Automatically discovers all live chat models from Google's `/v1beta/models` endpoint (with full `nextPageToken` pagination) and preserves every user-selected model ID verbatim (including paid/legacy models). Both Copilot and Antigravity include Nano Banana 2.1 image generation/editing, Gemini 3.8 TTS voice synthesis (rendered inline inside chat!), image uploads/paste, live browser Screen Share (`getDisplayMedia`), `batch_edit_files`, `read_file_lines`, `regex_search`, `list_assets`, `check_project_diagnostics`, `evaluate_in_preview`, `capture_cover_snapshot`, `update_project_metadata`, and Multimodal Vision (`inspect_game_screen`). Antigravity additionally unlocks deep reasoning (`thinkingConfig` with automatic compatibility fallback), Google Search grounding, and SSRF-hardened `url_fetch`. SSE streams emit 15-second keepalive heartbeats to survive reverse-proxy idle timeouts.
+- **Dynamic Gemini Models, Multimodal Chat & Antigravity Engine**: Automatically discovers all live chat models from Google's `/v1beta/models` endpoint (with full `nextPageToken` pagination) and preserves every user-selected model ID verbatim (including paid/legacy models). Both Copilot and Antigravity include Nano Banana 2.1 image generation/editing, Gemini 3.8 TTS voice synthesis (rendered inline inside chat!), image uploads/paste, **Headless Game-Only Screen Share** (zero OS screen-picker popups), full autonomous preview control (`send_game_input`, `get_preview_state`, async `evaluate_in_preview`), `batch_edit_files`, `read_file_lines`, `regex_search`, `list_assets`, `check_project_diagnostics`, `capture_cover_snapshot`, `update_project_metadata`, and Multimodal Vision (`inspect_game_screen`). Antigravity additionally unlocks deep reasoning (`thinkingConfig` with automatic compatibility fallback), Google Search grounding, and SSRF-hardened `url_fetch`. SSE streams emit 15-second keepalive heartbeats to survive reverse-proxy idle timeouts.
 
 ## API highlights
 
@@ -48,3 +48,8 @@ Browser-native VS Code-style coding & game studio, isolated live game host, and 
 .\.venv\Scripts\pytest.exe -v
 pnpm build
 ```
+
+## Contact & Creator
+
+- **Support, Privacy & Legal**: `support@yulya.me`
+- **Creator Portfolio**: [moheith.tech](https://moheith.tech)

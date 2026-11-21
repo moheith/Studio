@@ -872,7 +872,12 @@ class ToolResultBody(BaseModel):
     width: int = 1280
     height: int = 720
     consoleErrors: list[dict[str, Any]] = Field(default_factory=list)
+    consoleLogs: list[dict[str, Any]] = Field(default_factory=list)
     domElements: list[dict[str, Any]] = Field(default_factory=list)
+    canvases: list[dict[str, Any]] = Field(default_factory=list)
+    title: str = Field(default="", max_length=300)
+    textSnippet: str = Field(default="", max_length=2000)
+    executedActions: int = 0
     ok: bool = True
     output: str = Field(default="", max_length=20000)
 
@@ -2286,7 +2291,12 @@ async def submit_ai_tool_result(
             "width": body.width,
             "height": body.height,
             "consoleErrors": body.consoleErrors[:20],
+            "consoleLogs": body.consoleLogs[:30],
             "domElements": body.domElements[:30],
+            "canvases": body.canvases[:10],
+            "title": body.title,
+            "textSnippet": body.textSnippet,
+            "executedActions": body.executedActions,
             "ok": body.ok,
             "output": body.output,
         },
@@ -2486,13 +2496,18 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         },
         {
             "name": "inspect_game_screen",
-            "description": "Capture a real live screenshot of the running preview iframe (DOM + Canvas/WebGL composited) plus runtime console errors and interactive DOM button coordinates so you can visually inspect your app or game.",
-            "parameters": {"type": "OBJECT", "properties": {"device_mode": {"type": "STRING", "description": "'desktop', 'tablet', or 'mobile'"}}},
+            "description": "Headless live game screenshare: capture a live screenshot of ONLY the isolated running game preview (DOM + Canvas/WebGL composited) plus runtime console errors and interactive DOM button coordinates.",
+            "parameters": {"type": "OBJECT", "properties": {"device_mode": {"type": "STRING", "description": "'responsive', 'desktop', 'tablet', or 'mobile'"}}},
+        },
+        {
+            "name": "get_preview_state",
+            "description": "Fast headless probe of the running game preview: returns title, viewport size, canvas dimensions, interactive element coordinates, visible text snippet, and recent console logs/errors without screenshot overhead.",
+            "parameters": {"type": "OBJECT", "properties": {}},
         },
         {
             "name": "evaluate_in_preview",
-            "description": "Evaluate a short diagnostic JavaScript expression inside the isolated preview iframe (e.g. inspect canvas size, game state, FPS, or computed layout) and return its serialized result.",
-            "parameters": {"type": "OBJECT", "properties": {"code": {"type": "STRING", "description": "JavaScript expression to evaluate inside the sandboxed preview."}}, "required": ["code"]},
+            "description": "Execute diagnostic or state-inspection JavaScript (sync or async with await) inside the isolated game preview iframe (e.g., read score/entities/FPS, check canvas brightness, trigger levels/states, inspect computed CSS) and return its serialized output.",
+            "parameters": {"type": "OBJECT", "properties": {"code": {"type": "STRING", "description": "JavaScript code or expression to evaluate inside the sandboxed game preview."}}, "required": ["code"]},
         },
     ]
     write_tools = [
@@ -2616,7 +2631,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
         {"name": "request_reload", "description": "Reload the live preview iframe immediately.", "parameters": {"type": "OBJECT", "properties": {}}},
         {
             "name": "send_game_input",
-            "description": "Simulate keyboard, mouse, or touch inputs in the live preview. Prefer 'selector' or 'text' for UI buttons.",
+            "description": "Full autonomous input control inside the isolated game preview: click, double_click, right_click, move, drag (from x,y to toX,toY), type into inputs, scroll, keyboard press/hold, touch tap/swipe, and wait. Set capture_after=true (default) to automatically receive the updated headless game screenshot, DOM elements, and console errors right after your actions complete.",
             "parameters": {
                 "type": "OBJECT",
                 "properties": {
@@ -2625,25 +2640,30 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                         "items": {
                             "type": "OBJECT",
                             "properties": {
-                                "type": {"type": "STRING"},
+                                "type": {"type": "STRING", "description": "'mouse', 'key', 'type', 'scroll', 'drag', 'touch', 'wait', or 'release_all'"},
                                 "key": {"type": "STRING"},
-                                "action": {"type": "STRING"},
+                                "action": {"type": "STRING", "description": "'click', 'double_click', 'right_click', 'down', 'up', 'move', 'drag', 'tap', 'swipe'"},
                                 "selector": {"type": "STRING"},
                                 "text": {"type": "STRING"},
                                 "x": {"type": "INTEGER"},
                                 "y": {"type": "INTEGER"},
+                                "toX": {"type": "INTEGER"},
+                                "toY": {"type": "INTEGER"},
+                                "deltaX": {"type": "INTEGER"},
+                                "deltaY": {"type": "INTEGER"},
                                 "duration_ms": {"type": "INTEGER"},
                                 "label": {"type": "STRING"},
                             },
                         },
-                    }
+                    },
+                    "capture_after": {"type": "BOOLEAN", "description": "If true (default), wait for actions to finish and return a fresh headless screenshot + errors + interactive DOM map."},
                 },
                 "required": ["actions"],
             },
         },
         {
             "name": "set_game_device",
-            "description": "Switch preview viewport to 'desktop', 'tablet', or 'mobile'.",
+            "description": "Switch preview viewport to 'responsive', 'desktop', 'tablet', or 'mobile'.",
             "parameters": {"type": "OBJECT", "properties": {"device_mode": {"type": "STRING"}}, "required": ["device_mode"]},
         },
         {"name": "stop_game_playtest", "description": "End active AI playtest and release all held keys.", "parameters": {"type": "OBJECT", "properties": {}}},
@@ -2678,7 +2698,7 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
             "Follow a rigorous 4-step engineering loop on every request:\n"
             "1. ARCHITECT: Inspect project files (`read_file_lines`, `regex_search`, `list_assets`). Use `search_grounding` or `url_fetch` when current Web API, shader, or library docs matter.\n"
             "2. BUILD CLEANLY: Prefer `batch_edit_files` or surgical `edit_file(path, search, replace)` for existing files. Use `generate_image_asset` (Nano Banana 2.1, supports multi-image reference editing!) and `generate_audio_asset` (Gemini 3.8 TTS) whenever custom sprites, backgrounds, icons, or voice lines will elevate the project—any generated image or audio automatically appears right inside the chat. Never write placeholder TODOs or truncated code.\n"
-            "3. VERIFY LIVE: Run `check_project_diagnostics()`, call `request_reload()`, then `inspect_game_screen()` (or `evaluate_in_preview()`) to visually inspect rendered pixels, layout alignment, and `console_errors`. If ANY error, blank canvas, clipped UI, or broken button appears, fix the root cause immediately and re-verify before answering.\n"
+            "3. HEADLESS GAME SCREENSHARE & FULL AUTONOMOUS VERIFICATION: Run `check_project_diagnostics()`, call `request_reload()`, then use `inspect_game_screen()`, `get_preview_state()`, `evaluate_in_preview()` (supports async/await), and `send_game_input()` (click, double_click, right_click, move, drag, type, scroll, keyboard press/hold, touch tap/swipe, wait — with `capture_after=true` returning the updated live screenshot + errors + DOM). Actively click Start, playtest controls, inspect rendered pixels & console logs, fix any blank/black canvas, clipped UI, or broken button immediately, and re-verify before answering.\n"
             "4. POLISH: Ensure responsive desktop + mobile controls (`click` + `pointerdown` + touch + keyboard), crisp `devicePixelRatio` Canvas scaling, smooth delta-time `requestAnimationFrame` physics, juicy feedback, and `window.YulyaSDK?.submitScore(score)` for score-based games."
         )
     else:
@@ -3062,6 +3082,34 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                                     if r["path"].lower().endswith(TEXT_EXTENSIONS):
                                         text_map[r["path"]] = (await project_file_content(project, r["path"])).decode("utf-8", "replace")[:100000]
                                 result = analyze_project_diagnostics(text_map, paths_now)
+                            elif name == "get_preview_state":
+                                call_id, fut = vision_broker.register(user["id"], pid)
+                                yield "event: get_preview_state\ndata: " + json.dumps({"call_id": call_id}) + "\n\n"
+                                st_res: dict[str, Any] | None = None
+                                deadline = time.time() + 10.0
+                                try:
+                                    while time.time() < deadline:
+                                        remaining = max(0.1, min(3.0, deadline - time.time()))
+                                        try:
+                                            st_res = await asyncio.wait_for(asyncio.shield(fut), timeout=remaining)
+                                            break
+                                        except asyncio.TimeoutError:
+                                            yield ": keepalive\n\n"
+                                finally:
+                                    vision_broker.release(call_id)
+                                if st_res is not None:
+                                    result = {
+                                        "title": st_res.get("title", ""),
+                                        "width": st_res.get("width", 1280),
+                                        "height": st_res.get("height", 720),
+                                        "canvases": st_res.get("canvases", []),
+                                        "dom_elements": st_res.get("domElements", [])[:25],
+                                        "console_errors": st_res.get("consoleErrors", [])[:15],
+                                        "console_logs": st_res.get("consoleLogs", [])[:20],
+                                        "text_snippet": st_res.get("textSnippet", ""),
+                                    }
+                                else:
+                                    result = {"error": "Preview did not respond in time (ensure preview is open)."}
                             elif name == "evaluate_in_preview":
                                 code_expr = str(args.get("code") or "").strip()
                                 if not code_expr or len(code_expr) > 4000:
@@ -3343,8 +3391,48 @@ async def ai_stream(project_id: str, body: ChatBody, user: dict[str, Any] = Depe
                                     }
                             elif name == "send_game_input":
                                 actions_list = args.get("actions") or []
-                                yield "event: send_game_input\ndata: " + json.dumps({"actions": actions_list}) + "\n\n"
-                                result = {"status": "dispatched", "actions_dispatched": len(actions_list)}
+                                capture_after = args.get("capture_after", True)
+                                if capture_after:
+                                    call_id, fut = vision_broker.register(user["id"], pid)
+                                    yield "event: send_game_input\ndata: " + json.dumps({"call_id": call_id, "actions": actions_list, "capture_after": True}) + "\n\n"
+                                    after_cap: dict[str, Any] | None = None
+                                    deadline = time.time() + 18.0
+                                    try:
+                                        while time.time() < deadline:
+                                            remaining = max(0.1, min(3.5, deadline - time.time()))
+                                            try:
+                                                after_cap = await asyncio.wait_for(asyncio.shield(fut), timeout=remaining)
+                                                break
+                                            except asyncio.TimeoutError:
+                                                yield ": keepalive\n\n"
+                                    finally:
+                                        vision_broker.release(call_id)
+                                    if after_cap:
+                                        parsed_after = parse_data_url_image(after_cap.get("dataUrl", ""))
+                                        if parsed_after:
+                                            m_t, b64_a = parsed_after
+                                            extra_multimodal_parts.append({"inlineData": {"mimeType": m_t, "data": b64_a}})
+                                            yield "event: media\ndata: " + json.dumps({
+                                                "kind": "vision",
+                                                "path": f"Live Game ({len(actions_list)} actions)",
+                                                "url": after_cap.get("dataUrl", ""),
+                                                "caption": f"{after_cap.get('width', 1280)}×{after_cap.get('height', 720)} · {len(after_cap.get('consoleErrors', []))} errors",
+                                                "mime_type": m_t,
+                                            }) + "\n\n"
+                                        result = {
+                                            "status": "executed_and_captured",
+                                            "actions_dispatched": len(actions_list),
+                                            "visual_attached": bool(parsed_after),
+                                            "width": after_cap.get("width", 1280),
+                                            "height": after_cap.get("height", 720),
+                                            "console_errors": after_cap.get("consoleErrors", [])[:15],
+                                            "interactive_elements": after_cap.get("domElements", [])[:25],
+                                        }
+                                    else:
+                                        result = {"status": "dispatched_no_capture", "actions_dispatched": len(actions_list)}
+                                else:
+                                    yield "event: send_game_input\ndata: " + json.dumps({"actions": actions_list, "capture_after": False}) + "\n\n"
+                                    result = {"status": "dispatched", "actions_dispatched": len(actions_list)}
                             elif name == "set_game_device":
                                 target_dev = str(args.get("device_mode") or "desktop").lower()
                                 yield "event: set_game_device\ndata: " + json.dumps({"device_mode": target_dev}) + "\n\n"

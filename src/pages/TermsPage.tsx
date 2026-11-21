@@ -143,8 +143,7 @@ export default function TermsPage({
       content: (
         <>
           <p>
-            Yulya Studio incorporates an artificial intelligence copilot, asset studio, and autonomous playtesting engine powered by
-            Google Gemini models (including Gemini 3.8 Flash, Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, Nano Banana 2.1, and Gemini 3.8 TTS).
+            Yulya Studio incorporates an inline multimodal Gemini coding assistant (with built-in Nano Banana 2.1 image generation, Gemini 3.8 TTS audio synthesis, and headless game-only screen sharing &amp; playtesting) powered by your connected Google AI Studio API key.
           </p>
           <h4>Bring-Your-Own-Key (BYOK) Responsibility</h4>
           <p>
@@ -309,7 +308,7 @@ export default function TermsPage({
           </ol>
           <div className="legal-contact-callout">
             <Mail size={16} />
-            <span>Designated DMCA Agent Email: <a href="mailto:dmca@yulya.me">dmca@yulya.me</a></span>
+            <span>Designated DMCA &amp; IP Email: <a href="mailto:support@yulya.me">support@yulya.me</a></span>
           </div>
           <h4>Counter-Notification & Repeat Infringer Policy</h4>
           <p>
@@ -417,7 +416,7 @@ export default function TermsPage({
           <p>
             <strong>Informal Resolution:</strong> Before initiating formal proceedings, you and Yulya Studio agree to
             first attempt to resolve any dispute, claim, or controversy informally by sending a written notice of dispute to{' '}
-            <a href="mailto:legal@yulya.me">legal@yulya.me</a> detailing the nature of the claim and requested relief.
+            <a href="mailto:support@yulya.me">support@yulya.me</a> detailing the nature of the claim and requested relief.
           </p>
           <p>
             <strong>Class Action Waiver:</strong> TO THE EXTENT PERMITTED BY LAW, ALL CLAIMS MUST BE BROUGHT IN THE
@@ -432,7 +431,7 @@ export default function TermsPage({
           </p>
           <div className="legal-contact-callout">
             <Mail size={16} />
-            <span>Legal Department Email: <a href="mailto:legal@yulya.me">legal@yulya.me</a></span>
+            <span>Support &amp; Legal Email: <a href="mailto:support@yulya.me">support@yulya.me</a> · Creator Portfolio: <a href="https://moheith.tech" target="_blank" rel="noreferrer">moheith.tech</a></span>
           </div>
         </>
       )
@@ -575,10 +574,10 @@ export default function TermsPage({
           <div className="legal-sidebar-footer">
             <div className="legal-need-help">
               <HelpCircle size={15} />
-              <span>Have legal questions?</span>
+              <span>Have questions?</span>
             </div>
-            <a href="mailto:legal@yulya.me" className="legal-support-link">
-              Contact legal@yulya.me <ExternalLink size={12} />
+            <a href="mailto:support@yulya.me" className="legal-support-link">
+              Contact support@yulya.me <ExternalLink size={12} />
             </a>
           </div>
         </aside>
@@ -608,21 +607,17 @@ export default function TermsPage({
           <div className="legal-contact-footer">
             <h3>Questions or Concerns Regarding These Terms?</h3>
             <p>
-              If you have any questions, trademark inquiries, or DMCA notifications, our legal team is available:
+              For general support, legal notices, DMCA takedowns, or privacy inquiries, reach out directly:
             </p>
             <div className="legal-emails-row">
-              <div className="legal-email-badge">
+              <a href="mailto:support@yulya.me" className="legal-email-badge">
                 <Mail size={15} />
-                <span>General Legal: <strong>legal@yulya.me</strong></span>
-              </div>
-              <div className="legal-email-badge">
-                <Shield size={15} />
-                <span>DMCA &amp; IP: <strong>dmca@yulya.me</strong></span>
-              </div>
-              <div className="legal-email-badge">
-                <Lock size={15} />
-                <span>Privacy &amp; Security: <strong>privacy@yulya.me</strong></span>
-              </div>
+                <span>Support, Legal &amp; DMCA: <strong>support@yulya.me</strong></span>
+              </a>
+              <a href="https://moheith.tech" target="_blank" rel="noreferrer" className="legal-email-badge">
+                <ExternalLink size={15} />
+                <span>Creator Portfolio: <strong>moheith.tech</strong></span>
+              </a>
             </div>
           </div>
         </main>

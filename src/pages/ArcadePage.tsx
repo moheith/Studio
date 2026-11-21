@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Play, Search, Plus, ArrowLeft, Layers, Heart,
-  Gamepad2, X, Filter, Compass, Sparkles, BookOpen
+  Gamepad2, X, Compass, BookOpen, ChevronLeft, ChevronRight,
+  ArrowUpRight, Mail, Flame, Clock, SortAsc
 } from 'lucide-react'
 import type { Game, User, Page } from '../types'
 import ProfileMenu from '../components/ProfileMenu'
@@ -13,7 +14,7 @@ interface ArcadePageProps {
   onTrackPlay?: (username: string, slug: string) => void
   onOpenStudio: (game?: Game) => void
   onLogout: () => void
-  setPage: (page: Page) => void
+  setPage: (page: Page, customPath?: string) => void
   notify: (msg: string) => void
   onLogin?: (user: User, csrf: string) => void
   modal: string | null
@@ -34,30 +35,37 @@ export default function ArcadePage({
 }: ArcadePageProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedGenre, setSelectedGenre] = useState('ALL')
-  const [selectedSort, setSelectedSort] = useState<'PLAYS' | 'NEWEST' | 'TITLE'>('PLAYS')
+  const [selectedSort, setSelectedSort] = useState<'PLAYS' | 'LIKES' | 'NEWEST' | 'TITLE'>('PLAYS')
   const [featuredIndex, setFeaturedIndex] = useState(0)
+  const searchRef = useRef<HTMLInputElement | null>(null)
 
-  // Play tracking happens strictly once on the PlayGamePage launch (fixes BUG-03 3x inflation)
-  const handleGameClick = (game: Game) => {
-    onSelectGame(game)
-  }
+  // Keyboard "/" focuses search cleanly
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
-  // Dynamically extract genres only from real games
   const availableGenres = useMemo(() => {
-    const genres = Array.from(new Set(games.map(g => g.genre.toUpperCase()).filter(Boolean)))
+    const genres = Array.from(new Set(games.map(g => (g.genre || 'ARCADE').toUpperCase()).filter(Boolean)))
     return ['ALL', ...genres]
   }, [games])
 
-  // Filter and sort the real games list
   const filteredGames = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
     return games
       .filter(g => {
-        const query = searchQuery.trim().toLowerCase()
         const matchSearch =
-          query === '' ||
+          !query ||
           g.title.toLowerCase().includes(query) ||
           g.creator.toLowerCase().includes(query) ||
-          g.description.toLowerCase().includes(query)
+          g.description.toLowerCase().includes(query) ||
+          g.genre.toLowerCase().includes(query)
         const matchGenre =
           selectedGenre === 'ALL' || g.genre.toUpperCase() === selectedGenre.toUpperCase()
         return matchSearch && matchGenre
@@ -68,67 +76,67 @@ export default function ArcadePage({
           const playsB = parseFloat(String(b.plays).replace(/[^0-9.]/g, '')) || 0
           return playsB - playsA
         }
+        if (selectedSort === 'LIKES') {
+          return (b.likes_count || 0) - (a.likes_count || 0)
+        }
         if (selectedSort === 'NEWEST') return b.id.localeCompare(a.id)
         return a.title.localeCompare(b.title)
       })
   }, [games, searchQuery, selectedGenre, selectedSort])
 
-  const featuredGame = games.length > 0 ? games[featuredIndex % games.length] : null
+  const spotlightList = useMemo(() => {
+    return [...games]
+      .sort((a, b) => (parseFloat(String(b.plays)) || 0) - (parseFloat(String(a.plays)) || 0))
+      .slice(0, 5)
+  }, [games])
+
+  const featuredGame = spotlightList.length > 0 ? spotlightList[featuredIndex % spotlightList.length] : null
+
+  const openCreator = (e: React.MouseEvent, creator: string) => {
+    e.stopPropagation()
+    setPage('profile', `/@${encodeURIComponent(creator)}`)
+  }
 
   return (
-    <div className="roblox-arcade-shell">
-      {/* 1. Roblox-style Main Top Navigation Bar */}
-      <header className="roblox-topbar">
-        <div className="roblox-topbar-left">
-          <button className="roblox-back-btn" onClick={() => setPage('home')}>
-            <ArrowLeft size={16} />
-            <span>Home</span>
+    <div className="arc-shell">
+      {/* Top Navigation */}
+      <header className="arc-topbar">
+        <div className="arc-topbar-left">
+          <button className="arc-icon-back" onClick={() => setPage('home')} aria-label="Back to Home" title="Home">
+            <ArrowLeft size={15} />
           </button>
-          <div className="roblox-brand-wrap" onClick={() => setPage('home')}>
-            <span className="roblox-logo-icon">❖</span>
-            <span className="roblox-brand-name">YULYA<span className="roblox-brand-highlight">ARCADE</span></span>
-          </div>
-          <nav className="roblox-subnav">
-            <button className="roblox-nav-link active">
-              <Compass size={14} />
-              <span>Discover</span>
-            </button>
-            <button className="roblox-nav-link" onClick={() => setPage('templates')}>
-              <Layers size={14} />
-              <span>Templates</span>
-            </button>
-            <button className="roblox-nav-link" onClick={() => onOpenStudio()}>
-              <Plus size={14} />
-              <span>Create</span>
-            </button>
-            <button className="roblox-nav-link" onClick={() => setPage('docs')}>
-              <BookOpen size={14} />
-              <span>Docs</span>
-            </button>
+          <button className="arc-brand" onClick={() => setPage('home')}>
+            <span className="brand-mark">✳</span>
+            <span>yulya<span className="brand-light">arcade</span></span>
+          </button>
+          <nav className="arc-nav" aria-label="Arcade navigation">
+            <button className="arc-nav-item active"><Compass size={14} /><span>Discover</span></button>
+            <button className="arc-nav-item" onClick={() => setPage('templates')}><Layers size={14} /><span>Templates</span></button>
+            <button className="arc-nav-item" onClick={() => setPage('docs')}><BookOpen size={14} /><span>Docs</span></button>
           </nav>
         </div>
 
-        {/* Center Real Search Bar */}
-        <div className="roblox-search-wrap">
-          <Search size={16} className="roblox-search-icon" />
+        <div className="arc-search-wrap">
+          <Search size={14} className="arc-search-icon" />
           <input
+            ref={searchRef}
             type="text"
-            placeholder="Search experiences by title, creator, or description..."
+            placeholder="Search games, tools, or @creators… (/)"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
+            aria-label="Search Arcade"
           />
           {searchQuery && (
-            <button className="roblox-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
-              <X size={14} />
+            <button className="arc-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
+              <X size={13} />
             </button>
           )}
         </div>
 
-        {/* Right User Actions with Zoom-in Profile Menu */}
-        <div className="roblox-topbar-right">
-          <button className="roblox-create-btn" onClick={() => onOpenStudio()}>
-            <Plus size={15} />
-            <span>Studio</span>
+        <div className="arc-topbar-right">
+          <button className="button button-alabaster button-small arc-studio-btn" onClick={() => onOpenStudio()}>
+            <Plus size={14} />
+            <span>Build</span>
           </button>
           <ProfileMenu
             user={user}
@@ -141,76 +149,81 @@ export default function ArcadePage({
         </div>
       </header>
 
-      {/* 2. Genre Chips Bar (Derived from Real Games) */}
-      {availableGenres.length > 1 && (
-        <div className="roblox-genre-strip">
-          <div className="roblox-genre-container">
-            {availableGenres.map(genre => (
-              <button
-                key={genre}
-                className={`roblox-genre-chip ${selectedGenre === genre ? 'active' : ''}`}
-                onClick={() => setSelectedGenre(genre)}
-              >
-                {genre === 'ALL' && <Compass size={13} />}
-                <span>{genre}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <main className="roblox-arcade-content">
-        {/* 3. Hero Spotlight Banner (Only for real games) */}
+      <main className="arc-main">
+        {/* Split-Stage Editorial Featured Showcase */}
         {!searchQuery && selectedGenre === 'ALL' && featuredGame && (
-          <section className="roblox-spotlight-hero">
-            <div
-              className="spotlight-poster-bg"
-              style={{ '--spotlight-color': featuredGame.color } as React.CSSProperties}
-            >
+          <section className="arc-spotlight" aria-label="Featured Experience">
+            <div className="arc-spotlight-media" onClick={() => onSelectGame(featuredGame)}>
               {featuredGame.thumbnail ? (
-                <img src={featuredGame.thumbnail} alt={featuredGame.title} className="spotlight-poster-img" />
+                <img src={featuredGame.thumbnail} alt={featuredGame.title} className="arc-spotlight-img" />
               ) : (
-                <div className="spotlight-emoji-backdrop">{featuredGame.art}</div>
+                <div className="arc-spotlight-placeholder">
+                  <span className="arc-placeholder-monogram">{featuredGame.title.slice(0, 2).toUpperCase()}</span>
+                  <span className="arc-placeholder-sub">{featuredGame.genre} · Playable Sandbox</span>
+                </div>
               )}
-              <div className="spotlight-gradient-overlay" />
+              <div className="arc-spotlight-play-chip">
+                <Play size={14} fill="currentColor" />
+                <span>Play Now</span>
+              </div>
             </div>
 
-            <div className="spotlight-content">
-              <div className="spotlight-badges">
-                <span className="spotlight-tag-featured">
-                  <Sparkles size={12} /> COMMUNITY SPOTLIGHT
+            <div className="arc-spotlight-info">
+              <div className="arc-spotlight-meta-row">
+                <span className="arc-genre-tag">{featuredGame.genre}</span>
+                <span className="arc-stat-chip tabular-count">
+                  <Play size={11} fill="currentColor" /> {featuredGame.plays} plays
                 </span>
-                <span className="spotlight-tag-live">
-                  <Play size={11} fill="currentColor" /> {featuredGame.plays} Plays
-                </span>
-                <span className="spotlight-genre">{featuredGame.genre}</span>
+                {typeof featuredGame.likes_count === 'number' && featuredGame.likes_count > 0 && (
+                  <span className="arc-stat-chip tabular-count">
+                    <Heart size={11} /> {featuredGame.likes_count}
+                  </span>
+                )}
               </div>
 
-              <h1 className="spotlight-title">{featuredGame.title}</h1>
-              <p className="spotlight-desc">{featuredGame.description}</p>
-              <div className="spotlight-meta">
-                <span className="spotlight-creator">Created by <b>@{featuredGame.creator}</b></span>
-              </div>
+              <h1 className="arc-spotlight-title">{featuredGame.title}</h1>
+              <p className="arc-spotlight-desc">
+                {featuredGame.description || 'Interactive browser experience built and published directly in Yulya Studio.'}
+              </p>
 
-              <div className="spotlight-cta-row">
+              <div className="arc-spotlight-creator-row">
+                <span>Built by</span>
                 <button
-                  className="roblox-play-btn-large"
-                  onClick={() => handleGameClick(featuredGame)}
+                  type="button"
+                  className="arc-creator-link"
+                  onClick={(e) => openCreator(e, featuredGame.creator)}
                 >
-                  <Play size={20} fill="currentColor" />
-                  <span>Play Experience</span>
+                  @{featuredGame.creator}
+                </button>
+              </div>
+
+              <div className="arc-spotlight-actions">
+                <button className="button button-alabaster" onClick={() => onSelectGame(featuredGame)}>
+                  <Play size={15} fill="currentColor" />
+                  <span>Launch Experience</span>
                 </button>
 
-                {games.length > 1 && (
-                  <div className="spotlight-cycle-dots">
-                    {games.slice(0, 5).map((_, idx) => (
-                      <button
-                        key={idx}
-                        className={`cycle-dot ${featuredIndex === idx ? 'active' : ''}`}
-                        onClick={() => setFeaturedIndex(idx)}
-                        aria-label={`Show game ${idx + 1}`}
-                      />
-                    ))}
+                {spotlightList.length > 1 && (
+                  <div className="arc-carousel-controls">
+                    <button
+                      type="button"
+                      className="arc-carousel-btn"
+                      onClick={() => setFeaturedIndex((i) => (i - 1 + spotlightList.length) % spotlightList.length)}
+                      aria-label="Previous featured project"
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                    <span className="arc-carousel-counter tabular-count">
+                      {(featuredIndex % spotlightList.length) + 1} / {spotlightList.length}
+                    </span>
+                    <button
+                      type="button"
+                      className="arc-carousel-btn"
+                      onClick={() => setFeaturedIndex((i) => (i + 1) % spotlightList.length)}
+                      aria-label="Next featured project"
+                    >
+                      <ChevronRight size={15} />
+                    </button>
                   </div>
                 )}
               </div>
@@ -218,72 +231,109 @@ export default function ArcadePage({
           </section>
         )}
 
-        {/* 4. Results Bar & Sorting */}
-        <div className="roblox-results-bar">
-          <div className="results-info">
-            <h2>
-              {searchQuery
-                ? `Search: "${searchQuery}"`
-                : selectedGenre === 'ALL'
-                ? 'All Experiences'
-                : `${selectedGenre} Experiences`}
-            </h2>
-            <span className="results-count">
-              {filteredGames.length} {filteredGames.length === 1 ? 'experience' : 'experiences'}
-            </span>
+        {/* Filter Bar + Sort Pills */}
+        <section className="arc-controls-bar" aria-label="Filter and sort experiences">
+          <div className="arc-genre-tabs">
+            {availableGenres.map((genre) => (
+              <button
+                key={genre}
+                type="button"
+                className={`arc-genre-btn ${selectedGenre === genre ? 'active' : ''}`}
+                onClick={() => setSelectedGenre(genre)}
+              >
+                {genre}
+              </button>
+            ))}
           </div>
 
-          {games.length > 1 && (
-            <div className="results-sort">
-              <span className="sort-label"><Filter size={13} /> Sort:</span>
-              <select
-                value={selectedSort}
-                onChange={e => setSelectedSort(e.target.value as any)}
-                className="roblox-sort-select"
-              >
-                <option value="PLAYS">Most Plays</option>
-                <option value="TITLE">Title (A-Z)</option>
-                <option value="NEWEST">Newest</option>
-              </select>
+          <div className="arc-sort-group">
+            <span className="arc-count-label tabular-count">
+              {filteredGames.length} {filteredGames.length === 1 ? 'experience' : 'experiences'}
+            </span>
+            <div className="arc-sort-pills" role="group" aria-label="Sort order">
+              <button type="button" className={`arc-sort-pill ${selectedSort === 'PLAYS' ? 'active' : ''}`} onClick={() => setSelectedSort('PLAYS')}>
+                <Flame size={12} /> Popular
+              </button>
+              <button type="button" className={`arc-sort-pill ${selectedSort === 'LIKES' ? 'active' : ''}`} onClick={() => setSelectedSort('LIKES')}>
+                <Heart size={12} /> Top Liked
+              </button>
+              <button type="button" className={`arc-sort-pill ${selectedSort === 'NEWEST' ? 'active' : ''}`} onClick={() => setSelectedSort('NEWEST')}>
+                <Clock size={12} /> Newest
+              </button>
+              <button type="button" className={`arc-sort-pill ${selectedSort === 'TITLE' ? 'active' : ''}`} onClick={() => setSelectedSort('TITLE')}>
+                <SortAsc size={12} /> A–Z
+              </button>
             </div>
-          )}
-        </div>
+          </div>
+        </section>
 
-        {/* 5. Real Games Grid */}
-        <section className="roblox-main-grid-section">
+        {/* Main 16:9 Games Grid */}
+        <section className="arc-grid-section">
           {filteredGames.length > 0 ? (
-            <div className="roblox-games-grid">
-              {filteredGames.map(game => (
-                <RobloxGameCard
+            <div className="arc-grid">
+              {filteredGames.map((game) => (
+                <article
                   key={game.projectId ?? game.id}
-                  game={game}
-                  onClick={() => handleGameClick(game)}
-                />
+                  className="arc-card"
+                  onClick={() => onSelectGame(game)}
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && onSelectGame(game)}
+                >
+                  <div className="arc-card-media">
+                    {game.thumbnail ? (
+                      <img src={game.thumbnail} alt={game.title} className="arc-card-img" loading="lazy" />
+                    ) : (
+                      <div className="arc-card-fallback">
+                        <span className="arc-fallback-abbr">{game.title.slice(0, 2).toUpperCase()}</span>
+                        <span className="arc-fallback-slug">/{game.id}</span>
+                      </div>
+                    )}
+                    <span className="arc-card-genre">{game.genre}</span>
+                    <div className="arc-card-hover">
+                      <span className="arc-hover-launch">
+                        <Play size={14} fill="currentColor" /> Play
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="arc-card-body">
+                    <h3 className="arc-card-title">{game.title}</h3>
+                    <p className="arc-card-desc">{game.description || 'Playable browser experience on Yulya Studio.'}</p>
+                    <div className="arc-card-footer">
+                      <button
+                        type="button"
+                        className="arc-card-creator"
+                        onClick={(e) => openCreator(e, game.creator)}
+                      >
+                        @{game.creator}
+                      </button>
+                      <div className="arc-card-stats tabular-count">
+                        <span><Play size={10} fill="currentColor" /> {game.plays}</span>
+                        {typeof game.likes_count === 'number' && game.likes_count > 0 && (
+                          <span><Heart size={10} /> {game.likes_count}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </article>
               ))}
             </div>
           ) : (
-            <div className="roblox-empty-state">
-              <Gamepad2 size={44} className="empty-icon" />
-              <h3>{games.length === 0 ? 'No public experiences yet' : 'No experiences found'}</h3>
+            <div className="arc-empty">
+              <Gamepad2 size={32} />
+              <h3>{games.length === 0 ? 'No public experiences yet' : 'No matching experiences'}</h3>
               <p>
                 {games.length === 0
-                  ? 'Be the first creator to build and publish a game in Yulya Studio.'
-                  : 'Try searching with another keyword or change your genre filter.'}
+                  ? 'Publish your first playable project from Yulya Studio to appear on the Community Arcade.'
+                  : 'Try a different keyword or reset your category filter.'}
               </p>
               {games.length === 0 ? (
-                <button className="roblox-create-btn" onClick={() => onOpenStudio()}>
-                  <Plus size={15} />
-                  <span>Open Studio & Create Experience</span>
+                <button className="button button-alabaster" onClick={() => onOpenStudio()}>
+                  <Plus size={15} /> Open Studio &amp; Build
                 </button>
               ) : (
-                <button
-                  className="roblox-reset-btn"
-                  onClick={() => {
-                    setSearchQuery('')
-                    setSelectedGenre('ALL')
-                  }}
-                >
-                  Clear Search & Filter
+                <button className="button button-outline" onClick={() => { setSearchQuery(''); setSelectedGenre('ALL') }}>
+                  Reset Filters
                 </button>
               )}
             </div>
@@ -291,79 +341,22 @@ export default function ArcadePage({
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="roblox-footer">
-        <div className="roblox-footer-container">
-          <div className="footer-left">
-            <span className="roblox-logo-small">❖</span>
-            <span>Yulya Arcade • Public Community Experiences</span>
+      <footer className="arc-footer">
+        <div className="arc-footer-inner">
+          <div className="arc-footer-left">
+            <span className="brand-mark">✳</span>
+            <span>Yulya Arcade · Isolated Sandbox on <code>play.yulya.me</code></span>
           </div>
-          <div className="footer-links">
-            <button onClick={() => setPage('home')}>Return to Home</button>
-            <button onClick={() => onOpenStudio()}>Create Experience</button>
+          <div className="arc-footer-links">
+            <button type="button" onClick={() => setPage('home')}>Home</button>
+            <button type="button" onClick={() => setPage('docs')}>Docs</button>
+            <button type="button" onClick={() => setPage('terms')}>Terms</button>
+            <button type="button" onClick={() => setPage('privacy')}>Privacy</button>
+            <a href="mailto:support@yulya.me"><Mail size={12} /> support@yulya.me</a>
+            <a href="https://moheith.tech" target="_blank" rel="noreferrer">moheith.tech <ArrowUpRight size={11} /></a>
           </div>
         </div>
       </footer>
     </div>
-  )
-}
-
-function RobloxGameCard({
-  game,
-  onClick
-}: {
-  game: Game
-  onClick: () => void
-}) {
-  return (
-    <article
-      className="roblox-card"
-      onClick={onClick}
-      tabIndex={0}
-      onKeyDown={e => e.key === 'Enter' && onClick()}
-    >
-      <div
-        className="roblox-card-thumb"
-        style={{ '--thumb-color': game.color } as React.CSSProperties}
-      >
-        {game.thumbnail ? (
-          <img src={game.thumbnail} alt={game.title} className="roblox-thumb-cover-img" />
-        ) : (
-          <>
-            <div className="thumb-art-emoji">{game.art}</div>
-            <div className="thumb-stars-watermark">✦ · ✧</div>
-          </>
-        )}
-
-        {/* Real Genre Badge */}
-        <span className="thumb-badge">{game.genre}</span>
-
-        {/* Real Plays Counter */}
-        <div className="thumb-active-players">
-          <Play size={10} fill="currentColor" />
-          <span>{game.plays} plays</span>
-        </div>
-
-        {/* Hover overlay with Roblox-green play button */}
-        <div className="thumb-hover-overlay">
-          <button className="roblox-instant-play-btn" aria-label={`Play ${game.title}`}>
-            <Play size={20} fill="#ffffff" />
-          </button>
-        </div>
-      </div>
-
-      <div className="roblox-card-info">
-        <h4 className="roblox-card-title">{game.title}</h4>
-
-        <div className="roblox-card-metrics" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span className="metric-creator">by @{game.creator}</span>
-          {typeof game.likes_count === 'number' && game.likes_count > 0 && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: '#f472b6' }}>
-              <Heart size={11} fill="currentColor" /> {game.likes_count}
-            </span>
-          )}
-        </div>
-      </div>
-    </article>
   )
 }

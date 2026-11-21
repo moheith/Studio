@@ -160,9 +160,46 @@ function buildSrcdocBridgeScript(parentOrigin: string): string {
     }
     requestAnimationFrame(perfTick);
   }
+  var activeKeys = {}; var activeTimers = [];
+  function releaseAllKeys() {
+    for (var k in activeKeys) {
+      if (activeKeys[k]) {
+        try {
+          var ev = new KeyboardEvent('keyup', { key: k, code: activeKeys[k], bubbles: true, cancelable: true });
+          window.dispatchEvent(ev); document.dispatchEvent(ev);
+        } catch(_) {}
+      }
+    }
+    activeKeys = {}; activeTimers.forEach(clearTimeout); activeTimers = [];
+  }
+  function resolveKeyCode(key) {
+    if (!key) return { key: ' ', code: 'Space', keyCode: 32 };
+    var k = String(key); var lk = k.toLowerCase();
+    if (lk === ' ' || lk === 'space') return { key: ' ', code: 'Space', keyCode: 32 };
+    if (lk === 'enter') return { key: 'Enter', code: 'Enter', keyCode: 13 };
+    if (lk === 'escape' || lk === 'esc') return { key: 'Escape', code: 'Escape', keyCode: 27 };
+    if (lk === 'shift') return { key: 'Shift', code: 'ShiftLeft', keyCode: 16 };
+    if (lk === 'control' || lk === 'ctrl') return { key: 'Control', code: 'ControlLeft', keyCode: 17 };
+    if (lk === 'arrowup' || lk === 'up') return { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 };
+    if (lk === 'arrowdown' || lk === 'down') return { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 };
+    if (lk === 'arrowleft' || lk === 'left') return { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 };
+    if (lk === 'arrowright' || lk === 'right') return { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 };
+    if (k.length === 1 && /[a-zA-Z]/.test(k)) return { key: k, code: 'Key' + k.toUpperCase(), keyCode: k.toUpperCase().charCodeAt(0) };
+    if (k.length === 1 && /[0-9]/.test(k)) return { key: k, code: 'Digit' + k, keyCode: k.charCodeAt(0) };
+    return { key: k, code: k, keyCode: 0 };
+  }
+  function notifyReady() {
+    try {
+      postToHost({ type: 'yulya:bridge-ready', title: document.title || '', width: window.innerWidth, height: window.innerHeight, hasCanvas: document.querySelectorAll('canvas').length > 0, domNodes: document.getElementsByTagName('*').length });
+    } catch(_) {}
+  }
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', notifyReady); }
+  else { setTimeout(notifyReady, 0); }
+  window.addEventListener('load', notifyReady);
   window.addEventListener('message', function(e) {
     if (TARGET_ORIGIN !== '*' && e.origin !== TARGET_ORIGIN) return;
     if (!e.data || typeof e.data !== 'object') return;
+    if (e.data.type === 'yulya:release-all-keys') { releaseAllKeys(); return; }
     if (e.data.type === 'yulya:set-picker') { pickerActive = !!e.data.active; if (!pickerActive && pickerBox) pickerBox.style.display = 'none'; return; }
     if (e.data.type === 'yulya:set-perf') {
       var want = !!e.data.active;
@@ -170,12 +207,23 @@ function buildSrcdocBridgeScript(parentOrigin: string): string {
       else if (!want) { perfRunning = false; }
       return;
     }
+    if (e.data.type === 'yulya:get-state') {
+      var canvases = Array.prototype.slice.call(document.querySelectorAll('canvas')).map(function(c) { return { id: c.id || '', width: c.width, height: c.height, clientW: c.clientWidth, clientH: c.clientHeight }; });
+      postToHost({ type: 'yulya:state-snapshot', reqId: e.data.reqId, title: document.title || '', width: window.innerWidth, height: window.innerHeight, canvases: canvases, domElements: collectInteractiveDom(), consoleLogs: recentLogs.slice(-30), consoleErrors: recentLogs.filter(function(l) { return l.level === 'error' || l.level === 'warn'; }).slice(-15), textSnippet: (document.body && document.body.innerText ? document.body.innerText.trim().slice(0, 1200) : '') });
+      return;
+    }
     if (e.data.type === 'yulya:eval-code') {
       var evalId = e.data.evalId;
+      function fmtVal(v) { if (v === undefined) return 'undefined'; try { return typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v); } catch(_) { return String(v); } }
       try {
-        var res = (0, eval)(String(e.data.code || ''));
-        var out = typeof res === 'object' ? JSON.stringify(res, null, 2) : String(res);
-        postToHost({ type: 'yulya:eval-result', evalId: evalId, ok: true, output: out });
+        var rawCode = String(e.data.code || '');
+        var res = /\\bawait\\b/.test(rawCode) ? (new Function('return (async function(){ ' + rawCode + ' })()'))() : (0, eval)(rawCode);
+        if (res && typeof res.then === 'function') {
+          res.then(function(val) { postToHost({ type: 'yulya:eval-result', evalId: evalId, ok: true, output: fmtVal(val) }); })
+             .catch(function(err) { postToHost({ type: 'yulya:eval-result', evalId: evalId, ok: false, output: String(err && err.message || err) }); });
+        } else {
+          postToHost({ type: 'yulya:eval-result', evalId: evalId, ok: true, output: fmtVal(res) });
+        }
       } catch (err) {
         postToHost({ type: 'yulya:eval-result', evalId: evalId, ok: false, output: String(err && err.message || err) });
       }
@@ -183,16 +231,76 @@ function buildSrcdocBridgeScript(parentOrigin: string): string {
     }
     if (e.data.type === 'yulya:simulate-input') {
       var d = e.data; var kind = d.inputKind || 'click';
+      if (kind === 'keydown' || kind === 'keyup' || kind === 'keypress') {
+        var mapped = resolveKeyCode(d.key);
+        var kev = new KeyboardEvent(kind, { key: mapped.key, code: mapped.code, keyCode: mapped.keyCode, which: mapped.keyCode, bubbles: true, cancelable: true });
+        var kt = document.activeElement && document.activeElement !== document.body ? document.activeElement : (document.querySelector('canvas') || document.body);
+        try { if (kt) kt.dispatchEvent(kev); } catch(_) {}
+        window.dispatchEvent(kev); document.dispatchEvent(kev);
+        if (kind === 'keydown') { activeKeys[mapped.key] = mapped.code; } else if (kind === 'keyup') { delete activeKeys[mapped.key]; }
+        return;
+      }
+      if (kind === 'type') {
+        var inp = d.selector ? document.querySelector(d.selector) : document.activeElement;
+        if (inp && (inp.tagName === 'INPUT' || inp.tagName === 'TEXTAREA' || inp.isContentEditable)) {
+          try {
+            inp.focus();
+            var valStr = String(d.text || '');
+            if (inp.isContentEditable) { inp.textContent = valStr; }
+            else {
+              var proto = inp.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+              var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+              if (setter && setter.set) setter.set.call(inp, valStr); else inp.value = valStr;
+            }
+            inp.dispatchEvent(new Event('input', { bubbles: true }));
+            inp.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch(_) {}
+        }
+        return;
+      }
+      if (kind === 'scroll') {
+        var sx = Number(d.deltaX || 0), sy = Number(d.deltaY || 240);
+        try { window.scrollBy(sx, sy); } catch(_) {}
+        return;
+      }
+      if (kind === 'drag') {
+        var x1 = Number(d.x || 100), y1 = Number(d.y || 100), x2 = Number(d.toX || 300), y2 = Number(d.toY || 100);
+        var dt = (d.selector ? document.querySelector(d.selector) : null) || document.elementFromPoint(x1, y1) || document.querySelector('canvas') || document.body;
+        try { dt.dispatchEvent(new PointerEvent('pointerdown', { clientX: x1, clientY: y1, button: 0, buttons: 1, bubbles: true })); } catch(_) {}
+        try { dt.dispatchEvent(new MouseEvent('mousedown', { clientX: x1, clientY: y1, button: 0, buttons: 1, bubbles: true })); } catch(_) {}
+        for (var si = 1; si <= 8; si++) {
+          (function(idx) {
+            var mx = x1 + ((x2 - x1) * idx) / 8, my = y1 + ((y2 - y1) * idx) / 8;
+            setTimeout(function() {
+              try { dt.dispatchEvent(new PointerEvent('pointermove', { clientX: mx, clientY: my, buttons: 1, bubbles: true })); } catch(_) {}
+              try { dt.dispatchEvent(new MouseEvent('mousemove', { clientX: mx, clientY: my, buttons: 1, bubbles: true })); } catch(_) {}
+              if (idx === 8) {
+                try { dt.dispatchEvent(new PointerEvent('pointerup', { clientX: x2, clientY: y2, button: 0, bubbles: true })); } catch(_) {}
+                try { dt.dispatchEvent(new MouseEvent('mouseup', { clientX: x2, clientY: y2, button: 0, bubbles: true })); } catch(_) {}
+              }
+            }, idx * 18);
+          })(si);
+        }
+        return;
+      }
+      var x = typeof d.x === 'number' ? d.x : (window.innerWidth / 2);
+      var y = typeof d.y === 'number' ? d.y : (window.innerHeight / 2);
       var target = null;
       if (d.selector) { try { target = document.querySelector(d.selector); } catch (_) {} }
       if (!target && d.text) {
         var needle = String(d.text).toLowerCase().trim();
-        var els = document.querySelectorAll('button, a, input, [role="button"]');
+        var els = document.querySelectorAll('button, a, input, [role="button"], span, div');
         for (var i = 0; i < els.length; i++) {
-          if ((els[i].innerText || '').toLowerCase().indexOf(needle) !== -1) { target = els[i]; break; }
+          var t = (els[i].innerText || '').toLowerCase().trim();
+          if (t === needle || (needle.length >= 2 && t.indexOf(needle) !== -1)) { target = els[i]; break; }
         }
       }
-      if (target && kind === 'click') { try { target.click(); } catch (_) {} }
+      if (target && typeof target.closest === 'function') { var btn = target.closest('button, a, input, [role="button"]'); if (btn) target = btn; }
+      if (target) { var r = target.getBoundingClientRect(); x = r.left + r.width / 2; y = r.top + r.height / 2; postToHost({ type: 'yulya:target-located', x: x, y: y, label: d.label || d.text || d.selector || 'Element' }); }
+      else { target = document.elementFromPoint(x, y) || document.body; }
+      try { target.dispatchEvent(new PointerEvent(kind === 'mousedown' ? 'pointerdown' : (kind === 'mouseup' ? 'pointerup' : 'pointermove'), { clientX: x, clientY: y, button: d.button || 0, bubbles: true, cancelable: true })); } catch(_) {}
+      try { target.dispatchEvent(new MouseEvent(kind, { clientX: x, clientY: y, button: d.button || 0, buttons: kind === 'mousedown' ? 1 : 0, bubbles: true, cancelable: true })); } catch(_) {}
+      if (kind === 'click') { try { target.focus && target.focus(); target.click && target.click(); } catch (_) {} }
       return;
     }
     if (e.data.type === 'yulya:capture-screen') {
@@ -326,4 +434,36 @@ export async function bundleProjectToHtml(files: Record<string, string>, parentO
     const msg = err instanceof Error ? err.message : String(err)
     return { ok: false, error: msg }
   }
+}
+
+/**
+ * Self-contained local sandboxed srcDoc fallback for plain HTML/CSS/JS projects.
+ * Used when the remote isolated play origin hasn't responded yet or when editing unsaved local drafts,
+ * preventing blank/black preview screens while keeping full Studio bridge capabilities.
+ */
+export function buildLocalPreviewFallbackHtml(files: Record<string, string>, parentOrigin?: string): string {
+  let html = files['index.html'] || '<!doctype html><html><head><meta charset="UTF-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101218;color:#e5e7eb;font-family:system-ui,sans-serif}</style></head><body><div>Add content to index.html to preview your project.</div></body></html>'
+  const norm = (p: string) => p.replace(/^\.?\//, '')
+  html = html.replace(/<link\b[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>/gi, (full, href) => {
+    const key = norm(href)
+    if (key in files) return `<style>\n${files[key]}\n</style>`
+    return full
+  })
+  html = html.replace(/<script\b([^>]*)src=["']([^"']+)["']([^>]*)><\/script>/gi, (full, before, src, after) => {
+    if (/^https?:\/\//i.test(src)) return full
+    const key = norm(src)
+    if (key in files) {
+      const safe = files[key].replace(/<\/script>/gi, '<\\/script>')
+      const isMod = /type=["']module["']/i.test(before + after)
+      return `<script${isMod ? ' type="module"' : ''}>\n${safe}\n</script>`
+    }
+    return full
+  })
+  const bridgeTag = buildSrcdocBridgeScript(parentOrigin || (typeof window !== 'undefined' ? window.location.origin : '*'))
+  if (/<head(?:\s[^>]*)?>/i.test(html)) {
+    html = html.replace(/<head(?:\s[^>]*)?>/i, (m) => `${m}\n${bridgeTag}`)
+  } else {
+    html = `${bridgeTag}\n${html}`
+  }
+  return html
 }

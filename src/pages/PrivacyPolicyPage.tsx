@@ -409,7 +409,7 @@ export default function PrivacyPolicyPage({
       id: 'user-rights',
       title: '11. Your Privacy Rights (GDPR & CCPA/CPRA)',
       plainEnglish:
-        'You have the legal right to view your data, correct errors, export your code as a ZIP, or request complete account deletion. Just email privacy@yulya.me.',
+        'You have the legal right to view your data, correct errors, export your code as a ZIP, or request complete account deletion. Just email support@yulya.me.',
       content: (
         <>
           <p>
@@ -431,10 +431,16 @@ export default function PrivacyPolicyPage({
             <li><strong>Right to Non-Discrimination:</strong> We will never deny service, charge different prices, or provide inferior service because you exercised your privacy rights.</li>
           </ul>
 
+          <h4>Your Privacy &amp; Headless Game Preview Sharing</h4>
+          <ul>
+            <li><strong>Game-Only Headless Capture:</strong> Headless screen sharing in Yulya Studio captures strictly the isolated game preview iframe (never your desktop, other tabs, or webcam). Frames are ephemeral and only sent to Google Gemini when you explicitly message the assistant or invoke vision playtesting.</li>
+            <li><strong>Zero Checkpoints Bloat:</strong> We do not store unnecessary snapshot duplicates; chat history stores only lightweight asset path references.</li>
+          </ul>
+
           <h4>How to Exercise Your Rights</h4>
           <p>
-            To submit a privacy or data erasure request, please email our Data Protection Team at{' '}
-            <a href="mailto:privacy@yulya.me">privacy@yulya.me</a> with the subject line <em>“Data Rights Request”</em>.
+            To submit a privacy or data erasure request, please email us at{' '}
+            <a href="mailto:support@yulya.me">support@yulya.me</a> with the subject line <em>“Data Rights Request”</em>.
             We will verify your identity via your registered email address and respond within thirty (30) days as required
             by law.
           </p>
@@ -461,7 +467,7 @@ export default function PrivacyPolicyPage({
           </p>
           <p>
             Parents or legal guardians who believe their child has provided personal information to Yulya Studio may
-            contact us immediately at <a href="mailto:privacy@yulya.me">privacy@yulya.me</a> to request immediate deletion.
+            contact us immediately at <a href="mailto:support@yulya.me">support@yulya.me</a> to request immediate deletion.
           </p>
         </>
       )
@@ -470,7 +476,7 @@ export default function PrivacyPolicyPage({
       id: 'contact-updates',
       title: '13. Changes to this Policy & Contact Information',
       plainEnglish:
-        'If we make significant updates to this policy, we will update the effective date and notify you on the site. You can reach our privacy team at privacy@yulya.me.',
+        'If we make significant updates to this policy, we will update the effective date and notify you on the site. You can reach us at support@yulya.me.',
       content: (
         <>
           <p>
@@ -479,14 +485,14 @@ export default function PrivacyPolicyPage({
             this document. For material changes that significantly affect your rights, we will provide prominent notice on
             the platform or via email before the changes take effect.
           </p>
-          <h4>Contacting Our Data Protection Team</h4>
+          <h4>Contacting Yulya Studio</h4>
           <p>
             If you have questions, comments, or formal inquiries regarding this Privacy Policy or our data protection
             practices, please contact us:
           </p>
           <div className="legal-contact-callout">
             <Mail size={16} />
-            <span>Email: <a href="mailto:privacy@yulya.me">privacy@yulya.me</a></span>
+            <span>Email: <a href="mailto:support@yulya.me">support@yulya.me</a> · Creator Portfolio: <a href="https://moheith.tech" target="_blank" rel="noreferrer">moheith.tech</a></span>
           </div>
           <p>
             European Union residents have the right to lodge a formal complaint with their national Data Protection
@@ -633,10 +639,10 @@ export default function PrivacyPolicyPage({
           <div className="legal-sidebar-footer">
             <div className="legal-need-help">
               <Lock size={15} />
-              <span>Data Protection Officer</span>
+              <span>Privacy &amp; Support</span>
             </div>
-            <a href="mailto:privacy@yulya.me" className="legal-support-link">
-              Contact privacy@yulya.me <ExternalLink size={12} />
+            <a href="mailto:support@yulya.me" className="legal-support-link">
+              Contact support@yulya.me <ExternalLink size={12} />
             </a>
           </div>
         </aside>
@@ -666,21 +672,17 @@ export default function PrivacyPolicyPage({
           <div className="legal-contact-footer">
             <h3>Have Questions or Wish to Exercise Your Privacy Rights?</h3>
             <p>
-              Our Data Protection Team is dedicated to honoring your rights under GDPR and CCPA:
+              Reach out anytime for privacy requests, GDPR/CCPA data erasure, or security questions:
             </p>
             <div className="legal-emails-row">
-              <div className="legal-email-badge">
+              <a href="mailto:support@yulya.me" className="legal-email-badge">
                 <Mail size={15} />
-                <span>Privacy Inquiries: <strong>privacy@yulya.me</strong></span>
-              </div>
-              <div className="legal-email-badge">
-                <Database size={15} />
-                <span>Data Erasure Requests: <strong>privacy@yulya.me</strong></span>
-              </div>
-              <div className="legal-email-badge">
-                <Scale size={15} />
-                <span>Legal Counsel: <strong>legal@yulya.me</strong></span>
-              </div>
+                <span>Support &amp; Privacy: <strong>support@yulya.me</strong></span>
+              </a>
+              <a href="https://moheith.tech" target="_blank" rel="noreferrer" className="legal-email-badge">
+                <ExternalLink size={15} />
+                <span>Creator Portfolio: <strong>moheith.tech</strong></span>
+              </a>
             </div>
           </div>
         </main>

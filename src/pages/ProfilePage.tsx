@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect } from 'react'
 import type * as React from 'react'
 import {
-  Activity, AlertTriangle, ArrowRight, ArrowUpRight, Check, Code2,
-  Copy, Download, Edit3, Flame, Gamepad2, Globe, KeyRound, Layers, Lock, LogOut,
-  MoreVertical, Pencil, Play, Plus, Search, Settings, Share2, Sparkles, Trash2, X, Zap
+  AlertTriangle, ArrowUpRight, Check, Code2, Copy, Download, Edit3,
+  Gamepad2, Globe, Grid, KeyRound, Layers, List, Lock, LogOut, Mail,
+  MoreVertical, Pencil, Play, Plus, Search, Settings, Share2, Trash2, X
 } from 'lucide-react'
 import type { Game, User } from '../types'
 import { api } from '../api'
@@ -33,33 +33,19 @@ type ProfilePageProps = {
 function formatCompactTokens(num: number | null | undefined): { compact: string; full: string } {
   const n = Math.max(0, Number(num) || 0)
   const full = `${n.toLocaleString()} tokens`
-
-  if (n >= 1e12) {
-    const val = (n / 1e12).toFixed(2).replace(/\.?0+$/, '')
-    return { compact: `${val}T`, full }
-  }
-  if (n >= 1e9) {
-    const val = (n / 1e9).toFixed(2).replace(/\.?0+$/, '')
-    return { compact: `${val}B`, full }
-  }
-  if (n >= 1e6) {
-    const val = (n / 1e6).toFixed(2).replace(/\.?0+$/, '')
-    return { compact: `${val}M`, full }
-  }
-  if (n >= 1e3) {
-    const val = (n / 1e3).toFixed(1).replace(/\.?0+$/, '')
-    return { compact: `${val}K`, full }
-  }
+  if (n >= 1e9) return { compact: `${(n / 1e9).toFixed(2).replace(/\.?0+$/, '')}B`, full }
+  if (n >= 1e6) return { compact: `${(n / 1e6).toFixed(2).replace(/\.?0+$/, '')}M`, full }
+  if (n >= 1e3) return { compact: `${(n / 1e3).toFixed(1).replace(/\.?0+$/, '')}K`, full }
   return { compact: `${n}`, full }
 }
 
 function formatJoinDate(timestamp?: number): string {
-  if (!timestamp) return 'Member since 2026'
+  if (!timestamp) return 'Joined 2026'
   try {
     const date = new Date(timestamp * 1000)
     return `Joined ${date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
   } catch {
-    return 'Member since 2026'
+    return 'Joined 2026'
   }
 }
 
@@ -84,18 +70,15 @@ export default function ProfilePage({
   onTrackPlay,
   notify
 }: ProfilePageProps) {
-  // Username claim state (fallback for accounts without username)
   const [usernameInput, setUsernameInput] = useState('')
   const [usernameError, setUsernameError] = useState('')
   const [savingUsername, setSavingUsername] = useState(false)
 
-  // Edit Profile Modal
   const [isEditing, setIsEditing] = useState(false)
   const [editDisplayName, setEditDisplayName] = useState(user?.display_name || user?.username || '')
   const [editBio, setEditBio] = useState(user?.bio || '')
   const [savingProfile, setSavingProfile] = useState(false)
 
-  // Edit Project Details Modal
   const [editingProject, setEditingProject] = useState<Game | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
@@ -103,19 +86,16 @@ export default function ProfilePage({
   const [editAllowRemix, setEditAllowRemix] = useState(false)
   const [savingDetails, setSavingDetails] = useState(false)
 
-  // Projects filter & search
   const [projectFilter, setProjectFilter] = useState<'all' | 'public' | 'private'>('all')
+  const [sortBy, setSortBy] = useState<'recent' | 'plays' | 'title'>('recent')
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [searchQuery, setSearchQuery] = useState('')
 
-  // 3-dots Menu & Deletion state
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [projectToDelete, setProjectToDelete] = useState<Game | null>(null)
   const [deleting, setDeleting] = useState(false)
-
-  // Toggling project visibility inline
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
-  // Close 3-dots dropdown when clicking outside
   useEffect(() => {
     if (!openMenuId) return
     const handleClose = () => setOpenMenuId(null)
@@ -124,33 +104,30 @@ export default function ProfilePage({
   }, [openMenuId])
 
   const displayName = user?.display_name || user?.username || (user?.email ? user.email.split('@')[0] : 'Creator')
-  const bio = user?.bio || 'Creator and game designer in Yulya Studio.'
+  const bio = user?.bio || 'Building interactive browser games and tools in Yulya Studio.'
 
-  // Computed metrics
   const publicCount = useMemo(() => projects.filter((p) => p.visibility === 'public').length, [projects])
   const privateCount = projects.length - publicCount
-  const totalPlays = useMemo(() => {
-    return projects.reduce((acc, p) => acc + (Number(p.plays) || 0), 0)
-  }, [projects])
+  const totalPlays = useMemo(() => projects.reduce((acc, p) => acc + (Number(p.plays) || 0), 0), [projects])
+  const totalLikes = useMemo(() => projects.reduce((acc, p) => acc + (Number(p.likes_count) || 0), 0), [projects])
 
-  // Filtered projects
   const filteredProjects = useMemo(() => {
-    return projects.filter((p) => {
+    const q = searchQuery.trim().toLowerCase()
+    const list = projects.filter((p) => {
       const matchesFilter =
-        projectFilter === 'all'
-          ? true
-          : projectFilter === 'public'
-          ? p.visibility === 'public'
-          : p.visibility !== 'public'
+        projectFilter === 'all' ? true : projectFilter === 'public' ? p.visibility === 'public' : p.visibility !== 'public'
       const matchesSearch =
-        !searchQuery.trim() ||
-        p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.description.toLowerCase().includes(searchQuery.toLowerCase())
+        !q ||
+        p.title.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.genre.toLowerCase().includes(q)
       return matchesFilter && matchesSearch
     })
-  }, [projects, projectFilter, searchQuery])
+    if (sortBy === 'plays') return [...list].sort((a, b) => (Number(b.plays) || 0) - (Number(a.plays) || 0))
+    if (sortBy === 'title') return [...list].sort((a, b) => a.title.localeCompare(b.title))
+    return list
+  }, [projects, projectFilter, searchQuery, sortBy])
 
-  // Telemetry metrics
   const totalTokens = user?.tokens?.total_tokens ?? 0
   const inputTokens = user?.tokens?.input_tokens ?? 0
   const outputTokens = user?.tokens?.output_tokens ?? 0
@@ -161,44 +138,37 @@ export default function ProfilePage({
   const peakFormatted = formatCompactTokens(peakTokens)
   const inputFormatted = formatCompactTokens(inputTokens)
   const outputFormatted = formatCompactTokens(outputTokens)
-
   const inputPct = totalTokens > 0 ? Math.round((inputTokens / totalTokens) * 100) : 0
   const outputPct = totalTokens > 0 ? 100 - inputPct : 0
 
-  // Copy Profile link
   const copyProfileLink = () => {
     if (!user?.username) {
-      notify('Claim your username first to get a shareable profile URL')
+      notify('Claim your username first to get a shareable portfolio URL')
       return
     }
     const url = `${window.location.origin}/@${user.username}`
-    navigator.clipboard.writeText(url)
-    notify('Profile link copied to clipboard!')
+    navigator.clipboard?.writeText(url).catch(() => {})
+    notify(`Copied ${url}`)
   }
 
-  // Copy Game link
   const copyGameLink = (game: Game) => {
     const username = user?.username || game.creator
     const url = `${window.location.origin}/${encodeURIComponent(username)}/${encodeURIComponent(game.id)}`
-    navigator.clipboard.writeText(url)
-    notify(`Game link for "${game.title}" copied!`)
+    navigator.clipboard?.writeText(url).catch(() => {})
+    notify(`Link copied for "${game.title}"`)
   }
 
-  // Handle Save Profile
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault()
     setSavingProfile(true)
     try {
       const res = await api<{ user: User }>('/api/profile', {
         method: 'PUT',
-        body: JSON.stringify({
-          display_name: editDisplayName.trim(),
-          bio: editBio.trim()
-        })
+        body: JSON.stringify({ display_name: editDisplayName.trim(), bio: editBio.trim() })
       })
       if (onUpdateUser) onUpdateUser(res.user)
       setIsEditing(false)
-      notify('Profile updated successfully!')
+      notify('Profile updated')
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Could not save profile')
     } finally {
@@ -206,7 +176,6 @@ export default function ProfilePage({
     }
   }
 
-  // Handle Toggle Visibility
   const handleToggle = async (game: Game) => {
     const id = game.projectId || game.id
     if (!id || togglingId) return
@@ -216,11 +185,8 @@ export default function ProfilePage({
         await onToggleVisibility(game)
       } else {
         const next = game.visibility === 'public' ? 'private' : 'public'
-        await api(`/api/projects/${id}/visibility`, {
-          method: 'PATCH',
-          body: JSON.stringify({ visibility: next })
-        })
-        notify(next === 'public' ? `"${game.title}" is now public` : `"${game.title}" is now private`)
+        await api(`/api/projects/${id}/visibility`, { method: 'PATCH', body: JSON.stringify({ visibility: next }) })
+        notify(next === 'public' ? `"${game.title}" published to Arcade` : `"${game.title}" set to private`)
       }
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Could not update visibility')
@@ -229,287 +195,232 @@ export default function ProfilePage({
     }
   }
 
+  const openDetailsEditor = (project: Game) => {
+    setEditingProject(project)
+    setEditTitle(project.title)
+    setEditDesc(project.description || '')
+    setEditGenre(project.genre || 'ARCADE')
+    setEditAllowRemix(Boolean(project.allow_remix))
+  }
+
   return (
-    <div className="profile-shell creator-profile-shell">
-      {/* Top Navbar */}
-      <header className="topbar profile-topbar creator-profile-topbar">
+    <div className="dash-shell">
+      {/* Unified Studio Dashboard Header */}
+      <header className="dash-topbar">
         <button className="brand" onClick={onHome} aria-label="Yulya Studio home">
           <span className="brand-mark">✳</span>
-          <span>
-            yulya<span className="brand-light">studio</span>
-          </span>
+          <span>yulya<span className="brand-light">studio</span></span>
         </button>
 
-        <nav className="creator-profile-nav" aria-label="Account navigation">
-          <button className="quiet-button" onClick={onArcade}>
-            <Gamepad2 size={15} /> Arcade
+        <nav className="dash-nav" aria-label="Account navigation">
+          <button className="dash-nav-btn" onClick={onArcade}>
+            <Gamepad2 size={14} /> <span>Arcade</span>
           </button>
           {onTemplates && (
-            <button className="quiet-button" onClick={onTemplates}>
-              <Layers size={15} /> Templates
+            <button className="dash-nav-btn" onClick={onTemplates}>
+              <Layers size={14} /> <span>Templates</span>
             </button>
           )}
           {onSettings && (
-            <button className="quiet-button" onClick={onSettings}>
-              <Settings size={15} /> Security
+            <button className="dash-nav-btn" onClick={onSettings}>
+              <Settings size={14} /> <span>Security</span>
             </button>
           )}
-          <button className="creator-signout" onClick={onLogout}>
-            <LogOut size={14} /> Sign out
+          <button className="dash-nav-btn danger" onClick={onLogout}>
+            <LogOut size={14} /> <span>Sign out</span>
           </button>
         </nav>
       </header>
 
-      <main className="creator-profile-main">
-        {/* 1. HERO IDENTITY CARD */}
-        <section className="pro-identity-card" aria-label="Creator Profile">
-          {/* Cosmic Banner */}
-          <div className="pro-cover-banner">
-            <div className="pro-banner-mesh" />
-            <div className="pro-banner-stars">✦　·　✧　✳　✦</div>
-            <div className="pro-banner-badge">
-              <span className="pro-badge-dot" />
-              <span>STUDIO CREATOR</span>
+      <main className="dash-main">
+        {/* Creator Identity Header Block */}
+        <section className="dash-profile-card" aria-label="Creator Identity">
+          <div className="dash-profile-top">
+            <div className="dash-identity-left">
+              <div className="dash-avatar">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt={displayName} referrerPolicy="no-referrer" />
+                ) : (
+                  <span>{(displayName[0] || 'C').toUpperCase()}</span>
+                )}
+              </div>
+              <div className="dash-identity-text">
+                <div className="dash-name-row">
+                  <h1>{displayName}</h1>
+                  <span className="dash-handle">@{user?.username || 'unset'}</span>
+                </div>
+                <p className="dash-bio">{bio}</p>
+                <div className="dash-meta-sub">
+                  <span>{user?.email}</span>
+                  <span>·</span>
+                  <span>{formatJoinDate(user?.created_at)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="dash-profile-actions">
+              <button className="button button-outline button-small" onClick={copyProfileLink} title="Copy public portfolio URL">
+                <Share2 size={13} /> <span>Portfolio Link</span>
+              </button>
+              <button
+                className="button button-outline button-small"
+                onClick={() => {
+                  setEditDisplayName(user?.display_name || user?.username || '')
+                  setEditBio(user?.bio || '')
+                  setIsEditing(true)
+                }}
+              >
+                <Edit3 size={13} /> <span>Edit Profile</span>
+              </button>
+              <button
+                className={`button button-outline button-small dash-key-btn ${hasKey ? 'is-connected' : ''}`}
+                onClick={onKey}
+              >
+                <KeyRound size={13} />
+                <span>{hasKey ? 'Gemini Key Active' : 'Connect Gemini Key'}</span>
+              </button>
+              <button
+                className="button button-alabaster button-small"
+                onClick={onCreate}
+                disabled={!user?.username}
+                title={!user?.username ? 'Claim a handle first' : 'Create a new project'}
+              >
+                <Plus size={14} /> <span>New Project</span>
+              </button>
             </div>
           </div>
 
-          {/* Identity Header */}
-          <div className="pro-identity-body">
-            <div className="pro-identity-top">
-              {/* Avatar with Glow Ring */}
-              <div className="pro-avatar-wrap">
-                <div className="pro-avatar-inner">
-                  {user?.avatar ? (
-                    <img src={user.avatar} alt={displayName} referrerPolicy="no-referrer" />
-                  ) : (
-                    <span>{(displayName[0] || 'C').toUpperCase()}</span>
-                  )}
-                </div>
-                <span className="pro-avatar-status" title="Online in Studio" />
+          {/* Handle Setup Banner if missing */}
+          {!user?.username && (
+            <form
+              className="dash-handle-alert"
+              onSubmit={async (e) => {
+                e.preventDefault()
+                const value = usernameInput.trim().toLowerCase()
+                if (!/^[a-z0-9_]{3,24}$/.test(value)) {
+                  setUsernameError('Use 3–24 lowercase letters, numbers, or underscores.')
+                  return
+                }
+                setSavingUsername(true)
+                setUsernameError('')
+                try {
+                  await onUsername(value)
+                } catch (err) {
+                  setUsernameError(err instanceof Error ? err.message : 'Could not save handle.')
+                } finally {
+                  setSavingUsername(false)
+                }
+              }}
+            >
+              <div>
+                <strong>Claim your creator handle</strong>
+                <span>Required to create projects and activate your public `/@handle` portfolio.</span>
               </div>
-
-              {/* Action Buttons */}
-              <div className="pro-actions-group">
-                <button
-                  className="button button-outline pro-action-btn"
-                  onClick={copyProfileLink}
-                  title="Share creator profile"
-                >
-                  <Share2 size={14} />
-                  <span>Share</span>
-                </button>
-
-                <button
-                  className="button button-outline pro-action-btn"
-                  onClick={() => {
-                    setEditDisplayName(user?.display_name || user?.username || '')
-                    setEditBio(user?.bio || '')
-                    setIsEditing(true)
+              <div className="dash-handle-input-row">
+                <span className="dash-at">@</span>
+                <input
+                  value={usernameInput}
+                  maxLength={24}
+                  placeholder="username"
+                  autoComplete="username"
+                  onChange={(e) => {
+                    setUsernameInput(e.target.value.toLowerCase().replace(/\s/g, ''))
+                    setUsernameError('')
                   }}
-                  title="Edit profile information"
-                >
-                  <Edit3 size={14} />
-                  <span>Edit Profile</span>
-                </button>
-
-                <button
-                  className={`button button-outline pro-action-btn ${hasKey ? 'key-connected' : ''}`}
-                  onClick={onKey}
-                  title={hasKey ? 'Manage Gemini AI settings' : 'Connect Gemini AI Key'}
-                >
-                  <KeyRound size={14} />
-                  <span>{hasKey ? 'AI Engine' : 'Connect AI'}</span>
-                  {hasKey && <span className="key-active-dot" />}
+                />
+                <button className="button button-alabaster button-small" disabled={savingUsername || !/^[a-z0-9_]{3,24}$/.test(usernameInput)}>
+                  {savingUsername ? 'Saving…' : 'Claim'}
                 </button>
               </div>
+              {usernameError && <p className="dash-handle-error" role="alert">{usernameError}</p>}
+            </form>
+          )}
+
+          {/* Crisp 4-Column Tabular Metrics Strip */}
+          <div className="dash-metrics-strip">
+            <div className="dash-metric-cell">
+              <span className="dash-metric-label">Projects</span>
+              <strong className="dash-metric-value tabular-count">{projects.length}</strong>
+              <span className="dash-metric-sub">{publicCount} published · {privateCount} private</span>
             </div>
-
-            {/* Names & Handle */}
-            <div className="pro-info-wrap">
-              <div className="pro-title-line">
-                <h1>{displayName}</h1>
-                <span className="pro-tier-pill">
-                  <Sparkles size={11} /> CREATOR
-                </span>
-              </div>
-
-              <div className="pro-meta-line">
-                <span className="pro-username">@{user?.username || 'handle_not_set'}</span>
-                <span className="pro-meta-bullet">•</span>
-                <span className="pro-email">{user?.email}</span>
-                <span className="pro-meta-bullet">•</span>
-                <span className="pro-joined">{formatJoinDate(user?.created_at)}</span>
-              </div>
-
-              <p className="pro-bio">{bio}</p>
+            <div className="dash-metric-cell">
+              <span className="dash-metric-label">Total Plays</span>
+              <strong className="dash-metric-value tabular-count">{totalPlays.toLocaleString()}</strong>
+              <span className="dash-metric-sub">Across public Arcade releases</span>
             </div>
-
-            {/* Fallback Username Setup if missing */}
-            {!user?.username && (
-              <form
-                className="creator-username-setup pro-username-alert"
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  const value = usernameInput.trim().toLowerCase()
-                  if (!/^[a-z0-9_]{3,24}$/.test(value)) {
-                    setUsernameError('Use 3–24 lowercase letters, numbers, or underscores.')
-                    return
-                  }
-                  setSavingUsername(true)
-                  setUsernameError('')
-                  try {
-                    await onUsername(value)
-                  } catch (err) {
-                    setUsernameError(err instanceof Error ? err.message : 'Could not save username.')
-                  } finally {
-                    setSavingUsername(false)
-                  }
-                }}
-              >
-                <div>
-                  <b>Choose your permanent creator handle</b>
-                  <small>Your username creates your unique profile & arcade game links.</small>
-                </div>
-                <div className="creator-username-control">
-                  <span>@</span>
-                  <input
-                    value={usernameInput}
-                    maxLength={24}
-                    placeholder="username"
-                    autoComplete="username"
-                    onChange={(e) => {
-                      setUsernameInput(e.target.value.toLowerCase().replace(/\s/g, ''))
-                      setUsernameError('')
-                    }}
-                  />
-                  <button
-                    className="button button-primary"
-                    disabled={savingUsername || !/^[a-z0-9_]{3,24}$/.test(usernameInput)}
-                  >
-                    {savingUsername ? 'Saving…' : 'Save handle'}
-                  </button>
-                </div>
-                {usernameError && <p role="alert">{usernameError}</p>}
-              </form>
-            )}
-
-            {/* 2. STATS OVERVIEW CARDS */}
-            <div className="pro-stats-grid">
-              <div className="pro-stat-card">
-                <div className="pro-stat-icon-wrap lilac">
-                  <Gamepad2 size={16} />
-                </div>
-                <div className="pro-stat-content">
-                  <span className="pro-stat-number">{projects.length}</span>
-                  <span className="pro-stat-label">Studio Projects</span>
-                </div>
-                <span className="pro-stat-sub">
-                  <b>{publicCount}</b> public · <b>{privateCount}</b> drafts
-                </span>
-              </div>
-
-              <div className="pro-stat-card">
-                <div className="pro-stat-icon-wrap emerald">
-                  <Play size={15} />
-                </div>
-                <div className="pro-stat-content">
-                  <span className="pro-stat-number">{totalPlays.toLocaleString()}</span>
-                  <span className="pro-stat-label">Total Game Plays</span>
-                </div>
-                <span className="pro-stat-sub">Across all public arcade games</span>
-              </div>
-
-              <div className="pro-stat-card">
-                <div className="pro-stat-icon-wrap amber">
-                  <Flame size={16} />
-                </div>
-                <div className="pro-stat-content">
-                  <span className="pro-stat-number">{totalFormatted.compact}</span>
-                  <span className="pro-stat-label">AI Tokens Burnt</span>
-                </div>
-                <span className="pro-stat-sub">Intelligence compute used</span>
-              </div>
-
-              <div className="pro-stat-card">
-                <div className="pro-stat-icon-wrap cyan">
-                  <Zap size={16} />
-                </div>
-                <div className="pro-stat-content">
-                  <span className="pro-stat-number">{turnsCount.toLocaleString()}</span>
-                  <span className="pro-stat-label">Generation Turns</span>
-                </div>
-                <span className="pro-stat-sub">AI co-pilot iterations</span>
-              </div>
+            <div className="dash-metric-cell">
+              <span className="dash-metric-label">Community Likes</span>
+              <strong className="dash-metric-value tabular-count">{totalLikes.toLocaleString()}</strong>
+              <span className="dash-metric-sub">Hearts on your games</span>
+            </div>
+            <div className="dash-metric-cell" title={totalFormatted.full}>
+              <span className="dash-metric-label">Gemini Compute</span>
+              <strong className="dash-metric-value tabular-count">{totalFormatted.compact}</strong>
+              <span className="dash-metric-sub">{turnsCount.toLocaleString()} chat turns · Peak {peakFormatted.compact}</span>
             </div>
           </div>
         </section>
 
-        {/* 3. WORKSPACE PROJECTS SECTION */}
-        <section className="pro-workspace-section" aria-labelledby="workspace-title">
-          <div className="pro-workspace-topbar">
-            <div className="pro-workspace-title-group">
-              <span className="creator-profile-eyebrow">YOUR CREATIVE PORTFOLIO</span>
-              <h2 id="workspace-title">Studio Projects</h2>
+        {/* Workspace Projects Manager */}
+        <section className="dash-workspace" aria-labelledby="workspace-title">
+          <div className="dash-workspace-header">
+            <div className="dash-workspace-title-block">
+              <h2 id="workspace-title">Workspace Projects</h2>
+              <span className="dash-count-pill tabular-count">{filteredProjects.length}</span>
             </div>
 
-            <button
-              className="button button-primary pro-new-project-btn"
-              onClick={onCreate}
-              disabled={!user?.username}
-              title={!user?.username ? 'Choose a username before creating a project' : 'Create new project'}
-            >
-              <Plus size={16} />
-              <span>New Project</span>
-            </button>
-          </div>
-
-          {/* Filter Bar & Search */}
-          <div className="pro-filter-bar">
-            <div className="pro-filter-tabs">
-              <button
-                className={`pro-tab-pill ${projectFilter === 'all' ? 'active' : ''}`}
-                onClick={() => setProjectFilter('all')}
-              >
-                All <span>{projects.length}</span>
-              </button>
-              <button
-                className={`pro-tab-pill ${projectFilter === 'public' ? 'active' : ''}`}
-                onClick={() => setProjectFilter('public')}
-              >
-                <Globe size={12} /> Public Arcade <span>{publicCount}</span>
-              </button>
-              <button
-                className={`pro-tab-pill ${projectFilter === 'private' ? 'active' : ''}`}
-                onClick={() => setProjectFilter('private')}
-              >
-                <Lock size={12} /> Private Drafts <span>{privateCount}</span>
-              </button>
-            </div>
-
-            <div className="pro-search-box">
-              <Search size={14} className="pro-search-icon" />
-              <input
-                type="text"
-                placeholder="Search projects..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="pro-search-clear"
-                  onClick={() => setSearchQuery('')}
-                  aria-label="Clear search"
-                >
-                  <X size={12} />
+            <div className="dash-toolbar">
+              <div className="dash-filter-group" role="tablist">
+                <button className={`dash-tab ${projectFilter === 'all' ? 'active' : ''}`} onClick={() => setProjectFilter('all')}>
+                  All <span className="tabular-count">{projects.length}</span>
                 </button>
-              )}
+                <button className={`dash-tab ${projectFilter === 'public' ? 'active' : ''}`} onClick={() => setProjectFilter('public')}>
+                  Public <span className="tabular-count">{publicCount}</span>
+                </button>
+                <button className={`dash-tab ${projectFilter === 'private' ? 'active' : ''}`} onClick={() => setProjectFilter('private')}>
+                  Private <span className="tabular-count">{privateCount}</span>
+                </button>
+              </div>
+
+              <div className="dash-search-controls">
+                <div className="dash-search-box">
+                  <Search size={13} />
+                  <input
+                    type="text"
+                    placeholder="Filter projects…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  {searchQuery && (
+                    <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear filter"><X size={12} /></button>
+                  )}
+                </div>
+
+                <select
+                  className="dash-sort-select"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  aria-label="Sort projects"
+                >
+                  <option value="recent">Recent</option>
+                  <option value="plays">Most Plays</option>
+                  <option value="title">Title (A–Z)</option>
+                </select>
+
+                <div className="dash-view-toggle" role="group" aria-label="Layout view">
+                  <button type="button" className={viewMode === 'grid' ? 'active' : ''} onClick={() => setViewMode('grid')} aria-label="Grid view" title="Grid view">
+                    <Grid size={14} />
+                  </button>
+                  <button type="button" className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')} aria-label="List view" title="List view">
+                    <List size={14} />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Projects Grid */}
           {filteredProjects.length > 0 ? (
-            <div className="pro-project-grid">
+            <div className={viewMode === 'grid' ? 'dash-project-grid' : 'dash-project-list'}>
               {filteredProjects.map((project) => {
                 const projectId = project.projectId || project.id || ''
                 const isPublic = project.visibility === 'public'
@@ -518,82 +429,52 @@ export default function ProfilePage({
                 const isMenuOpen = openMenuId === projectId
 
                 return (
-                  <div className={`pro-card ${isMenuOpen ? 'menu-active' : ''}`} key={projectId}>
-                    {/* Visual Thumbnail */}
-                    <div
-                      className="pro-card-thumbnail"
-                      style={{ '--game-color': project.color || '#cbb3ff' } as React.CSSProperties}
-                      onClick={() => onOpen(project)}
-                    >
+                  <article className={`dash-card ${viewMode === 'list' ? 'is-list' : ''} ${isMenuOpen ? 'menu-active' : ''}`} key={projectId}>
+                    <div className="dash-card-thumb" onClick={() => onOpen(project)}>
                       {project.thumbnail ? (
-                        <img src={project.thumbnail} alt={project.title} className="pro-thumb-cover-img" />
+                        <img src={project.thumbnail} alt={project.title} className="dash-card-img" loading="lazy" />
                       ) : (
-                        <>
-                          <div className="pro-thumb-overlay" />
-                          <div className="pro-thumb-glyph">{project.art || '✦'}</div>
-                        </>
+                        <div className="dash-card-placeholder">
+                          <span>{project.title.slice(0, 2).toUpperCase()}</span>
+                          <small>{project.genre || 'STUDIO'}</small>
+                        </div>
                       )}
-
-                      {/* Left: Visibility Badge */}
-                      <span className={`pro-vis-badge ${isPublic ? 'badge-public' : 'badge-private'}`}>
-                        {isPublic ? <Globe size={11} /> : <Lock size={11} />}
-                        <span>{isPublic ? 'PUBLIC' : 'PRIVATE'}</span>
+                      <span className={`dash-vis-pill ${isPublic ? 'is-public' : 'is-private'}`}>
+                        {isPublic ? <Globe size={10} /> : <Lock size={10} />}
+                        {isPublic ? 'Public' : 'Private'}
                       </span>
+                      {isPublic && (
+                        <span className="dash-plays-chip tabular-count">
+                          <Play size={9} fill="currentColor" /> {plays}
+                        </span>
+                      )}
+                    </div>
 
-                      {/* Right: Plays Badge & 3-Dots Menu Button */}
-                      <div className="pro-thumb-top-right" onClick={(e) => e.stopPropagation()}>
-                        {isPublic && (
-                          <span className="pro-plays-pill">
-                            <Play size={10} fill="currentColor" /> {plays} plays
-                          </span>
-                        )}
+                    <div className="dash-card-body">
+                      <div className="dash-card-top-row">
+                        <div className="dash-card-titles">
+                          <h3 onClick={() => onOpen(project)}>{project.title}</h3>
+                          <span className="dash-card-slug">/{user?.username || project.creator}/{project.id}</span>
+                        </div>
 
-                        {/* 3-DOTS ACTION TRIGGER */}
-                        <div className="pro-card-menu-anchor">
+                        <div className="pro-card-menu-anchor" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
-                            className={`pro-card-more-btn ${isMenuOpen ? 'active' : ''}`}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setOpenMenuId(isMenuOpen ? null : projectId)
-                            }}
-                            aria-label="Project actions"
-                            title="Project options"
+                            className={`dash-more-btn ${isMenuOpen ? 'active' : ''}`}
+                            onClick={() => setOpenMenuId(isMenuOpen ? null : projectId)}
+                            aria-label="Project options"
                           >
-                            <MoreVertical size={16} />
+                            <MoreVertical size={15} />
                           </button>
 
-                          {/* Floating 3-Dots Dropdown */}
                           {isMenuOpen && (
-                            <div className="pro-card-dropdown animate-menu-scale" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                className="pro-dropdown-item"
-                                onClick={() => {
-                                  setOpenMenuId(null)
-                                  setEditingProject(project)
-                                  setEditTitle(project.title)
-                                  setEditDesc(project.description || '')
-                                  setEditGenre(project.genre || 'ARCADE')
-                                  setEditAllowRemix(Boolean(project.allow_remix))
-                                }}
-                              >
-                                <Pencil size={13} className="text-lilac" />
-                                <span>Edit Game Profile</span>
+                            <div className="pro-card-dropdown animate-menu-scale">
+                              <button type="button" className="pro-dropdown-item" onClick={() => { setOpenMenuId(null); openDetailsEditor(project) }}>
+                                <Pencil size={13} /> <span>Edit Details</span>
                               </button>
-
-                              <button
-                                type="button"
-                                className="pro-dropdown-item"
-                                onClick={() => {
-                                  setOpenMenuId(null)
-                                  onOpen(project)
-                                }}
-                              >
-                                <Code2 size={13} className="text-lilac" />
-                                <span>Open in Studio</span>
+                              <button type="button" className="pro-dropdown-item" onClick={() => { setOpenMenuId(null); onOpen(project) }}>
+                                <Code2 size={13} /> <span>Open in Studio</span>
                               </button>
-
                               {isPublic && (
                                 <>
                                   <a
@@ -601,386 +482,170 @@ export default function ProfilePage({
                                     href={`/${encodeURIComponent(user?.username || project.creator)}/${encodeURIComponent(project.id)}`}
                                     target="_blank"
                                     rel="noreferrer"
-                                    onClick={() => {
-                                      if (onTrackPlay) onTrackPlay(user?.username || project.creator, project.id)
-                                      setOpenMenuId(null)
-                                    }}
+                                    onClick={() => { onTrackPlay?.(user?.username || project.creator, project.id); setOpenMenuId(null) }}
                                   >
-                                    <Play size={13} className="text-emerald" />
-                                    <span>Play in Arcade</span>
+                                    <Play size={13} /> <span>Play Live</span>
                                   </a>
-
-                                  <button
-                                    type="button"
-                                    className="pro-dropdown-item"
-                                    onClick={() => {
-                                      setOpenMenuId(null)
-                                      copyGameLink(project)
-                                    }}
-                                  >
-                                    <Copy size={13} className="text-cyan" />
-                                    <span>Copy Game Link</span>
+                                  <button type="button" className="pro-dropdown-item" onClick={() => { setOpenMenuId(null); copyGameLink(project) }}>
+                                    <Copy size={13} /> <span>Copy Link</span>
                                   </button>
                                 </>
                               )}
-
-                              <button
-                                type="button"
-                                className="pro-dropdown-item"
-                                onClick={() => {
-                                  setOpenMenuId(null)
-                                  handleToggle(project)
-                                }}
-                              >
-                                {isPublic ? (
-                                  <Lock size={13} className="text-muted" />
-                                ) : (
-                                  <Globe size={13} className="text-emerald" />
-                                )}
-                                <span>{isPublic ? 'Make Private' : 'Publish to Arcade'}</span>
+                              <button type="button" className="pro-dropdown-item" onClick={() => { setOpenMenuId(null); void handleToggle(project) }}>
+                                {isPublic ? <Lock size={13} /> : <Globe size={13} />}
+                                <span>{isPublic ? 'Set Private' : 'Publish to Arcade'}</span>
                               </button>
-
                               {onDownloadZip && (
-                                <button
-                                  type="button"
-                                  className="pro-dropdown-item"
-                                  onClick={() => {
-                                    setOpenMenuId(null)
-                                    onDownloadZip(project)
-                                  }}
-                                >
-                                  <Download size={13} className="text-cyan" />
-                                  <span>Download ZIP (.zip)</span>
+                                <button type="button" className="pro-dropdown-item" onClick={() => { setOpenMenuId(null); void onDownloadZip(project) }}>
+                                  <Download size={13} /> <span>Export ZIP</span>
                                 </button>
                               )}
-
                               <div className="pro-dropdown-divider" />
-
-                              {/* DELETE OPTION */}
-                              <button
-                                type="button"
-                                className="pro-dropdown-item pro-dropdown-danger"
-                                onClick={() => {
-                                  setOpenMenuId(null)
-                                  setProjectToDelete(project)
-                                }}
-                              >
-                                <Trash2 size={13} />
-                                <span>Delete Project</span>
+                              <button type="button" className="pro-dropdown-item pro-dropdown-danger" onClick={() => { setOpenMenuId(null); setProjectToDelete(project) }}>
+                                <Trash2 size={13} /> <span>Delete Project</span>
                               </button>
                             </div>
                           )}
                         </div>
                       </div>
 
-                      {/* Hover Overlay with Open Studio */}
-                      <div className="pro-thumb-hover">
-                        <span className="pro-hover-btn">Open Editor →</span>
-                      </div>
-                    </div>
+                      <p className="dash-card-desc" onClick={() => onOpen(project)}>
+                        {project.description || 'Interactive web project in Yulya Studio.'}
+                      </p>
 
-                    {/* Meta info */}
-                    <div className="pro-card-details">
-                      <div className="pro-card-header">
-                        <div className="pro-card-title-row">
-                          <h3 onClick={() => onOpen(project)} className="pro-card-title-link">{project.title}</h3>
-                          <button
-                            type="button"
-                            className="pro-card-mini-edit"
-                            title="Edit Game Profile (Name, Description, Genre)"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setEditingProject(project)
-                              setEditTitle(project.title)
-                              setEditDesc(project.description || '')
-                              setEditGenre(project.genre || 'ARCADE')
-                              setEditAllowRemix(Boolean(project.allow_remix))
-                            }}
-                          >
-                            <Pencil size={12} />
-                          </button>
-                        </div>
-                        <p onClick={() => onOpen(project)}>{project.description || 'Browser game created in Yulya Studio.'}</p>
-                      </div>
-
-                      {/* Footer Actions */}
-                      <div className="pro-card-footer">
-                        <button
-                          type="button"
-                          className="pro-card-action-btn primary"
-                          onClick={() => onOpen(project)}
-                          title="Open game editor"
-                        >
-                          Editor <ArrowRight size={13} />
+                      <div className="dash-card-actions">
+                        <button type="button" className="button button-alabaster button-small" onClick={() => onOpen(project)}>
+                          <Code2 size={13} /> Open Studio
                         </button>
-
                         {isPublic && (
                           <>
                             <a
-                              className="pro-card-action-btn secondary"
+                              className="button button-outline button-small"
                               href={`/${encodeURIComponent(user?.username || project.creator)}/${encodeURIComponent(project.id)}`}
                               target="_blank"
                               rel="noreferrer"
-                              title="Play live in browser"
-                              onClick={() => {
-                                if (onTrackPlay) onTrackPlay(user?.username || project.creator, project.id)
-                              }}
+                              onClick={() => onTrackPlay?.(user?.username || project.creator, project.id)}
                             >
                               Play <ArrowUpRight size={12} />
                             </a>
-
-                            <button
-                              type="button"
-                              className="pro-card-icon-btn"
-                              onClick={() => copyGameLink(project)}
-                              title="Copy game link"
-                            >
+                            <button type="button" className="dash-icon-action" onClick={() => copyGameLink(project)} title="Copy public link">
                               <Copy size={13} />
                             </button>
                           </>
                         )}
-
                         <button
                           type="button"
-                          className={`pro-card-vis-btn ${isPublic ? 'make-private' : 'make-public'}`}
-                          onClick={() => handleToggle(project)}
+                          className="dash-vis-toggle-btn"
+                          onClick={() => void handleToggle(project)}
                           disabled={isToggling}
-                          title={isPublic ? 'Make this project private' : 'Publish this game to the Arcade'}
                         >
                           {isToggling ? '…' : isPublic ? 'Make Private' : 'Publish'}
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </article>
                 )
               })}
             </div>
           ) : (
-            <div className="creator-empty-projects pro-empty-box">
-              <div className="creator-empty-icon">
-                <Gamepad2 size={24} />
-              </div>
-              <h3>
-                {searchQuery || projectFilter !== 'all'
-                  ? 'No matching projects found'
-                  : 'Start your first masterpiece'}
-              </h3>
+            <div className="dash-empty">
+              <Gamepad2 size={28} />
+              <h3>{searchQuery || projectFilter !== 'all' ? 'No matching projects' : 'Your workspace is empty'}</h3>
               <p>
                 {searchQuery || projectFilter !== 'all'
-                  ? 'Try adjusting your filters or search keywords.'
-                  : 'Write code with AI in real-time, preview your live game, and publish for creators worldwide.'}
+                  ? 'Clear your filter or search query to view all projects.'
+                  : 'Create a project from HTML5, Canvas 2D, Three.js, Phaser, or React + TypeScript.'}
               </p>
               {!(searchQuery || projectFilter !== 'all') && (
-                <button className="button button-primary" onClick={onCreate} disabled={!user?.username}>
-                  <Plus size={15} /> Create your first game
+                <button className="button button-alabaster" onClick={onCreate} disabled={!user?.username}>
+                  <Plus size={14} /> Create First Project
                 </button>
               )}
             </div>
           )}
         </section>
 
-        {/* 4. AI TOKEN TELEMETRY */}
-        <section className="creator-token-analytics-card pro-telemetry-shell">
-          <div className="token-card-header">
-            <div className="token-header-title">
-              <div className="token-bolt-wrap">
-                <Zap size={14} className="token-bolt-icon" />
+        {/* Compact AI Compute Telemetry Bar */}
+        {totalTokens > 0 && (
+          <section className="dash-telemetry" aria-label="AI Token Telemetry">
+            <div className="dash-telemetry-head">
+              <div>
+                <h3>Gemini API Compute Summary</h3>
+                <p>Cumulative usage tracked across your BYOK studio sessions.</p>
               </div>
-              <div className="token-title-group">
-                <span className="token-title-main">AI Token Telemetry</span>
-                <span className="token-title-sub">Compute usage & resource intelligence</span>
+              <span className="dash-telemetry-badge tabular-count">{turnsCount.toLocaleString()} turns</span>
+            </div>
+            <div className="dash-telemetry-bar-wrap">
+              <div className="dash-telemetry-labels tabular-count">
+                <span>Input Context · <strong>{inputPct}%</strong> ({inputFormatted.compact})</span>
+                <span>Output Generated · <strong>{outputPct}%</strong> ({outputFormatted.compact})</span>
+              </div>
+              <div className="dash-telemetry-track" role="progressbar" aria-label="Input vs output token split">
+                <div className="dash-telemetry-in" style={{ width: `${inputPct}%` }} />
+                <div className="dash-telemetry-out" style={{ width: `${outputPct}%` }} />
               </div>
             </div>
-            <div className="token-header-badge" title="Total AI interaction turns recorded">
-              <span className="token-pulse-dot" />
-              <span>
-                {turnsCount.toLocaleString()} {turnsCount === 1 ? 'Turn' : 'Turns'} Executed
-              </span>
-            </div>
-          </div>
-
-          <div className="creator-token-grid">
-            <div className="token-stat-box highlight-amber" title={`Lifetime: ${totalFormatted.full}`}>
-              <div className="token-stat-top">
-                <span className="token-stat-label">Lifetime Tokens</span>
-                <div className="stat-icon-wrap amber">
-                  <Flame size={13} className="stat-box-icon text-gold" />
-                </div>
-              </div>
-              <div className="token-stat-value text-gold">
-                {totalFormatted.compact}
-                <span className="token-stat-unit">tok</span>
-              </div>
-              <div className="token-stat-footer">
-                <span className="token-stat-desc">Cumulative burnt across all projects</span>
-              </div>
-            </div>
-
-            <div className="token-stat-box highlight-purple" title={`Single Turn Peak: ${peakFormatted.full}`}>
-              <div className="token-stat-top">
-                <span className="token-stat-label">Peak Turn Burst</span>
-                <div className="stat-icon-wrap purple">
-                  <Sparkles size={13} className="stat-box-icon text-accent" />
-                </div>
-              </div>
-              <div className="token-stat-value text-accent">
-                {peakFormatted.compact}
-                <span className="token-stat-unit">tok</span>
-              </div>
-              <div className="token-stat-footer">
-                <span className="token-stat-desc">Highest tokens burnt in 1 response</span>
-              </div>
-            </div>
-
-            <div className="token-stat-box highlight-cyan" title={`Input Tokens: ${inputFormatted.full}`}>
-              <div className="token-stat-top">
-                <span className="token-stat-label">Input Context (Read)</span>
-                <div className="stat-icon-wrap cyan">
-                  <Activity size={13} className="stat-box-icon text-cyan" />
-                </div>
-              </div>
-              <div className="token-stat-value text-cyan">
-                {inputFormatted.compact}
-                <span className="token-stat-unit">tok</span>
-              </div>
-              <div className="token-stat-footer">
-                <span className="token-stat-desc">Workspace context & codebase prompts</span>
-              </div>
-            </div>
-
-            <div className="token-stat-box highlight-emerald" title={`Output Tokens: ${outputFormatted.full}`}>
-              <div className="token-stat-top">
-                <span className="token-stat-label">Output Code (Write)</span>
-                <div className="stat-icon-wrap emerald">
-                  <Check size={13} className="stat-box-icon text-emerald" />
-                </div>
-              </div>
-              <div className="token-stat-value text-emerald">
-                {outputFormatted.compact}
-                <span className="token-stat-unit">tok</span>
-              </div>
-              <div className="token-stat-footer">
-                <span className="token-stat-desc">Code, reasoning & tool output generated</span>
-              </div>
-            </div>
-          </div>
-
-          {totalTokens > 0 && (
-            <div className="token-ratio-card">
-              <div className="token-ratio-meta">
-                <div className="ratio-meta-left">
-                  <span className="ratio-legend-dot cyan" />
-                  <span>
-                    Context Read: <strong>{inputPct}%</strong> ({inputFormatted.compact})
-                  </span>
-                </div>
-                <div className="ratio-meta-right">
-                  <span className="ratio-legend-dot emerald" />
-                  <span>
-                    Code Generated: <strong>{outputPct}%</strong> ({outputFormatted.compact})
-                  </span>
-                </div>
-              </div>
-              <div className="token-ratio-track" role="progressbar" aria-label="Input vs Output token ratio">
-                <div className="token-ratio-fill cyan" style={{ width: `${inputPct}%` }} title={`Input: ${inputPct}%`} />
-                <div className="token-ratio-fill emerald" style={{ width: `${outputPct}%` }} title={`Output: ${outputPct}%`} />
-              </div>
-            </div>
-          )}
-        </section>
+          </section>
+        )}
       </main>
 
-      {/* 5. EDIT PROFILE MODAL */}
+      <footer className="dash-footer">
+        <div className="dash-footer-inner">
+          <span>&copy; {new Date().getFullYear()} Yulya Studio</span>
+          <div className="dash-footer-links">
+            <a href="mailto:support@yulya.me"><Mail size={12} /> support@yulya.me</a>
+            <a href="https://moheith.tech" target="_blank" rel="noreferrer">moheith.tech <ArrowUpRight size={11} /></a>
+          </div>
+        </div>
+      </footer>
+
+      {/* Edit Profile Modal */}
       {isEditing && (
         <div className="modal-backdrop" onClick={() => setIsEditing(false)}>
           <div className="modal-card pro-edit-modal" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setIsEditing(false)} aria-label="Close modal">
               <X size={16} />
             </button>
-
-            <div className="modal-icon">
-              <Edit3 size={18} />
-            </div>
-
+            <div className="modal-icon"><Edit3 size={18} /></div>
             <h2>Edit Creator Profile</h2>
-            <p>Update how other creators and arcade players see your studio identity.</p>
-
+            <p>Update the display name and bio shown on your public portfolio and Arcade cards.</p>
             <form onSubmit={handleSaveProfile} className="auth-form">
               <label>
                 Display Name
-                <input
-                  required
-                  type="text"
-                  maxLength={50}
-                  value={editDisplayName}
-                  onChange={(e) => setEditDisplayName(e.target.value)}
-                  placeholder="e.g. Mayur Patel"
-                />
+                <input required type="text" maxLength={50} value={editDisplayName} onChange={(e) => setEditDisplayName(e.target.value)} placeholder="Your display name" />
               </label>
-
               <label>
-                Bio / Tagline
-                <textarea
-                  className="pro-bio-textarea"
-                  maxLength={200}
-                  rows={3}
-                  value={editBio}
-                  onChange={(e) => setEditBio(e.target.value)}
-                  placeholder="Tell creators about the games and playable experiences you build..."
-                />
-                <small className="setup-field-hint">{editBio.length}/200 characters</small>
+                Bio
+                <textarea className="pro-bio-textarea" maxLength={200} rows={3} value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="What do you build in Yulya Studio?" />
+                <small className="setup-field-hint">{editBio.length}/200</small>
               </label>
-
-              <button className="button button-primary modal-submit" disabled={savingProfile || !editDisplayName.trim()}>
-                {savingProfile ? 'Saving…' : 'Save Changes'} <Check size={15} />
+              <button className="button button-alabaster modal-submit" disabled={savingProfile || !editDisplayName.trim()}>
+                {savingProfile ? 'Saving…' : 'Save Profile'} <Check size={15} />
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* 6. PERMANENT DELETE PROJECT CONFIRMATION MODAL */}
+      {/* Delete Project Confirmation Modal */}
       {projectToDelete && (
         <div className="modal-backdrop" onClick={() => !deleting && setProjectToDelete(null)}>
           <div className="modal-card pro-delete-modal" onClick={(e) => e.stopPropagation()}>
-            <button
-              className="modal-close"
-              onClick={() => !deleting && setProjectToDelete(null)}
-              aria-label="Close modal"
-              disabled={deleting}
-            >
+            <button className="modal-close" onClick={() => !deleting && setProjectToDelete(null)} aria-label="Close modal" disabled={deleting}>
               <X size={16} />
             </button>
-
-            <div className="modal-icon danger-icon">
-              <Trash2 size={20} />
-            </div>
-
-            <h2>Delete Project?</h2>
-            <p>
-              Are you sure you want to permanently delete <b>&ldquo;{projectToDelete.title}&rdquo;</b>?
-            </p>
-
+            <div className="modal-icon danger-icon"><Trash2 size={20} /></div>
+            <h2>Delete &ldquo;{projectToDelete.title}&rdquo;?</h2>
+            <p>This permanently deletes all project files, assets, and AI chat history. This cannot be undone.</p>
             <div className="pro-delete-warning-box">
-              <AlertTriangle size={18} className="pro-delete-warning-icon" />
+              <AlertTriangle size={16} className="pro-delete-warning-icon" />
               <div className="pro-delete-warning-text">
-                <b>Permanent Database Purge</b>
-                <span>
-                  This will completely remove this project from the database, purging all source code, assets, and AI chat conversation history. This action cannot be undone.
-                </span>
+                <b>Permanent deletion</b>
+                <span>Export a ZIP backup first if you want to keep a copy of your code.</span>
               </div>
             </div>
-
             <div className="pro-delete-modal-actions">
-              <button
-                type="button"
-                className="button button-outline"
-                disabled={deleting}
-                onClick={() => setProjectToDelete(null)}
-              >
-                Cancel
-              </button>
-
+              <button type="button" className="button button-outline" disabled={deleting} onClick={() => setProjectToDelete(null)}>Cancel</button>
               <button
                 type="button"
                 className="button button-danger"
@@ -990,11 +655,10 @@ export default function ProfilePage({
                   if (!id) return
                   setDeleting(true)
                   try {
-                    if (onDeleteProject) {
-                      await onDeleteProject(id)
-                    } else {
+                    if (onDeleteProject) await onDeleteProject(id)
+                    else {
                       await api(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' })
-                      notify(`Project "${projectToDelete.title}" was deleted.`)
+                      notify(`Deleted "${projectToDelete.title}"`)
                     }
                     setProjectToDelete(null)
                   } catch (err) {
@@ -1004,34 +668,26 @@ export default function ProfilePage({
                   }
                 }}
               >
-                <Trash2 size={15} />
-                <span>{deleting ? 'Purging from database…' : 'Delete Project Permanently'}</span>
+                <Trash2 size={14} /> <span>{deleting ? 'Deleting…' : 'Delete Permanently'}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* EDIT PROJECT DETAILS MODAL */}
+      {/* Edit Project Details Modal */}
       {editingProject && (
         <div className="modal-backdrop pro-modal-backdrop" onClick={() => !savingDetails && setEditingProject(null)}>
           <div className="pro-details-modal-card animate-menu-scale" onClick={(e) => e.stopPropagation()}>
             <div className="pro-details-modal-header">
               <div className="pro-details-modal-badge">
                 <Pencil size={14} />
-                <span>EDIT GAME PROFILE</span>
+                <span>EDIT PROJECT DETAILS</span>
               </div>
-              <button
-                type="button"
-                className="pro-details-modal-close"
-                disabled={savingDetails}
-                onClick={() => setEditingProject(null)}
-                aria-label="Close edit modal"
-              >
+              <button type="button" className="pro-details-modal-close" disabled={savingDetails} onClick={() => setEditingProject(null)} aria-label="Close">
                 <X size={15} />
               </button>
             </div>
-
             <form
               onSubmit={async (e) => {
                 e.preventDefault()
@@ -1041,16 +697,9 @@ export default function ProfilePage({
                 setSavingDetails(true)
                 try {
                   if (onUpdateProjectDetails) {
-                    await onUpdateProjectDetails(id, {
-                      title: editTitle.trim(),
-                      description: editDesc.trim(),
-                      genre: editGenre,
-                      allow_remix: editAllowRemix,
-                    })
+                    await onUpdateProjectDetails(id, { title: editTitle.trim(), description: editDesc.trim(), genre: editGenre, allow_remix: editAllowRemix })
                   }
                   setEditingProject(null)
-                } catch {
-                  // notify handled in parent
                 } finally {
                   setSavingDetails(false)
                 }
@@ -1058,75 +707,34 @@ export default function ProfilePage({
               className="pro-details-modal-form"
             >
               <label className="pro-field-label">
-                <span>Game Name / Title</span>
-                <input
-                  type="text"
-                  className="pro-input"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  placeholder="e.g. Cyber Runner 2099"
-                  maxLength={100}
-                  required
-                />
+                <span>Project Title</span>
+                <input type="text" className="pro-input" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} maxLength={100} required />
               </label>
-
               <label className="pro-field-label">
                 <div className="pro-field-header">
-                  <span>Game Description</span>
+                  <span>Description</span>
                   <small className="pro-field-counter">{editDesc.length}/500</small>
                 </div>
-                <textarea
-                  className="pro-textarea"
-                  value={editDesc}
-                  onChange={(e) => setEditDesc(e.target.value)}
-                  placeholder="A short sentence or mechanics summary for your game..."
-                  maxLength={500}
-                  rows={3}
-                />
+                <textarea className="pro-textarea" value={editDesc} onChange={(e) => setEditDesc(e.target.value)} maxLength={500} rows={3} />
               </label>
-
               <div className="pro-field-label">
-                <span>Genre Category</span>
+                <span>Category</span>
                 <div className="pro-genre-pills">
                   {['ARCADE', 'ACTION', 'PUZZLE', 'PLATFORMER', 'SHOOTER', 'RACING', 'RPG', 'CASUAL', 'STRATEGY', 'RETRO', 'WEB APP', 'TOOL', '3D'].map((g) => (
-                    <button
-                      type="button"
-                      key={g}
-                      className={`pro-genre-pill ${editGenre.toUpperCase() === g ? 'active' : ''}`}
-                      onClick={() => setEditGenre(g)}
-                    >
+                    <button type="button" key={g} className={`pro-genre-pill ${editGenre.toUpperCase() === g ? 'active' : ''}`} onClick={() => setEditGenre(g)}>
                       {g}
                     </button>
                   ))}
                 </div>
               </div>
-
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#cbd5e1', cursor: 'pointer', padding: '6px 2px' }}>
-                <input
-                  type="checkbox"
-                  checked={editAllowRemix}
-                  onChange={(e) => setEditAllowRemix(e.target.checked)}
-                />
+                <input type="checkbox" checked={editAllowRemix} onChange={(e) => setEditAllowRemix(e.target.checked)} />
                 <span>Allow others to Remix / Fork this public project into their Studio</span>
               </label>
-
               <div className="pro-delete-modal-actions">
-                <button
-                  type="button"
-                  className="button button-outline"
-                  disabled={savingDetails}
-                  onClick={() => setEditingProject(null)}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  className="button button-primary"
-                  disabled={savingDetails || !editTitle.trim()}
-                >
-                  <Check size={14} />
-                  <span>{savingDetails ? 'Saving Game Profile…' : 'Save Game Profile'}</span>
+                <button type="button" className="button button-outline" disabled={savingDetails} onClick={() => setEditingProject(null)}>Cancel</button>
+                <button type="submit" className="button button-alabaster" disabled={savingDetails || !editTitle.trim()}>
+                  <Check size={14} /> <span>{savingDetails ? 'Saving…' : 'Save Details'}</span>
                 </button>
               </div>
             </form>

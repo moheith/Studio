@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type * as React from 'react'
 import {
-ArrowRight, ArrowUpRight, Check, Code2, Gamepad2,
-  Globe2, LockKeyhole, Menu, MessageSquare,
-  Play, Rocket, Sparkles,
+  ArrowRight, ArrowUpRight, Check, Gamepad2,
+  Globe2, LockKeyhole, Mail, Menu,
+  Play, Sparkles,
   X, Zap,
 } from 'lucide-react'
 import {
@@ -26,10 +26,11 @@ import TermsPage from './pages/TermsPage'
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
 import SetupProfilePage from './pages/SetupProfilePage'
 import StudioBootLoader from './components/StudioBootLoader'
-import HeroVisual from './components/HeroVisual'
 import StudioShowcase from './components/StudioShowcase'
 import ProfileMenu from './components/ProfileMenu'
 import type { Game, FileEntry, Page, User, ChatMessage } from './types'
+
+const Hero3DCanvas = lazy(() => import('./components/Hero3DCanvas'))
 function projectToGame(value: Record<string, unknown>): Game {
   const id = String(value.slug ?? value.id ?? 'project')
   const username = String(value.username ?? 'creator')
@@ -513,6 +514,7 @@ export default function App() {
         if (event.type === 'reload_preview') setPreviewKey(v => v + 1)
         if (
           event.type === 'inspect_game_screen' ||
+          event.type === 'get_preview_state' ||
           event.type === 'evaluate_in_preview' ||
           event.type === 'send_game_input' ||
           event.type === 'set_game_device' ||
@@ -557,10 +559,44 @@ export default function App() {
       aiAbortController.current = null
     }
   }
-  const shareLink = () => {
-    if (currentGame?.visibility !== 'public') { notify('Make this project public before sharing its game link'); return }
-    navigator.clipboard?.writeText(publicGameUrl(user?.username ?? currentGame.creator, currentGame.id)).catch(() => {})
-    notify('Game link copied')
+  const shareLink = async () => {
+    if (!currentGame) return
+    if (currentGame.visibility === 'public') {
+      navigator.clipboard?.writeText(publicGameUrl(user?.username ?? currentGame.creator, currentGame.id)).catch(() => {})
+      notify('Public game link copied!')
+      return
+    }
+    // For private WIP projects, copy the exact isolated 24h live preview URL so others can view the live game preview safely (read-only, zero IDE access)
+    let liveUrl = previewUrl
+    if (!liveUrl && currentProjectId) {
+      try {
+        const token = await api<{ url: string; play_origin?: string }>(`/api/projects/${currentProjectId}/preview-token`, { method: 'POST', body: '{}' })
+        if (token.play_origin) setPlayOrigin(token.play_origin)
+        liveUrl = token.url
+        setPreviewUrl(token.url)
+      } catch {}
+    }
+    if (liveUrl) {
+      navigator.clipboard?.writeText(liveUrl).catch(() => {})
+      notify('Copied 24h isolated live preview link (read-only)')
+    } else {
+      notify('Save or publish the project to copy a live preview link')
+    }
+  }
+  const refreshPreviewToken = async () => {
+    if (!currentProjectId || !currentGame) return
+    if (currentGame.visibility === 'public') {
+      const origin = (playOrigin || window.location.origin).replace(/\/$/, '')
+      setPreviewUrl(`${origin}/api/games/${encodeURIComponent(user?.username ?? currentGame.creator)}/${encodeURIComponent(currentGame.id)}/index.html`)
+      setPreviewKey((v) => v + 1)
+      return
+    }
+    try {
+      const token = await api<{ url: string; play_origin?: string }>(`/api/projects/${currentProjectId}/preview-token`, { method: 'POST', body: '{}' })
+      if (token.play_origin) setPlayOrigin(token.play_origin)
+      if (token.url) setPreviewUrl(token.url)
+      setPreviewKey((v) => v + 1)
+    } catch {}
   }
   const toggleVisibility = async () => {
     if (!currentProjectId || !currentGame) return
@@ -827,14 +863,15 @@ export default function App() {
         return valid.length ? valid : Object.keys(loaded).slice(0, 5)
       })
 
-      // Resolve preview URL
+      // Resolve isolated sandbox preview URL (NEVER point preview iframe at studio APP_ORIGIN which sets X-Frame-Options: DENY!)
       if (precomputedPreview) {
         setPreviewUrl(precomputedPreview)
       } else if (meta.visibility === 'public') {
-        setPreviewUrl(publicGameUrl(meta.creator, meta.id))
+        const origin = (playOrigin || window.location.origin).replace(/\/$/, '')
+        setPreviewUrl(`${origin}/api/games/${encodeURIComponent(meta.creator)}/${encodeURIComponent(meta.id)}/index.html`)
       } else {
-        api<{ url: string }>(`/api/projects/${id}/preview-token`, { method: 'POST', body: '{}' })
-          .then(res => setPreviewUrl(res.url))
+        api<{ url: string; play_origin?: string }>(`/api/projects/${id}/preview-token`, { method: 'POST', body: '{}' })
+          .then(res => { if (res.play_origin) setPlayOrigin(res.play_origin); setPreviewUrl(res.url) })
           .catch(() => {})
       }
 
@@ -1143,75 +1180,82 @@ export default function App() {
     onUpdateThumbnail: handleUpdateThumbnail,
     onDownloadZip: () => { if (currentGame) void handleDownloadZip(currentGame) },
     onUpdateProjectDetails: handleUpdateProjectDetails,
+    onRefreshPreviewToken: refreshPreviewToken,
   }} />{modal === 'new-file' && <Modal close={() => setModal(null)}><div className="eyebrow">PROJECT FILE</div><h2>Create a browser asset</h2><label>File path<input autoFocus value={newFileName} onChange={e => setNewFileName(e.target.value)} placeholder="assets/scene.js" /></label><button className="button button-primary modal-submit" onClick={() => addFile()}>Create file</button></Modal>}{modal === 'api-key' && <KeyModal value={apiKey} setValue={setApiKey} close={() => setModal(null)} save={saveKey} remove={removeKey} hasKey={hasKey}/>} {toast && <div className="toast" role="status" aria-live="polite"><Check size={15}/>{toast}</div>}</>
 
   const filteredGames = selectedGenre === 'ALL' ? games : games.filter(g => g.genre.toUpperCase() === selectedGenre.toUpperCase())
 
-  return <div className="site-shell">
+  return <div className="site-shell editorial-shell">
     <header className="topbar home-topbar">
-      <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><span className="brand-mark">✳</span><span>yulya<span className="brand-light">studio</span></span><span className="beta-pill">BETA</span></a>
+      <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+        <span className="brand-mark">✳</span>
+        <span>yulya<span className="brand-light">studio</span></span>
+      </a>
       <nav className={`main-nav ${mobileNav ? 'nav-open' : ''}`}>
-        <a href="#showcase" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('showcase')?.scrollIntoView({ behavior: 'smooth' }) }}>Features</a>
+        <a href="#showcase" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('showcase')?.scrollIntoView({ behavior: 'smooth' }) }}>Workspace</a>
         <a href="/arcade" onClick={(e) => { e.preventDefault(); setMobileNav(false); setPage('arcade') }}>Arcade</a>
         <a href="/templates" onClick={(e) => { e.preventDefault(); setMobileNav(false); setPage('templates') }}>Templates</a>
         <a href="/docs" onClick={(e) => { e.preventDefault(); setMobileNav(false); setPage('docs') }}>Docs</a>
-        <a href="#discover" onClick={(e) => { e.preventDefault(); setMobileNav(false); document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' }) }}>Community</a>
       </nav>
       <div className="top-actions">
         {user ? (
-          <button className="button button-primary button-small" onClick={() => setPage('profile')}>
-            My Studio <ArrowRight size={14}/>
+          <button className="button button-alabaster button-small" onClick={() => setPage('profile')}>
+            My Studio
           </button>
         ) : (
-          <button className="button button-primary button-small" onClick={() => setPage('login')}>
-            Start Creating <ArrowRight size={14}/>
+          <button className="button button-alabaster button-small" onClick={() => setPage('login')}>
+            Start Building
           </button>
         )}
         <ProfileMenu user={user} setPage={setPage} onLogout={logout} onOpenStudio={() => openStudio()} onLogin={completeLogin} notify={notify} />
         <button className="icon-button mobile-menu" aria-label="Toggle menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={19}/></button>
       </div>
     </header>
+
     <main>
-      <section className="hero" id="home">
+      <section className="hero editorial-hero" id="home">
         <div className="hero-copy">
-          <div className="eyebrow hero-eyebrow">
-            <span className="live-dot"/> NEXT-GEN GAME ENGINE
-          </div>
-          <h1>
-            Make real games.<br/>
-            <span className="hero-gradient-text">See them come alive.</span>
+          <div className="hero-kicker">Browser IDE · Isolated Sandbox · Gemini Multimodal</div>
+          <h1 className="editorial-hero-h1">
+            Build, test, and publish playable worlds in one tab.
           </h1>
           <p className="hero-description">
-            A professional browser-native studio powered by Gemini. Prompt mechanics in plain words, shape TypeScript and Canvas 2D logic with zero build steps, and share instant playable links worldwide.
+            Write HTML5, WebGL, or React + TypeScript directly in the browser. Pair with Gemini for live coding, Nano Banana art, TTS audio, and headless playtesting—then ship on isolated <code>play.yulya.me</code>.
           </p>
           <div className="hero-actions">
-            <button className="button button-primary" onClick={() => user ? setPage('profile') : setPage('login')}>
-              Start Creating Free <ArrowRight size={16}/>
+            <button className="button button-alabaster" onClick={() => user ? setPage('profile') : setPage('login')}>
+              {user ? 'Open My Studio' : 'Start Building Free'}
             </button>
             <button className="button button-outline" onClick={() => setPage('arcade')}>
-              <Gamepad2 size={16}/> Explore Arcade
+              <Gamepad2 size={15}/> Explore Arcade
             </button>
           </div>
-          <div className="hero-note">
-            <div className="avatar-stack">
-              <span className="avatar peach">p</span>
-              <span className="avatar lilac">l</span>
-              <span className="avatar mint">o</span>
-              <span className="avatar sky">m</span>
-            </div>
-            <span><b>Zero installation required</b><br/>WebGL • Canvas 2D • Web Audio</span>
+          <div className="hero-spec-strip">
+            <span>Monaco + esbuild-wasm</span>
+            <span>Canvas 2D &amp; Three.js</span>
+            <span>BYOK AES-256-GCM</span>
+            <span>One-click ZIP export</span>
           </div>
         </div>
-        <HeroVisual />
+
+        <div className="hero-visual-col">
+          <Suspense fallback={<div className="hero-3d-stage hero-3d-loading">Loading 3D studio scene…</div>}>
+            <Hero3DCanvas />
+          </Suspense>
+        </div>
       </section>
+
       <StudioShowcase />
-      <section className="community-strip"><div className="strip-item"><span className="strip-icon violet"><Code2 size={17}/></span><span><b>Made in the browser</b><small>No setup, just make</small></span></div><div className="strip-divider"/><div className="strip-item"><span className="strip-icon orange"><Gamepad2 size={18}/></span><span><b>Made to be played</b><small>One link, any device</small></span></div><div className="strip-divider"/><div className="strip-item"><span className="strip-icon green"><Sparkles size={17}/></span><span><b>Made together</b><small>Play games you love</small></span></div><div className="strip-end">A little studio for big imagination <span>✳</span></div></section>
-      <section className="arcade-section" id="discover">
+
+      <section className="arcade-section editorial-arcade-preview" id="discover">
         <div className="section-heading">
-          <div><div className="eyebrow">THE COMMUNITY ARCADE</div><h2>Little worlds, <em>made by you.</em></h2><p>Press play. Find a favorite. Share your world.</p></div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button className="button button-outline" onClick={() => api<{projects: Array<Record<string, unknown>>}>('/api/gallery').then(data => { setGames(data.projects.map(projectToGame)); notify('Gallery refreshed'); }).catch(() => notify('Could not refresh games'))}>Refresh <ArrowRight size={15}/></button>
-            <button className="button button-primary button-small" onClick={() => setPage('arcade')}>Open Full Arcade <ArrowRight size={14}/></button>
+          <div>
+            <h2 className="editorial-section-title">Published on Yulya Arcade</h2>
+            <p className="editorial-section-sub">Play community projects directly in their isolated sandbox, or inspect and remix open templates.</p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button className="button button-outline button-small" onClick={() => api<{projects: Array<Record<string, unknown>>}>('/api/gallery').then(data => { setGames(data.projects.map(projectToGame)); notify('Arcade refreshed'); }).catch(() => notify('Could not refresh games'))}>Refresh</button>
+            <button className="button button-alabaster button-small" onClick={() => setPage('arcade')}>Browse Full Arcade</button>
           </div>
         </div>
         {games.length > 0 && (
@@ -1224,38 +1268,109 @@ export default function App() {
           </div>
         )}
         {filteredGames.length ? (
-          <div className="game-grid">
-            {filteredGames.map((game, index) => <GameCard key={game.projectId ?? game.id} game={game} index={index} onClick={() => { setCurrentGame(game); setModal('game') }} />)}
+          <div className="editorial-game-grid">
+            {filteredGames.slice(0, 6).map((game, index) => <GameCard key={game.projectId ?? game.id} game={game} index={index} onClick={() => { setCurrentGame(game); setModal('game') }} />)}
           </div>
         ) : (
-          <div className="gallery-empty">{games.length === 0 ? "No public games published yet. Be the first to publish one!" : "No games found in this genre."}</div>
+          <div className="gallery-empty">{games.length === 0 ? 'No public projects published yet. Create one in Studio to be first on the shelf.' : 'No projects in this category yet.'}</div>
         )}
         <div className="gallery-footer">
-          <span><span className="live-dot"/> {games.length} PUBLIC PROJECTS</span>
-          <button className="quiet-button" onClick={() => setPage('arcade')}>Explore all in Yulya Arcade <ArrowRight size={14}/></button>
+          <span className="tabular-count">{games.length} public {games.length === 1 ? 'project' : 'projects'}</span>
+          <button className="quiet-button" onClick={() => setPage('arcade')}>View all in Arcade <ArrowRight size={14}/></button>
         </div>
       </section>
-      <section className="how-section" id="how"><div className="how-title"><div className="eyebrow">FROM THOUGHT TO THUMBS-UP</div><h2>Three steps.<br/><em>One playable idea.</em></h2></div><div className="how-steps"><div className="how-step"><span className="step-index">01</span><div className="step-icon"><MessageSquare size={20}/></div><h3>Tell it what you imagine</h3><p>Start with a sentence, a sketch in your head, or a “what if…”</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">02</span><div className="step-icon peach-step"><Code2 size={20}/></div><h3>Make it yours</h3><p>See the code and the game side by side. Tweak anything you like.</p></div><div className="step-step-line"/><div className="how-step"><span className="step-index">03</span><div className="step-icon mint-step"><Rocket size={20}/></div><h3>Send it to a friend</h3><p>Share one link. Anyone can play it in their browser.</p></div></div></section>
-      <section className="cta-section" id="community"><div className="cta-spark">✳</div><div><div className="eyebrow">YOUR TURN, CREATOR</div><h2>What will you make<br/>people <em>feel?</em></h2></div><button className="button button-light" onClick={() => setPage(user ? 'profile' : 'login')}>{user ? 'Open your studio' : 'Let’s find out'} <ArrowRight size={16}/></button><span className="cta-orbit cta-orbit-a"/><span className="cta-orbit cta-orbit-b"/></section>
+
+      <section className="how-section editorial-workflow" id="how">
+        <div className="workflow-grid">
+          <div className="workflow-intro">
+            <h2 className="editorial-section-title">From blank file to playable URL in minutes.</h2>
+            <p className="editorial-section-sub">No build pipelines, local SDK installs, or deployment friction. Everything compiles and previews live inside your browser.</p>
+          </div>
+          <div className="workflow-steps-list">
+            <div className="workflow-row">
+              <span className="workflow-num">1</span>
+              <div>
+                <h3>Pick a template or prompt an idea</h3>
+                <p>Start from blank HTML/JS, Canvas 2D, Phaser, Three.js, GLSL shaders, or React + TypeScript—or describe mechanics to Gemini with pasted sketches.</p>
+              </div>
+            </div>
+            <div className="workflow-row">
+              <span className="workflow-num">2</span>
+              <div>
+                <h3>Iterate side-by-side with headless playtesting</h3>
+                <p>Edit code in Monaco while the isolated preview updates live. Stream the game headlessly to Gemini so it can click menus, test controls, and inspect frames.</p>
+              </div>
+            </div>
+            <div className="workflow-row">
+              <span className="workflow-num">3</span>
+              <div>
+                <h3>Publish or share a live preview link</h3>
+                <p>Publish to the Community Arcade with leaderboards and comments, share a 24h isolated preview link for private WIPs, or export a complete ZIP anytime.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="editorial-cta-band" id="community">
+        <div className="editorial-cta-inner">
+          <div>
+            <h2>Ready to build your next browser game or interactive tool?</h2>
+            <p>Start free with your own Google AI Studio key—zero vendor lock-in, full source export.</p>
+          </div>
+          <div className="editorial-cta-actions">
+            <button className="button button-alabaster" onClick={() => setPage(user ? 'profile' : 'login')}>
+              {user ? 'Open Your Studio' : 'Create Free Account'}
+            </button>
+            <button className="button button-outline" onClick={() => setPage('templates')}>
+              Browse Templates
+            </button>
+          </div>
+        </div>
+      </section>
     </main>
-    <footer className="footer">
-      <div className="footer-left">
-        <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
-          <span className="brand-mark">✳</span>
-          <span>yulya<span className="brand-light">studio</span></span>
-        </a>
-        <span className="footer-tagline">A high-performance browser studio for curious minds.</span>
+
+    <footer className="footer editorial-footer">
+      <div className="editorial-footer-grid">
+        <div className="footer-brand-col">
+          <a className="brand" href="#home" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+            <span className="brand-mark">✳</span>
+            <span>yulya<span className="brand-light">studio</span></span>
+          </a>
+          <p className="footer-tagline">Browser-native coding IDE, multimodal Gemini workspace, and isolated game arcade.</p>
+          <div className="footer-contact-row">
+            <a href="mailto:support@yulya.me" className="footer-contact-pill">
+              <Mail size={13} /> support@yulya.me
+            </a>
+            <a href="https://moheith.tech" target="_blank" rel="noreferrer" className="footer-contact-pill">
+              Creator Portfolio · moheith.tech <ArrowUpRight size={12} />
+            </a>
+          </div>
+        </div>
+
+        <div className="footer-col">
+          <h4>Platform</h4>
+          <a href="/arcade" onClick={(e) => { e.preventDefault(); setPage('arcade') }}>Community Arcade</a>
+          <a href="/templates" onClick={(e) => { e.preventDefault(); setPage('templates') }}>Starter Templates</a>
+          <a href="/docs" onClick={(e) => { e.preventDefault(); setPage('docs') }}>Documentation</a>
+        </div>
+
+        <div className="footer-col">
+          <h4>Legal &amp; Support</h4>
+          <a href="/terms" onClick={(e) => { e.preventDefault(); setPage('terms') }}>Terms of Service</a>
+          <a href="/privacy" onClick={(e) => { e.preventDefault(); setPage('privacy') }}>Privacy Policy</a>
+          <a href="mailto:support@yulya.me">support@yulya.me</a>
+        </div>
       </div>
-      <div className="footer-links">
-        <a href="/arcade" onClick={(e) => { e.preventDefault(); setPage('arcade') }}>Arcade</a>
-        <a href="/templates" onClick={(e) => { e.preventDefault(); setPage('templates') }}>Templates</a>
-        <a href="/docs" onClick={(e) => { e.preventDefault(); setPage('docs') }}>Documentation</a>
-        <a href="/terms" onClick={(e) => { e.preventDefault(); setPage('terms') }}>Terms of Service</a>
-        <a href="/privacy" onClick={(e) => { e.preventDefault(); setPage('privacy') }}>Privacy Policy</a>
-      </div>
-      <div className="footer-right">
+
+      <div className="editorial-footer-bottom">
         <span>&copy; {new Date().getFullYear()} Yulya Studio. All rights reserved.</span>
-        <span>Made with care <span className="footer-heart">♥</span></span>
+        <span>
+          Crafted by{' '}
+          <a href="https://moheith.tech" target="_blank" rel="noreferrer" className="footer-portfolio-link">
+            moheith.tech
+          </a>
+        </span>
       </div>
     </footer>
     {modal === 'game' && currentGame && (

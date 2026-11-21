@@ -4,6 +4,8 @@
 
 URL: https://studio.yulya.me
 Sandbox Origin: https://play.yulya.me
+Support Email: support@yulya.me
+Creator Portfolio: https://moheith.tech
 Docs: https://studio.yulya.me/docs
 Arcade: https://studio.yulya.me/arcade
 Templates: https://studio.yulya.me/templates
@@ -14,7 +16,7 @@ Yulya Studio is an all-in-one web platform where creators can build, prompt, bun
 
 ## Core Pillars & Capabilities
 - **Browser-Native Monaco IDE**: Full VS Code-grade editing with multi-file explorer, folder persistence, Command Palette (`Ctrl+K` / `Ctrl+P`), Visual Asset Previewer, and live in-browser `esbuild-wasm` TypeScript/React bundling.
-- **Multimodal Gemini AI Chat**: Bring-Your-Own-Key (BYOK) agent discovering every live Gemini/Gemma chat model on the user's key automatically, with surgical `edit_file` / `batch_edit_files`, diagnostics (`check_project_diagnostics`), `regex_search`, `read_file_lines`, `evaluate_in_preview`, inline **Nano Banana 2.1** image generation & editing, inline **Gemini 3.8 TTS** voice players, image paste/drop uploads, live browser **Screen Share**, and Click-to-Edit visual picking.
+- **Multimodal Gemini AI Chat**: Bring-Your-Own-Key (BYOK) agent discovering every live Gemini/Gemma chat model on the user's key automatically, with surgical `edit_file` / `batch_edit_files`, diagnostics (`check_project_diagnostics`), `regex_search`, `read_file_lines`, `get_preview_state`, async `evaluate_in_preview`, full autonomous `send_game_input`, inline **Nano Banana 2.1** image generation & editing, inline **Gemini 3.8 TTS** voice players, image paste/drop uploads, **Headless Game-Only Screen Share**, and Click-to-Edit visual picking.
 - **Dedicated Origin Sandbox (`play.yulya.me`)**: Public games and private previews execute on a strictly isolated origin (`play.yulya.me`) with zero studio cookies, strict CSP, and HMAC-SHA256 signed private preview tokens.
 - **Community Arcade & Instant Hosting**: Publish public games in one click to `https://studio.yulya.me/{username}/{slug}` with theater/fullscreen play wrapper, likes, comments, leaderboards (`YulyaSDK.submitScore`), embed codes, abuse reporting, and creator opt-in Remixing (disabled by default).
 - **Owner-Only ZIP Export & Account Security**: Creators retain 100% IP ownership, export clean `.zip` archives, manage active sessions & password resets, and purge accounts immediately in `/settings`.

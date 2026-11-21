@@ -13,7 +13,7 @@ import {
 import { getFileRawUrl, saveFile, submitAiToolResult } from '../api'
 import AssetPreview, { isPreviewableBinaryAsset } from '../components/AssetPreview'
 import CommandPalette from '../components/CommandPalette'
-import { bundleProjectToHtml, projectNeedsTranspile } from '../lib/esbuildBundler'
+import { bundleProjectToHtml, buildLocalPreviewFallbackHtml, projectNeedsTranspile } from '../lib/esbuildBundler'
 import type { ChatMessage, FileEntry, Game, Page, User } from '../types'
 
 type StudioProps = {
@@ -76,6 +76,7 @@ type StudioProps = {
   playOrigin?: string
   aiMode?: 'build' | 'plan'
   setAiMode?: (mode: 'build' | 'plan') => void
+  onRefreshPreviewToken?: () => Promise<void> | void
 }
 
 type ActivityTab = 'explorer' | 'search' | 'assets'
@@ -344,8 +345,8 @@ export default function StudioPage(p: StudioProps) {
   const [aiChatOpen, setAiChatOpen] = useState(true)
   // Collapsible live game preview
   const [previewOpen, setPreviewOpen] = useState(true)
-  // Device mode for preview
-  const [device, setDevice] = useState<DeviceMode>('desktop')
+  // Device mode for preview — default to 'responsive' (100% crisp full-bleed fill; desktop/tablet/mobile frames 1 click away)
+  const [device, setDevice] = useState<DeviceMode>('responsive')
   // Virtual viewport scaling & AI playtest state
   const [stageSize, setStageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 })
   const [aiCursor, setAiCursor] = useState<{ active: boolean; x: number; y: number; clicking: boolean; label?: string }>({
@@ -427,26 +428,42 @@ export default function StudioPage(p: StudioProps) {
   const [selectedNewFallback, setSelectedNewFallback] = useState('')
   const [isSavingWaterfall, setIsSavingWaterfall] = useState(false)
 
-  // Pro IDE features: Command Palette, Click-to-Edit Picker, Live Perf HUD, esbuild-wasm, Multimodal Chat & Screen Share
+  // Pro IDE features: Command Palette, Click-to-Edit Picker, Live Perf HUD, esbuild-wasm, Multimodal Chat & Headless Game Screen Share
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [pickerActive, setPickerActive] = useState(false)
   const [perfHudActive, setPerfHudActive] = useState(false)
   const [perfStats, setPerfStats] = useState<{ fps: number; memMb: number | null; domNodes: number } | null>(null)
   const [compiledSrcDoc, setCompiledSrcDoc] = useState<string | null>(null)
   const [esbuildStatus, setEsbuildStatus] = useState<string>('')
+  const [previewLoaded, setPreviewLoaded] = useState(false)
+  const [previewBridgeReady, setPreviewBridgeReady] = useState(false)
+  const [previewCrashError, setPreviewCrashError] = useState<string | null>(null)
+  const [useLocalFallbackPreview, setUseLocalFallbackPreview] = useState(false)
   const [pendingChatImages, setPendingChatImages] = useState<string[]>([])
   const [chatLightboxUrl, setChatLightboxUrl] = useState<string | null>(null)
   const [chatDragOver, setChatDragOver] = useState(false)
   const [screenShareActive, setScreenShareActive] = useState(false)
+  const [sharedGameFrame, setSharedGameFrame] = useState<{ dataUrl: string; width: number; height: number; time: string } | null>(null)
   const [mobileTab, setMobileTab] = useState<'files' | 'code' | 'preview' | 'chat'>('code')
   const chatImageInputRef = useRef<HTMLInputElement | null>(null)
-  const screenStreamRef = useRef<MediaStream | null>(null)
-  const screenVideoRef = useRef<HTMLVideoElement | null>(null)
   const pendingVisionCallIdRef = useRef<string | null>(null)
+  const pendingStateCallIdRef = useRef<string | null>(null)
   const pendingChatPreviewAttachRef = useRef(false)
+  const headlessStreamReqRef = useRef(false)
+  const remoteRetryRef = useRef(false)
   const pendingAiEvalIdsRef = useRef<Set<string>>(new Set())
   const propsRef = useRef(p)
   propsRef.current = p
+
+  // Self-contained local fallback HTML if remote isolated preview is unavailable or still initializing
+  const localFallbackSrcDoc = useMemo(() => {
+    if (compiledSrcDoc) return null
+    if (!useLocalFallbackPreview && p.previewUrl) return null
+    if (!p.code || Object.keys(p.code).length === 0) return null
+    return buildLocalPreviewFallbackHtml(p.code, typeof window !== 'undefined' ? window.location.origin : '*')
+  }, [compiledSrcDoc, useLocalFallbackPreview, p.previewUrl, p.code])
+
+  const effectiveSrcDoc = compiledSrcDoc || localFallbackSrcDoc
 
   const compressImageToDataUrl = (file: Blob): Promise<string | null> =>
     new Promise((resolve) => {
@@ -490,63 +507,60 @@ export default function StudioPage(p: StudioProps) {
   }
 
   const stopScreenShare = () => {
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((t) => t.stop())
-      screenStreamRef.current = null
-    }
-    if (screenVideoRef.current) {
-      screenVideoRef.current.srcObject = null
-    }
+    headlessStreamReqRef.current = false
     setScreenShareActive(false)
+    setSharedGameFrame(null)
   }
 
-  const startScreenShare = async () => {
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      p.notify('Browser screen sharing is not supported in this browser')
-      return
-    }
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 5, max: 15 } },
-        audio: false,
-      })
-      screenStreamRef.current = stream
-      stream.getVideoTracks().forEach((track) => {
-        track.addEventListener('ended', () => {
-          stopScreenShare()
-        })
-      })
-      const video = screenVideoRef.current
-      if (video) {
-        video.srcObject = stream
-        await video.play().catch(() => {})
+  const requestHeadlessGameFrame = () => {
+    headlessStreamReqRef.current = true
+    postToPreview({ type: 'yulya:capture-screen', reqId: `headless-${Date.now()}` })
+  }
+
+  const startScreenShare = () => {
+    if (!previewOpen) setPreviewOpen(true)
+    setScreenShareActive(true)
+    setAiChatOpen(true)
+    p.notify('Headless game screen share ON — streaming ONLY your game preview to Gemini')
+    window.setTimeout(() => requestHeadlessGameFrame(), previewOpen ? 80 : 450)
+  }
+
+  // Continuously keep the headless live game feed fresh while active (zero OS popups!)
+  useEffect(() => {
+    if (!screenShareActive) return
+    const timer = window.setInterval(() => {
+      if (!document.hidden && previewOpen) {
+        requestHeadlessGameFrame()
       }
-      setScreenShareActive(true)
-      setAiChatOpen(true)
-      p.notify('Screen sharing active — live frames will attach when you message Gemini')
-    } catch {
-      stopScreenShare()
-    }
-  }
+    }, 2600)
+    return () => window.clearInterval(timer)
+  }, [screenShareActive, previewOpen, p.previewKey, effectiveSrcDoc])
 
-  const captureSharedScreenFrame = (): string | null => {
-    const video = screenVideoRef.current
-    if (!screenShareActive || !video || !video.videoWidth || !video.videoHeight) return null
-    const maxDim = 1280
-    const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight))
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
-    canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-    try {
-      const du = canvas.toDataURL('image/jpeg', 0.82)
-      return du.length > 500 ? du : null
-    } catch {
-      return null
+  // Reset preview loading state whenever project, previewKey, or previewUrl changes, with automatic black-screen watchdog!
+  useEffect(() => {
+    setPreviewLoaded(false)
+    setPreviewBridgeReady(false)
+    setPreviewCrashError(null)
+    if (p.previewUrl) {
+      setUseLocalFallbackPreview(false)
+      remoteRetryRef.current = false
     }
-  }
+  }, [p.currentProjectId, p.previewUrl, p.previewKey])
+
+  // Watchdog: if remote preview doesn't report ready within 4.5s (e.g., expired token or cold start), auto-renew once, then fall back to instant local srcDoc so preview NEVER gets stuck black!
+  useEffect(() => {
+    if (!previewOpen || effectiveSrcDoc || previewBridgeReady) return
+    if (!p.previewUrl) return
+    const t = window.setTimeout(() => {
+      if (!remoteRetryRef.current && p.onRefreshPreviewToken) {
+        remoteRetryRef.current = true
+        void p.onRefreshPreviewToken()
+      } else if (!previewLoaded) {
+        setUseLocalFallbackPreview(true)
+      }
+    }, 4500)
+    return () => window.clearTimeout(t)
+  }, [previewOpen, effectiveSrcDoc, previewBridgeReady, previewLoaded, p.previewUrl, p.previewKey])
 
   const attachPreviewFrameToChat = () => {
     if (!previewOpen) setPreviewOpen(true)
@@ -565,29 +579,13 @@ export default function StudioPage(p: StudioProps) {
   const handleSendChat = () => {
     if (p.isAiGenerating) return
     const imagesToSend = [...pendingChatImages]
-    if (screenShareActive && imagesToSend.length < 4) {
-      const liveFrame = captureSharedScreenFrame()
-      if (liveFrame) imagesToSend.push(liveFrame)
+    if (screenShareActive && sharedGameFrame?.dataUrl && imagesToSend.length < 4) {
+      imagesToSend.push(sharedGameFrame.dataUrl)
     }
     if (!p.chat.trim() && imagesToSend.length === 0) return
     setPendingChatImages([])
     p.submitPrompt(imagesToSend)
   }
-
-  useEffect(() => {
-    return () => {
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach((t) => t.stop())
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    if (screenShareActive && screenVideoRef.current && screenStreamRef.current && screenVideoRef.current.srcObject !== screenStreamRef.current) {
-      screenVideoRef.current.srcObject = screenStreamRef.current
-      void screenVideoRef.current.play().catch(() => {})
-    }
-  }, [screenShareActive])
 
   const targetPreviewOrigin = useMemo(() => {
     try {
@@ -600,7 +598,7 @@ export default function StudioPage(p: StudioProps) {
     const win = previewIframeRef.current?.contentWindow
     if (!win) return
     // When using isolated PLAY_ORIGIN iframe, strictly bind targetOrigin; srcDoc uses opaque origin
-    const dest = compiledSrcDoc ? '*' : targetPreviewOrigin
+    const dest = effectiveSrcDoc ? '*' : targetPreviewOrigin
     try { win.postMessage(payload, dest) } catch {}
   }
 
@@ -817,19 +815,45 @@ export default function StudioPage(p: StudioProps) {
       try {
         if (curProps.previewUrl) expectedOrigin = new URL(curProps.previewUrl, window.location.origin).origin
       } catch {}
-      // Allow opaque 'null' origin ONLY when rendering local srcDoc esbuild output
-      if (event.origin !== expectedOrigin && !(event.origin === 'null' && compiledSrcDoc)) return
+      // Allow opaque 'null' origin ONLY when rendering local srcDoc (esbuild or fallback preview)
+      if (event.origin !== expectedOrigin && !(event.origin === 'null' && effectiveSrcDoc)) return
       if (!event.data || typeof event.data !== 'object') return
 
+      if (event.data.type === 'yulya:bridge-ready') {
+        setPreviewLoaded(true)
+        setPreviewBridgeReady(true)
+        setPreviewCrashError(null)
+        return
+      }
+      if (event.data.type === 'yulya:state-snapshot') {
+        const targetId = curProps.currentProjectId || curProps.currentGame?.projectId || curProps.currentGame?.id
+        const cid = pendingStateCallIdRef.current || String(event.data.reqId || '')
+        if (cid && targetId) {
+          pendingStateCallIdRef.current = null
+          void submitAiToolResult(targetId, cid, {
+            title: String(event.data.title || ''),
+            width: Number(event.data.width) || 1280,
+            height: Number(event.data.height) || 720,
+            canvases: Array.isArray(event.data.canvases) ? event.data.canvases : [],
+            domElements: Array.isArray(event.data.domElements) ? event.data.domElements : [],
+            consoleLogs: Array.isArray(event.data.consoleLogs) ? event.data.consoleLogs : [],
+            consoleErrors: Array.isArray(event.data.consoleErrors) ? event.data.consoleErrors : [],
+            textSnippet: String(event.data.textSnippet || ''),
+          }).catch(() => {})
+        }
+        return
+      }
       if (event.data.type === 'yulya:game-error') {
         gameErrorCountRef.current += 1
-        const errorText = `[Game Runtime Error] ${event.data.message || 'Script execution failed'}`
+        const msgStr = String(event.data.message || 'Script execution failed')
+        setPreviewCrashError(msgStr)
+        const errorText = `[Game Runtime Error] ${msgStr}`
         setTermHistory(prev => [
           ...prev,
           { id: Date.now().toString(), type: 'error', text: errorText, time: new Date().toLocaleTimeString() }
         ])
         curProps.setTerminalOpen(true)
-        curProps.notify(`Game Error: ${event.data.message || 'Script error'}`)
+        curProps.notify(`Game Error: ${msgStr}`)
       } else if (event.data.type === 'yulya:game-log') {
         const logText = `[Game ${event.data.level || 'info'}] ${event.data.message || ''}`
         setTermHistory(prev => [
@@ -873,6 +897,16 @@ export default function StudioPage(p: StudioProps) {
       } else if (event.data.type === 'yulya:screen-captured') {
         const targetId = curProps.currentProjectId || curProps.currentGame?.projectId || curProps.currentGame?.id
         const rawUrl = String(event.data.dataUrl || '')
+        const capW = Number(event.data.width) || 1280
+        const capH = Number(event.data.height) || 720
+        // Update headless game stream PIP silently if triggered by headless background tick
+        if (headlessStreamReqRef.current && String(event.data.reqId || '').startsWith('headless-')) {
+          headlessStreamReqRef.current = false
+          if (rawUrl.length > 500) {
+            setSharedGameFrame({ dataUrl: rawUrl, width: capW, height: capH, time: new Date().toLocaleTimeString() })
+          }
+          return
+        }
         // If user clicked "Attach Live Preview" to chat composer
         if (pendingChatPreviewAttachRef.current) {
           pendingChatPreviewAttachRef.current = false
@@ -885,14 +919,18 @@ export default function StudioPage(p: StudioProps) {
           }
           return
         }
-        // If Gemini requested inspect_game_screen or capture_cover_snapshot, send screenshot + errors + DOM back to backend!
+        // Keep headless live thumbnail synced whenever any capture arrives
+        if (rawUrl.length > 500) {
+          setSharedGameFrame({ dataUrl: rawUrl, width: capW, height: capH, time: new Date().toLocaleTimeString() })
+        }
+        // If Gemini requested inspect_game_screen, send_game_input(capture_after), or capture_cover_snapshot, return frame + errors + DOM!
         if (pendingVisionCallIdRef.current && targetId) {
           const cid = pendingVisionCallIdRef.current
           pendingVisionCallIdRef.current = null
           void submitAiToolResult(targetId, cid, {
             dataUrl: rawUrl,
-            width: Number(event.data.width) || 1280,
-            height: Number(event.data.height) || 720,
+            width: capW,
+            height: capH,
             consoleErrors: Array.isArray(event.data.consoleErrors) ? event.data.consoleErrors : [],
             domElements: Array.isArray(event.data.domElements) ? event.data.domElements : [],
           }).catch(() => {})
@@ -935,7 +973,7 @@ export default function StudioPage(p: StudioProps) {
     }
     window.addEventListener('message', handleGameMessage)
     return () => window.removeEventListener('message', handleGameMessage)
-  }, [compiledSrcDoc])
+  }, [effectiveSrcDoc])
 
   // Start & Stop AI Playtest handlers
   const startAiPlaytest = () => {
@@ -1096,6 +1134,16 @@ export default function StudioPage(p: StudioProps) {
         window.setTimeout(() => {
           postToPreview({ type: 'yulya:capture-screen', reqId: String(detail.data?.call_id || Date.now()) })
         }, wasClosed ? 650 : 180)
+      } else if (detail.type === 'get_preview_state') {
+        const wasClosed = !previewOpen
+        if (wasClosed) setPreviewOpen(true)
+        const cid = String(detail.data?.call_id || '')
+        if (cid) {
+          pendingStateCallIdRef.current = cid
+          window.setTimeout(() => {
+            postToPreview({ type: 'yulya:get-state', reqId: cid })
+          }, wasClosed ? 600 : 60)
+        }
       } else if (detail.type === 'evaluate_in_preview') {
         const wasClosed = !previewOpen
         if (wasClosed) setPreviewOpen(true)
@@ -1108,52 +1156,111 @@ export default function StudioPage(p: StudioProps) {
           }, wasClosed ? 600 : 80)
         }
       } else if (detail.type === 'send_game_input') {
+        const wasClosed = !previewOpen
+        if (wasClosed) setPreviewOpen(true)
         if (!isAiControlling) {
           prevViewSettingsRef.current = { device, previewWidth }
           setIsAiControlling(true)
-          if (previewWidth < 50) setPreviewWidth(52)
+          if (previewWidth < 46) setPreviewWidth(50)
         }
         const actions = detail.data?.actions || []
+        const callId = detail.data?.call_id ? String(detail.data.call_id) : ''
+        const captureAfter = detail.data?.capture_after !== false
         const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
         const runPacedInputQueue = async () => {
+          if (wasClosed) await sleep(500)
           for (const action of actions) {
+            const actType = String(action.type || '').toLowerCase()
+            const actKind = String(action.action || '').toLowerCase()
+            if (actType === 'wait') {
+              await sleep(Math.max(40, Math.min(4000, Number(action.duration_ms) || 300)))
+              continue
+            }
+            if (actType === 'release_all') {
+              postToPreview({ type: 'yulya:release-all-keys' })
+              setAiActiveKeys([])
+              continue
+            }
+            if (actType === 'type') {
+              postToPreview({ type: 'yulya:simulate-input', inputKind: 'type', selector: action.selector, text: action.text || '' })
+              await sleep(120)
+              continue
+            }
+            if (actType === 'scroll') {
+              postToPreview({ type: 'yulya:simulate-input', inputKind: 'scroll', selector: action.selector, x: action.x, y: action.y, deltaX: action.deltaX || 0, deltaY: action.deltaY ?? 240 })
+              await sleep(140)
+              continue
+            }
+            if (actType === 'drag' || actKind === 'drag') {
+              const x1 = typeof action.x === 'number' ? action.x : 200
+              const y1 = typeof action.y === 'number' ? action.y : 200
+              const x2 = typeof action.toX === 'number' ? action.toX : x1 + 180
+              const y2 = typeof action.toY === 'number' ? action.toY : y1
+              setAiCursor({ active: true, x: x1, y: y1, clicking: true, label: action.label || 'Dragging…' })
+              postToPreview({ type: 'yulya:simulate-input', inputKind: 'drag', selector: action.selector, x: x1, y: y1, toX: x2, toY: y2, steps: 10 })
+              await sleep(240)
+              setAiCursor({ active: true, x: x2, y: y2, clicking: false, label: action.label || 'Dropped' })
+              await sleep(120)
+              continue
+            }
+            if (actType === 'touch') {
+              const tx = typeof action.x === 'number' ? action.x : 200
+              const ty = typeof action.y === 'number' ? action.y : 300
+              postToPreview({ type: 'yulya:simulate-input', inputKind: 'touchstart', x: tx, y: ty })
+              if (actKind === 'swipe') {
+                await sleep(80)
+                postToPreview({ type: 'yulya:simulate-input', inputKind: 'touchmove', x: action.toX ?? tx + 120, y: action.toY ?? ty })
+              }
+              await sleep(120)
+              postToPreview({ type: 'yulya:simulate-input', inputKind: 'touchend', x: action.toX ?? tx, y: action.toY ?? ty })
+              await sleep(100)
+              continue
+            }
+
             const hasCoords = typeof action.x === 'number' && typeof action.y === 'number'
-            const isClickOrMove = action.type === 'mouse' || action.action === 'click' || action.action === 'down' || action.action === 'move' || action.action === 'drag'
+            const isClickOrMove = actType === 'mouse' || ['click', 'double_click', 'right_click', 'down', 'up', 'move'].includes(actKind) || Boolean(action.selector || action.text)
 
             if (hasCoords || isClickOrMove) {
               const targetX = typeof action.x === 'number' ? action.x : 640
               const targetY = typeof action.y === 'number' ? action.y : 360
-              const actionLabel = action.label || (action.action === 'click' ? 'Clicking…' : 'Moving…')
+              const actionLabel = action.label || (actKind === 'right_click' ? 'Right-clicking…' : actKind === 'double_click' ? 'Double-clicking…' : actKind === 'move' ? 'Moving…' : 'Clicking…')
+              const btnCode = actKind === 'right_click' ? 2 : 0
 
               setAiCursor({ active: true, x: targetX, y: targetY, clicking: false, label: actionLabel })
               postToPreview({ type: 'yulya:simulate-input', inputKind: 'mousemove', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY })
-              await sleep(220)
+              await sleep(160)
 
-              if (action.action === 'click' || action.action === 'down') {
+              if (actKind !== 'move') {
                 setAiCursor(prev => ({ ...prev, clicking: true, label: action.label || 'Click' }))
-                postToPreview({ type: 'yulya:simulate-input', inputKind: 'mousedown', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY, button: 0 })
-                await sleep(150)
-                postToPreview({ type: 'yulya:simulate-input', inputKind: 'mouseup', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY, button: 0 })
-                postToPreview({ type: 'yulya:simulate-input', inputKind: 'click', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY, button: 0 })
+                postToPreview({ type: 'yulya:simulate-input', inputKind: 'mousedown', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY, button: btnCode })
+                await sleep(110)
+                postToPreview({ type: 'yulya:simulate-input', inputKind: 'mouseup', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY, button: btnCode })
+                postToPreview({ type: 'yulya:simulate-input', inputKind: actKind === 'right_click' ? 'contextmenu' : actKind === 'double_click' ? 'dblclick' : 'click', selector: action.selector, text: action.text, label: action.label, x: targetX, y: targetY, button: btnCode })
                 await sleep(120)
                 setAiCursor(prev => ({ ...prev, clicking: false }))
               }
-            } else if (action.type === 'key' || action.key) {
+            } else if (actType === 'key' || action.key) {
               const keyLabel = String(action.key).toUpperCase()
               setAiActiveKeys(prev => prev.includes(keyLabel) ? prev : [...prev, keyLabel])
               postToPreview({ type: 'yulya:simulate-input', inputKind: 'keydown', key: action.key })
-              const holdTime = action.duration_ms && action.duration_ms > 0 ? action.duration_ms : 200
+              const holdTime = action.duration_ms && action.duration_ms > 0 ? Math.min(3000, action.duration_ms) : 200
               await sleep(holdTime)
               postToPreview({ type: 'yulya:simulate-input', inputKind: 'keyup', key: action.key })
               setAiActiveKeys(prev => prev.filter(k => k !== keyLabel))
               await sleep(60)
             }
           }
-          await sleep(1800)
+          // Automatically capture post-action headless frame back to Gemini via broker!
+          if (callId && captureAfter) {
+            await sleep(220)
+            pendingVisionCallIdRef.current = callId
+            postToPreview({ type: 'yulya:capture-screen', reqId: callId })
+          }
+          await sleep(1200)
           setAiCursor(prev => ({ ...prev, active: false, clicking: false }))
         }
-        runPacedInputQueue()
+        void runPacedInputQueue()
       } else if (detail.type === 'set_game_device') {
         const mode = detail.data?.device_mode
         if (mode && (mode === 'desktop' || mode === 'tablet' || mode === 'mobile' || mode === 'responsive')) {
@@ -1921,8 +2028,6 @@ export default function StudioPage(p: StudioProps) {
 
   return (
     <div className={`vscode-ide ${dragging ? 'is-resizing' : ''}`} data-mobile-tab={mobileTab}>
-      {/* Hidden video element keeping live getDisplayMedia track active for frame captures */}
-      <video ref={screenVideoRef} muted playsInline style={{ display: 'none' }} />
       <input
         ref={chatImageInputRef}
         type="file"
@@ -2968,13 +3073,27 @@ export default function StudioPage(p: StudioProps) {
 
               <div className="vsc-address-bar">
                 <LockKeyhole size={11} className="lock-icon" />
-                <span className="address-text" title={publicUrl || 'Private preview'}>
-                  {p.currentGame?.visibility === 'public' ? publicUrl : 'Private Isolated Preview'}
+                <span className="address-text" title={publicUrl || 'Isolated live preview'}>
+                  {useLocalFallbackPreview
+                    ? 'Instant Local Sandbox Preview'
+                    : p.currentGame?.visibility === 'public'
+                    ? publicUrl
+                    : 'Private Isolated Preview (24h shareable)'}
                 </span>
+                {useLocalFallbackPreview && p.previewUrl && (
+                  <button
+                    className="copy-url-btn"
+                    onClick={() => { setUseLocalFallbackPreview(false); void p.onRefreshPreviewToken?.() }}
+                    title="Reconnect remote play.yulya.me preview"
+                    style={{ marginRight: 4, fontSize: 10, padding: '0 6px', width: 'auto' }}
+                  >
+                    Retry
+                  </button>
+                )}
                 <button
                   className="copy-url-btn"
                   onClick={p.shareLink}
-                  title="Copy Game Link"
+                  title={p.currentGame?.visibility === 'public' ? 'Copy public game link' : 'Copy 24h isolated live preview link'}
                 >
                   <Copy size={12} />
                 </button>
@@ -3004,6 +3123,31 @@ export default function StudioPage(p: StudioProps) {
                 return (
                   <div className="vsc-preview-stage" ref={previewWrapRef}>
                     {shutterFlash && <div className="preview-shutter-flash" />}
+                    {!previewLoaded && (effectiveSrcDoc || p.previewUrl) && (
+                      <div className="preview-boot-overlay" role="status" aria-live="polite">
+                        <span className="loading-spinner" />
+                        <span>Starting live game preview…</span>
+                      </div>
+                    )}
+                    {previewCrashError && (
+                      <div className="preview-crash-banner" role="alert">
+                        <AlertTriangle size={14} />
+                        <span title={previewCrashError}>{previewCrashError}</span>
+                        <button
+                          type="button"
+                          className="preview-crash-fix-btn"
+                          onClick={() => {
+                            setAiChatOpen(true)
+                            p.setChat(`Fix this runtime error in the live preview and verify it renders cleanly:\n${previewCrashError}`)
+                          }}
+                        >
+                          Fix with Gemini
+                        </button>
+                        <button type="button" className="preview-crash-close" onClick={() => setPreviewCrashError(null)} aria-label="Dismiss error">
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )}
                     {perfHudActive && perfStats && (
                       <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, background: 'rgba(10,12,20,0.86)', border: '1px solid rgba(56,189,248,0.35)', borderRadius: 8, padding: '4px 10px', fontSize: 11, color: '#38bdf8', fontFamily: 'monospace', pointerEvents: 'none' }}>
                         {perfStats.fps} FPS · {perfStats.domNodes} DOM{perfStats.memMb !== null ? ` · ${perfStats.memMb} MB` : ''}
@@ -3011,14 +3155,15 @@ export default function StudioPage(p: StudioProps) {
                     )}
                     {device === 'responsive' || !currentSpec ? (
                       <div className="preview-viewport-container device-responsive">
-                        {compiledSrcDoc ? (
+                        {effectiveSrcDoc ? (
                           <iframe
                             ref={previewIframeRef}
-                            key={`esb-${p.previewKey}`}
-                            title="Compiled TypeScript/React preview"
+                            key={`srcdoc-${p.previewKey}-${useLocalFallbackPreview ? 'fb' : 'esb'}`}
+                            title={compiledSrcDoc ? 'Compiled TypeScript/React preview' : 'Local sandbox game preview'}
                             className="vsc-game-iframe"
                             sandbox="allow-scripts allow-modals allow-forms allow-pointer-lock"
-                            srcDoc={compiledSrcDoc}
+                            srcDoc={effectiveSrcDoc}
+                            onLoad={() => setPreviewLoaded(true)}
                             referrerPolicy="no-referrer"
                           />
                         ) : p.previewUrl ? (
@@ -3029,6 +3174,7 @@ export default function StudioPage(p: StudioProps) {
                             className="vsc-game-iframe"
                             sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-pointer-lock allow-popups"
                             src={`${p.previewUrl}${p.previewUrl.includes('?') ? '&' : '?'}t=${p.previewKey}`}
+                            onLoad={() => setPreviewLoaded(true)}
                             referrerPolicy="no-referrer"
                           />
                         ) : (
@@ -3084,14 +3230,15 @@ export default function StudioPage(p: StudioProps) {
                               <span className="phone-speaker" />
                             </div>
                           )}
-                          {compiledSrcDoc ? (
+                          {effectiveSrcDoc ? (
                             <iframe
                               ref={previewIframeRef}
-                              key={`esb-${p.previewKey}`}
-                              title="Compiled TypeScript/React preview"
+                              key={`srcdoc-${p.previewKey}-${useLocalFallbackPreview ? 'fb' : 'esb'}`}
+                              title={compiledSrcDoc ? 'Compiled TypeScript/React preview' : 'Local sandbox game preview'}
                               className="vsc-game-iframe"
                               sandbox="allow-scripts allow-modals allow-forms allow-pointer-lock"
-                              srcDoc={compiledSrcDoc}
+                              srcDoc={effectiveSrcDoc}
+                              onLoad={() => setPreviewLoaded(true)}
                               referrerPolicy="no-referrer"
                             />
                           ) : p.previewUrl ? (
@@ -3102,6 +3249,7 @@ export default function StudioPage(p: StudioProps) {
                               className="vsc-game-iframe"
                               sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-pointer-lock allow-popups"
                               src={`${p.previewUrl}${p.previewUrl.includes('?') ? '&' : '?'}t=${p.previewKey}`}
+                              onLoad={() => setPreviewLoaded(true)}
                               referrerPolicy="no-referrer"
                             />
                           ) : (
@@ -3682,19 +3830,39 @@ export default function StudioPage(p: StudioProps) {
                   if (e.dataTransfer.files?.length) void attachChatImageBlobs(e.dataTransfer.files)
                 }}
               >
-                {/* Active Browser Screen Share Status Bar */}
+                {/* Active Headless Game-Only Live Screen Share Bar (Zero Browser Popup!) */}
                 {screenShareActive && (
                   <div className="chat-screenshare-bar">
-                    <span className="screenshare-live-dot" />
-                    <span className="screenshare-label">Screen sharing live — frame sends with prompt</span>
+                    {sharedGameFrame?.dataUrl ? (
+                      <img
+                        src={sharedGameFrame.dataUrl}
+                        alt="Live game preview feed"
+                        className="screenshare-pip-thumb"
+                        onClick={() => setChatLightboxUrl(sharedGameFrame.dataUrl)}
+                        title="Click to zoom live game preview frame"
+                      />
+                    ) : (
+                      <span className="screenshare-live-dot" />
+                    )}
+                    <div className="screenshare-meta">
+                      <span className="screenshare-label">
+                        <span className="screenshare-live-dot" /> Headless Game Stream
+                      </span>
+                      <span className="screenshare-sub">
+                        {sharedGameFrame ? `${sharedGameFrame.width}×${sharedGameFrame.height} · Game preview only` : 'Syncing live game frame…'}
+                      </span>
+                    </div>
                     <button
                       type="button"
                       className="screenshare-action-btn"
                       onClick={() => {
-                        const f = captureSharedScreenFrame()
-                        if (f) setPendingChatImages((prev) => [...prev, f].slice(0, 4))
+                        if (sharedGameFrame?.dataUrl) {
+                          setPendingChatImages((prev) => [...prev, sharedGameFrame.dataUrl].slice(0, 4))
+                        } else {
+                          attachPreviewFrameToChat()
+                        }
                       }}
-                      title="Capture frame now into attachments"
+                      title="Attach current live game frame"
                     >
                       Snap
                     </button>
@@ -3702,7 +3870,7 @@ export default function StudioPage(p: StudioProps) {
                       type="button"
                       className="screenshare-action-btn danger"
                       onClick={stopScreenShare}
-                      title="Stop screen sharing"
+                      title="Stop headless game stream"
                     >
                       Stop
                     </button>
@@ -3812,13 +3980,13 @@ export default function StudioPage(p: StudioProps) {
                         <Camera size={12} />
                       </button>
 
-                      {/* Real Live Browser Screen Share (getDisplayMedia) */}
+                      {/* Headless Game-Only Live Screen Share (Zero browser popup!) */}
                       <button
                         type="button"
                         className={`vsc-composer-icon-btn ${screenShareActive ? 'is-sharing' : ''}`}
-                        title={screenShareActive ? 'Stop live screen share' : 'Share your browser tab / screen live with Gemini'}
-                        aria-label={screenShareActive ? 'Stop live screen share' : 'Share screen with Gemini'}
-                        onClick={() => (screenShareActive ? stopScreenShare() : void startScreenShare())}
+                        title={screenShareActive ? 'Stop headless game stream' : 'Headless share ONLY your live game screen to Gemini (no popup)'}
+                        aria-label={screenShareActive ? 'Stop headless game stream' : 'Share live game screen with Gemini'}
+                        onClick={() => (screenShareActive ? stopScreenShare() : startScreenShare())}
                       >
                         {screenShareActive ? <ScreenShareOff size={12} /> : <ScreenShare size={12} />}
                       </button>

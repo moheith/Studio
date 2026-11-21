@@ -169,7 +169,7 @@ export async function fetchTemplates() {
   return api<{ templates: TemplateItem[] }>('/api/templates')
 }
 
-// Multimodal Vision & Preview Eval Callback
+// Multimodal Vision, Headless Game State & Preview Eval Callback
 export async function submitAiToolResult(
   projectId: string,
   callId: string,
@@ -178,7 +178,12 @@ export async function submitAiToolResult(
     width?: number
     height?: number
     consoleErrors?: Array<{ level: string; message: string }>
+    consoleLogs?: Array<{ level: string; message: string }>
     domElements?: Array<Record<string, unknown>>
+    canvases?: Array<Record<string, unknown>>
+    title?: string
+    textSnippet?: string
+    executedActions?: number
     ok?: boolean
     output?: string
   },
